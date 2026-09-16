@@ -826,6 +826,16 @@ public sealed class FakeOpenAiServer : IDisposable
     /// </summary>
     public int ToolCallRoundsRemaining { get; set; }
 
+    /// <summary>1-based chat request number that should answer with HTTP 500; 0 = off.</summary>
+    public int FailChatRequestAtTurn { get; set; }
+
+    /// <summary>
+    /// When > 0, the first chat request sends headers + one SSE chunk, flushes, then
+    /// stalls (keeps the connection open, sends nothing) for this many milliseconds —
+    /// simulating a frozen model mid-generation.
+    /// </summary>
+    public int StallFirstChatRequestMs { get; set; }
+
     /// <summary>Tool name to emit while tool-call rounds remain.</summary>
     public string ToolCallName { get; set; }
 
@@ -916,6 +926,18 @@ public sealed class FakeOpenAiServer : IDisposable
     {
         _turn++;
 
+        if (FailChatRequestAtTurn > 0 && _turn == FailChatRequestAtTurn)
+        {
+            WriteJson(ctx, 500, "{\"error\":\"injected failure for test\"}");
+            return;
+        }
+
+        if (StallFirstChatRequestMs > 0 && _turn == 1)
+        {
+            WriteStalledFirstChunk(ctx);
+            return;
+        }
+
         if (ToolCallRoundsRemaining > 0)
         {
             ToolCallRoundsRemaining--;
@@ -982,6 +1004,40 @@ public sealed class FakeOpenAiServer : IDisposable
             output.Flush();
         }
         ctx.Response.Close();
+    }
+
+    private void WriteStalledFirstChunk(HttpListenerContext ctx)
+    {
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "text/event-stream";
+        ctx.Response.SendChunked = true;
+
+        Stream output = ctx.Response.OutputStream;
+        string evt = "data: {\"choices\":[{\"delta\":{\"content\":\"partial \"}}]}\n\n";
+        byte[] bytes = Encoding.UTF8.GetBytes(evt);
+        output.Write(bytes, 0, bytes.Length);
+        output.Flush();
+
+        // The model froze: keep the connection open and send nothing more.
+        int ms = StallFirstChatRequestMs;
+        while (ms > 0 && _running)
+        {
+            int step = Math.Min(250, ms);
+            Thread.Sleep(step);
+            ms -= step;
+        }
+
+        // If still alive, finish normally (clients usually abort long before this).
+        try
+        {
+            byte[] trail = Encoding.UTF8.GetBytes(
+                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+                "data: [DONE]\n\n");
+            output.Write(trail, 0, trail.Length);
+            output.Flush();
+        }
+        catch { }
+        try { ctx.Response.Close(); } catch { }
     }
 
     private void WriteToolCallStream(HttpListenerContext ctx)

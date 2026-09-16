@@ -204,7 +204,7 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
-            TestRunner.Run("cli.ask_context_high_truncate", () =>
+            TestRunner.Run("cli.context_high_auto_truncate", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
                 using (TempWorkspace ws = PackageCliWorkspace())
@@ -226,14 +226,10 @@ namespace SimpleLLMChatCLI.Tests
                         CliRunner.WaitForText(cli, "# Reply turn 2", 30000);
                         CliRunner.WaitForText(cli, "You:", 15000);
 
-                        // After two turns the context is far beyond the (tiny) window;
-                        // the CLI must ask the user instead of silently proceeding.
+                        // The third turn starts far beyond 95%: the CLI must
+                        // auto-truncate (no prompt, no stdin) and continue.
                         cli.WriteLine("third message");
-                        CliRunner.WaitForText(cli, ContextPrompt.AskPrompt, 30000);
-
-                        cli.WriteLine("t");
                         CliRunner.WaitForText(cli, "[Context usage high - truncated", 30000);
-
                         CliRunner.WaitForText(cli, "# Reply turn 3", 30000);
                         CliRunner.WaitForText(cli, "You:", 30000);
                     }
@@ -286,6 +282,85 @@ namespace SimpleLLMChatCLI.Tests
                     }
                 }
             });
+
+            TestRunner.Run("cli.stream_stall_abort_and_save", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The first chat request sends one chunk then freezes. The stall
+                    // watchdog must abort the request and return the CLI to its prompt
+                    // so the user can still /save.
+                    server.FixedReply = "Hello there.";
+                    server.StreamDelayMs = 5;
+                    server.StallFirstChatRequestMs = 20000;
+                    WriteCliIni(ws.Path, server.BaseUrl, streamStallTimeout: 3, requestTimeout: 60);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("hello stall");
+                        CliRunner.WaitForText(cli, "partial ", 15000);
+
+                        // The stream goes silent: the watchdog aborts after ~3 s.
+                        CliRunner.WaitForText(cli, "Request to LLM Failed", 30000);
+                        TestAssert.Contains(cli.Stdout, "model stalled", "stall reason printed");
+                        CliRunner.WaitForText(cli, "You:", 30000);
+
+                        // The prompt is back: saving must work right after a stall.
+                        cli.WriteLine("/save after_stall");
+                        CliRunner.WaitForText(cli, "Session saved: after_stall", 15000);
+
+                        string sessionFile = Path.Combine(ws.Path, "sessions", "after_stall.json");
+                        TestAssert.True(File.Exists(sessionFile), "session file created");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.summary_fail_truncate_fallback", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // ~2 KB markdown per turn (window is in tokens = chars/3); at the
+                    // start of turn 2 usage sits in the silent-summarize band (90-95%).
+                    // The summarize pass (request #2) is injected as a 500 so the CLI
+                    // must fall back to truncation.
+                    server.LongMarkdownReplies = true;
+                    server.StreamDelayMs = 5;
+                    server.FailChatRequestAtTurn = 2;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 655);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("first message");
+                        CliRunner.WaitForText(cli, "# Reply turn 1", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        // Turn 2 starts at ~92%: silent summarize fires, fails (500),
+                        // and the CLI falls back to truncation.
+                        cli.WriteLine("second message");
+                        CliRunner.WaitForText(cli, "[Context usage high - summary failed, truncated", 30000);
+
+                        // The main request still succeeds. It is the server's 3rd chat
+                        // request (#2 was the failed summary), so it is labeled turn 3.
+                        CliRunner.WaitForText(cli, "# Reply turn 3", 30000);
+                        CliRunner.WaitForText(cli, "You:", 30000);
+
+                        cli.WriteLine("/save after_summary");
+                        CliRunner.WaitForText(cli, "Session saved: after_summary", 15000);
+
+                        string sessionFile = Path.Combine(ws.Path, "sessions", "after_summary.json");
+                        string json = File.ReadAllText(sessionFile, Encoding.UTF8);
+                        TestAssert.Contains(json, "Reply turn 3", "latest reply preserved");
+                    }
+                }
+            });
         }
 
         static TempWorkspace PackageCliWorkspace()
@@ -301,7 +376,8 @@ namespace SimpleLLMChatCLI.Tests
             return ws;
         }
 
-        static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "")
+        static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "",
+            int streamStallTimeout = 120, int requestTimeout = 300)
         {
             string path = Path.Combine(dir, "LLMSettings.ini");
             File.WriteAllText(path,
@@ -311,6 +387,8 @@ namespace SimpleLLMChatCLI.Tests
                 "model=test-model\r\n" +
                 "sysprompt=\"You are a test assistant.\"\r\n" +
                 "contextWindowSize=" + contextWindowSize + "\r\n" +
+                "streamstalltimeout=" + streamStallTimeout + "\r\n" +
+                "requesttimeout=" + requestTimeout + "\r\n" +
                 "[Tools]\r\n" +
                 "tools=" + (tools ?? "") + "\r\n" +
                 "toolsrequiringapproval=\r\n" +

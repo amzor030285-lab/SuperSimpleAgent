@@ -107,8 +107,6 @@ namespace SimpleLLMChatGUI.Tests
             bool sawStop = false;
             while (sw.ElapsedMilliseconds < timeoutMs)
             {
-                DismissContextUsageDialogIfPresent();
-
                 AutomationElement send = FindById("sendButton");
                 if (send == null)
                 {
@@ -133,41 +131,6 @@ namespace SimpleLLMChatGUI.Tests
             }
             throw new TestFailureException(
                 "Button did not return to Send within " + timeoutMs + " ms");
-        }
-
-        /// <summary>
-        /// Answers the GUI's modal "Context Usage High" dialog (Yes = truncate)
-        /// whenever it is present, so long-chat turns can proceed. Safe to call
-        /// repeatedly when no dialog is showing.
-        /// </summary>
-        public void DismissContextUsageDialogIfPresent()
-        {
-            try
-            {
-                AutomationElement dialog = FindWindowByTitle("Context Usage High", 200);
-                if (dialog == null)
-                    return;
-
-                TestLog.Detail("Dismissing 'Context Usage High' dialog (Yes=truncate)");
-                AutomationElement yesButton = dialog.FindFirst(TreeScope.Descendants,
-                    new PropertyCondition(AutomationElement.NameProperty, "Yes"));
-                if (yesButton == null)
-                {
-                    LogTopLevelWindows("Context Usage High: no Yes button");
-                    return;
-                }
-                InvokePattern invoke = yesButton.GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
-                if (invoke == null)
-                {
-                    TestLog.Detail("Context Usage High: Yes button has no InvokePattern");
-                    return;
-                }
-                invoke.Invoke();
-            }
-            catch (Exception ex)
-            {
-                TestLog.Detail("DismissContextUsageDialogIfPresent: " + ex.Message);
-            }
         }
 
         /// <summary>Current sendButton caption ("Send", "Stop"), or null if not found.</summary>

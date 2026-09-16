@@ -5,13 +5,16 @@ using System;
 /// </summary>
 public static class TokenEstimator
 {
-    /// <summary>Legacy auto-summarize threshold (old behavior).</summary>
+    /// <summary>At this usage the conversation is silently summarized into a compact recap.</summary>
     public const double SummarizeThreshold = 0.90;
 
     /// <summary>At this usage the conversation is micro-compacted (old tool groups dropped).</summary>
     public const double MicroCompactThreshold = 0.80;
 
-    /// <summary>At this usage the user is offered truncate / summarize / continue anyway.</summary>
+    /// <summary>
+    /// Critical usage: automatic compaction kicks in (repeated oldest-message
+    /// truncation, then, as a last resort, shrinking the biggest message contents).
+    /// </summary>
     public const double AskUserThreshold = 0.95;
 
     /// <summary>Fraction of the oldest messages to drop when truncating (30%).</summary>

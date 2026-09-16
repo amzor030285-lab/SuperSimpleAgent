@@ -16,7 +16,6 @@ namespace SimpleLLMChatGUI
         public event Action<string> ErrorOccurred;
         public event Action GenerationComplete;
         public event Func<string, string, bool> ApprovalRequested;
-        public event Action ContextActionRequested;
         public event Action<int> StatusReceived;
 
         private readonly StringBuilder streamBuffer = new StringBuilder();
@@ -170,29 +169,6 @@ namespace SimpleLLMChatGUI
             }
         }
 
-        /// <summary>
-        /// Sends a single-character T/S/C answer to the CLI's context-usage prompt.
-        /// The response is written directly to stdin — no &lt;&lt;NEWLINE&gt;&gt; encoding
-        /// because the CLI expects a raw keypress followed by a newline.
-        /// </summary>
-        public bool SendContextAction(char key)
-        {
-            if (llmProcess == null || llmProcess.HasExited || inputWriter == null)
-                return false;
-
-            try
-            {
-                inputWriter.WriteLine(key.ToString());
-                inputWriter.Flush();
-                return true;
-            }
-            catch (Exception ex)
-            {
-                ErrorOccurred?.Invoke("Error sending context response: " + ex.Message);
-                return false;
-            }
-        }
-
         private void BeginReadOutput(Stream stream, byte[] buffer)
         {
             try
@@ -277,58 +253,35 @@ if (bytesRead > 0)
             {
                 string buffered = streamBuffer.ToString();
 
-                // Detect tool approval and context-usage prompts; whichever starts
-                // earlier in the buffer is handled first.
+                // Detect the tool approval prompt.
                 int approvalIndex = buffered.IndexOf(ToolApproval.ApprovalPrompt, StringComparison.Ordinal);
-                int contextIndex = buffered.IndexOf(ContextPrompt.AskPrompt, StringComparison.Ordinal);
 
-                if (approvalIndex < 0 && contextIndex < 0)
+                if (approvalIndex < 0)
                 {
                     FlushBufferedTextWithoutApprovalPrompt(buffered);
                     return;
                 }
 
-                bool isContextPrompt = contextIndex >= 0
-                    && (approvalIndex < 0 || contextIndex < approvalIndex);
-                int promptIndex = isContextPrompt ? contextIndex : approvalIndex;
+                string marker = ToolApproval.ApprovalPrompt;
+                string blockStartMarker = ToolApproval.RunToolPrefix;
 
-                string marker = isContextPrompt
-                    ? ContextPrompt.AskPrompt
-                    : ToolApproval.ApprovalPrompt;
-
-                string blockStartMarker = isContextPrompt
-                    ? ContextPrompt.NoticePrefix
-                    : ToolApproval.RunToolPrefix;
-
-                int blockStart;
-                if (isContextPrompt)
-                {
-                    blockStart = buffered.IndexOf(blockStartMarker, StringComparison.Ordinal);
-                }
-                else
-                {
-                    blockStart = buffered.LastIndexOf(blockStartMarker, promptIndex, StringComparison.Ordinal);
-                }
+                int blockStart = buffered.LastIndexOf(blockStartMarker, approvalIndex, StringComparison.Ordinal);
 
                 if (blockStart < 0)
                 {
-                    ProcessTextChunk(buffered.Substring(0, promptIndex + marker.Length));
+                    ProcessTextChunk(buffered.Substring(0, approvalIndex + marker.Length));
                     streamBuffer.Clear();
-                    streamBuffer.Append(buffered.Substring(promptIndex + marker.Length));
+                    streamBuffer.Append(buffered.Substring(approvalIndex + marker.Length));
                     continue;
                 }
 
                 if (blockStart > 0)
                     ProcessTextChunk(buffered.Substring(0, blockStart));
 
-                string block = buffered.Substring(blockStart, promptIndex + marker.Length - blockStart);
+                string block = buffered.Substring(blockStart, approvalIndex + marker.Length - blockStart);
+                HandleApprovalBlock(block);
 
-                if (isContextPrompt)
-                    HandleContextBlock();
-                else
-                    HandleApprovalBlock(block);
-
-                string remaining = buffered.Substring(promptIndex + marker.Length);
+                string remaining = buffered.Substring(approvalIndex + marker.Length);
                 streamBuffer.Clear();
                 if (string.IsNullOrEmpty(remaining))
                     return;
@@ -351,28 +304,11 @@ if (bytesRead > 0)
                 return;
             }
 
-            // Hold back an in-progress context-usage block (notice prefix received,
-            // but the ask prompt hasn't arrived yet).
-            int contextIndex = buffered.IndexOf(ContextPrompt.NoticePrefix, StringComparison.Ordinal);
-            if (contextIndex >= 0)
-            {
-                if (contextIndex > 0)
-                    ProcessTextChunk(buffered.Substring(0, contextIndex));
-
-                streamBuffer.Clear();
-                streamBuffer.Append(buffered.Substring(contextIndex));
-                return;
-            }
-
             // Hold back any partial suffix of known prompt / block markers so they
             // are not flushed as chat text by accident.
             int holdBack = Math.Max(
                 GetPartialSuffixLength(buffered, ToolApproval.ApprovalPrompt),
                 GetPartialSuffixLength(buffered, ToolApproval.RunToolPrefix));
-            holdBack = Math.Max(holdBack,
-                GetPartialSuffixLength(buffered, ContextPrompt.AskPrompt));
-            holdBack = Math.Max(holdBack,
-                GetPartialSuffixLength(buffered, ContextPrompt.NoticePrefix));
 
             if (holdBack > 0)
             {
@@ -415,12 +351,6 @@ if (bytesRead > 0)
                 approved = ApprovalRequested(toolName, arguments);
 
             SendApprovalResponse(approved);
-        }
-
-        private void HandleContextBlock()
-        {
-            if (ContextActionRequested != null)
-                ContextActionRequested();
         }
 
         private void ProcessTextChunk(string textChunk)
@@ -548,7 +478,6 @@ if (bytesRead > 0)
             ErrorOccurred = null;
             GenerationComplete = null;
             ApprovalRequested = null;
-            ContextActionRequested = null;
             StatusReceived = null;
             if (llmProcess != null && !llmProcess.HasExited)
             {

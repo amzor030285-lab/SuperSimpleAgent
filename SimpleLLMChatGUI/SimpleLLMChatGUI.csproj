@@ -103,9 +103,6 @@
     <Compile Include="..\Shared\SessionStore.cs">
       <Link>Shared\SessionStore.cs</Link>
     </Compile>
-    <Compile Include="..\Shared\ContextPrompt.cs">
-      <Link>Shared\ContextPrompt.cs</Link>
-    </Compile>
     <Compile Include="..\Shared\StatusPipe\StatusPipe.cs">
       <Link>Shared\StatusPipe\StatusPipe.cs</Link>
     </Compile>

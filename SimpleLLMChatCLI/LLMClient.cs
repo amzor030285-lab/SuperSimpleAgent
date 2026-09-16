@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Threading;
 
 namespace SimpleLLMChatCLI
 {
@@ -346,118 +347,94 @@ public class LLMClient
     }
 
     /// <summary>
-    /// Context-usage ladder (silent). Called before the first request of a turn and again
-    /// after each tool round:
+    /// Context-usage ladder (fully automatic, never blocks on input). Called before the
+    /// first request of a turn and again after each tool round:
     ///   &gt;= 80%  micro-compact: drop old assistant(tool_calls)+tool(tool_call_id) groups,
     ///            keeping the newest 2.
-    ///   &gt;= 90%  summarize the whole conversation into a compact recap.
-    ///   &gt;= 95%  ask the user to truncate / summarize / continue anyway (T/S/C on stdin,
-    ///            the GUI intercepts the prompt and answers via the process pipe).
-    /// In output-only mode (GUI, non-interactive) the 95% branch never blocks on input:
-    /// it silently truncates the oldest 30% instead.
+    ///   &gt;= 95%  truncate the oldest ~30% of messages, repeated until below 95%
+    ///            (absorbs single-turn spikes that jump straight past the thresholds).
+    ///   &gt;= 90%  summarize the whole conversation into a compact recap (the summarize
+    ///            request itself falls back to a hard truncation if it fails).
+    ///   &gt;= 95%  last resort: shrink the biggest message contents so the request fits.
+    /// Compaction always happens when usage is high enough, and the chat continues.
     /// </summary>
     private void MaybeManageContext(List<ChatMessage> conversation, bool outputOnly, string continueHint)
     {
-        int statusChars = GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead();
         int contextWindowSize = config.GetConfigInt("contextWindowSize", 0);
-        double usage = TokenEstimator.Usage(statusChars, contextWindowSize);
-        PublishStatusTokens(statusChars);
+        PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
 
-        if (usage < TokenEstimator.MicroCompactThreshold)
+        if (UsageOf(conversation, contextWindowSize) < TokenEstimator.MicroCompactThreshold)
             return;
 
-        if (usage >= TokenEstimator.AskUserThreshold)
-        {
-            if (outputOnly)
-            {
-                // Must never block on stdin in output/pipe mode; hard-truncate oldest 30%.
-                int removed = TruncateOldestFraction(conversation, TokenEstimator.TruncateFraction);
-                PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
-                return;
-            }
-            AskUserForContextAction(conversation, usage);
-            return;
-        }
-
-        // 80%..95%: drop old tool messages first (largest, least essential).
+        // Pass 1 (free): drop old tool groups (the biggest, least essential messages).
         int toolRemoved = MicroCompact(conversation, 2);
-        if (toolRemoved > 0 && !outputOnly)
-        {
-            ChatOutput.StartBlock();
+        if (toolRemoved > 0)
             ChatOutput.WriteLine("[Context usage high - removed " + toolRemoved + " old tool messages]");
+
+        // Pass 2 (free): critical level - truncate oldest ~30% until below 95%.
+        int guard = 0;
+        while (UsageOf(conversation, contextWindowSize) >= TokenEstimator.AskUserThreshold && guard++ < 10)
+        {
+            int removed = TruncateOldestFraction(conversation, TokenEstimator.TruncateFraction);
+            if (removed <= 0)
+                break;
+            ChatOutput.WriteLine("[Context usage high - truncated " + removed + " oldest messages]");
         }
 
-        // Still &gt;= 90% after micro-compaction: summarize silently.
-        int afterChars = GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead();
-        if (TokenEstimator.ShouldSummarize(afterChars, contextWindowSize))
+        // Pass 3 (one LLM call): still >= 90% after the free passes - summarize silently.
+        if (UsageOf(conversation, contextWindowSize) >= TokenEstimator.SummarizeThreshold)
             SummaryAndReplace(conversation, outputOnly, continueHint);
+
+        // Pass 4 (last resort): still critical - shrink the biggest message contents.
+        if (UsageOf(conversation, contextWindowSize) >= TokenEstimator.AskUserThreshold)
+            TruncateToFit(conversation, contextWindowSize);
 
         PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
     }
 
-    /// <summary>
-    /// Blocks on stdin (T/S/C) when context usage is critical (&gt;= 95%).
-    /// Choices:
-    ///   T = truncate the oldest ~30% (group-safe),
-    ///   S = summarize the conversation into one recap message,
-    ///   C = continue anyway (no changes).
-    /// </summary>
-    private void AskUserForContextAction(List<ChatMessage> conversation, double usage)
+    private double UsageOf(List<ChatMessage> conversation, int contextWindowSize)
     {
-        ChatOutput.WriteLine(ContextPrompt.FormatNotice(usage * 100.0).TrimEnd('\r', '\n'));
+        return TokenEstimator.Usage(
+            GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead(),
+            contextWindowSize);
+    }
 
-        while (true)
+    /// <summary>
+    /// Last-resort pass: while the conversation still exceeds the critical threshold,
+    /// truncate the single biggest message content to ~60% of the window so the outgoing
+    /// request fits. Guarantees the turn continues even when one message alone is larger
+    /// than the context window.
+    /// </summary>
+    private void TruncateToFit(List<ChatMessage> conversation, int contextWindowSize)
+    {
+        int budgetChars = (int)(contextWindowSize * 3 * 0.6);
+        int guard = 0;
+        while (UsageOf(conversation, contextWindowSize) >= TokenEstimator.AskUserThreshold && guard++ < 10)
         {
-            ChatOutput.Write(ContextPrompt.AskPrompt);
-            Console.Out.Flush();
-
-            string input = Console.ReadLine();
-            ChatOutput.EndInputLine();
-            if (input == null)
-                return; // EOF: treat as "continue anyway"
-
-            string action = ContextPrompt.TryParseAnswer(input);
-            if (action == null)
+            int biggestIndex = -1;
+            int biggestLen = -1;
+            for (int i = 0; i < conversation.Count; i++)
             {
-                ChatOutput.WriteLine("Please enter T, S or C.");
-                continue;
+                ChatMessage message = conversation[i];
+                if (message.Content != null && message.Content.Length > biggestLen)
+                {
+                    biggestIndex = i;
+                    biggestLen = message.Content.Length;
+                }
             }
+            if (biggestIndex < 0 || biggestLen <= budgetChars + 100)
+                break;
 
-            switch (action)
-            {
-                case "truncate":
-                    int removed = TruncateOldestFraction(conversation, TokenEstimator.TruncateFraction);
-                    ChatOutput.WriteLine("[Context usage high - truncated " + removed + " oldest messages]");
-                    break;
-
-                case "summarize":
-                    ChatOutput.StartBlock();
-                    ChatOutput.WriteLine("[Context usage high - summarizing conversation...]");
-                    string previousSummary = ExtractPreviousSummary(conversation);
-                    string summary = SummarizeConversation(conversation, previousSummary);
-                    if (!string.IsNullOrEmpty(summary))
-                    {
-                        conversation.Clear();
-                        conversation.Add(new ChatMessage(
-                            "user",
-                            SessionStore.SummaryMarker + "\n" + summary
-                            + "\n\n[Continue from this context. The user's next message follows.]"));
-                        ChatOutput.WriteLine("[Conversation summarized - continuing...]");
-                    }
-                    break;
-
-                case "continue":
-                    break;
-            }
-
-            ChatOutput.MarkSeparated();
-            PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
-            return;
+            ChatMessage biggest = conversation[biggestIndex];
+            biggest.Content = biggest.Content.Substring(0, budgetChars)
+                + "\n[... content truncated to fit the context window ...]";
+            conversation[biggestIndex] = biggest;
+            ChatOutput.WriteLine("[Context usage high - message content truncated to fit the context window]");
         }
     }
 
     /// <summary>
-    /// Silent summarize-and-replace used by the 90% branch.
+    /// Silent summarize-and-replace used by the >= 90% branch.
     /// </summary>
     private void SummaryAndReplace(List<ChatMessage> conversation, bool outputOnly, string continueHint)
     {
@@ -470,7 +447,15 @@ public class LLMClient
         string previousSummary = ExtractPreviousSummary(conversation);
         string summary = SummarizeConversation(conversation, previousSummary);
         if (string.IsNullOrEmpty(summary))
+        {
+            // The summarize pass failed (model stalled / request error): fall back to a
+            // hard truncation so the turn can continue with a reduced context.
+            int removed = TruncateOldestFraction(conversation, TokenEstimator.TruncateFraction);
+            if (!outputOnly)
+                ChatOutput.WriteLine("[Context usage high - summary failed, truncated " + removed + " oldest messages]");
+            PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
             return;
+        }
 
         conversation.Clear();
         conversation.Add(new ChatMessage(
@@ -985,6 +970,12 @@ public class LLMClient
         }
 
         HttpWebRequest request = null;
+        StreamActivity activity = new StreamActivity();
+        int stallSeconds = config.GetConfigInt("streamstalltimeout", 120);
+        int requestTimeoutMs = Math.Max(1, config.GetConfigInt("requesttimeout", 300)) * 1000;
+        int finished = 0;
+        int stallAborted = 0;
+
         try
         {
             // A stop clicked during a tool round must not start the next request.
@@ -995,6 +986,7 @@ public class LLMClient
             request.Method = "POST";
             request.ContentType = "application/json";
             request.Headers.Add("Authorization", "Bearer " + config.GetConfigValue("apikey"));
+            request.Timeout = requestTimeoutMs;
 
             byte[] payloadBytes = Encoding.UTF8.GetBytes(payload.ToString(Formatting.None));
             request.ContentLength = payloadBytes.Length;
@@ -1006,9 +998,28 @@ public class LLMClient
                 stream.Write(payloadBytes, 0, payloadBytes.Length);
             }
 
+            if (stallSeconds > 0)
+            {
+                // Watchdog: abort the request if the stream goes silent for longer than
+                // stallSeconds. A stalled model would otherwise block this thread forever
+                // (and with it the /save, /load, ... stdin loop).
+                Thread stallWatchdog = new Thread(delegate ()
+                {
+                    try
+                    {
+                        while (finished == 0 && stallAborted == 0 && activity.Idle() <= TimeSpan.FromSeconds(stallSeconds))
+                            Thread.Sleep(250);
+                        if (Interlocked.Exchange(ref stallAborted, 1) == 0)
+                            try { request.Abort(); } catch { }
+                    }
+                    catch { }
+                }) { IsBackground = true };
+                stallWatchdog.Start();
+            }
+
             using (var httpResponse = (HttpWebResponse)request.GetResponse())
             using (var responseStream = httpResponse.GetResponseStream())
-            using (var reader = new StreamReader(responseStream, Encoding.UTF8))
+            using (var reader = new ActivityReader(new StreamReader(responseStream, Encoding.UTF8), activity))
             {
                 LLMCompletionResponse result = SseStreamParser.Parse(reader, outputCallback, onReasoningChunk, onReasoningSummary, toolCallCallback, onContentStart, startBlock);
                 AbortSupport.UnregisterRequest(request);
@@ -1022,6 +1033,12 @@ public class LLMClient
             // Abort was requested by the user (via the control pipe): stop silently.
             if (AbortSupport.AbortRequested)
                 return new LLMCompletionResponse("generation_aborted", null, "aborted");
+
+            // The stream went silent and the watchdog aborted the request.
+            if (stallAborted == 1)
+                return new LLMCompletionResponse(
+                    "no stream data for " + stallSeconds + " s (model stalled, request aborted)",
+                    null, "request_failed");
 
             string reason;
             WebException webEx = ex as WebException;
@@ -1045,6 +1062,10 @@ public class LLMClient
                 return CurlClient.SendRequest(serverUrl, config.GetConfigValue("apikey"), payload, outputCallback, onReasoningChunk, onReasoningSummary, toolCallCallback, onContentStart, startBlock);
 
             return new LLMCompletionResponse(reason, null, "request_failed");
+        }
+        finally
+        {
+            Interlocked.Exchange(ref finished, 1);
         }
     }
 
@@ -1085,6 +1106,52 @@ public class LLMClient
             }
 
             ChatOutput.WriteLine("Please enter Y or N.");
+        }
+    }
+
+    /// <summary>
+    /// Thread-safe last-activity timestamp fed by the stream stall watchdog.
+    /// </summary>
+    private sealed class StreamActivity
+    {
+        private long _lastTicks;
+
+        public StreamActivity()
+        {
+            _lastTicks = DateTime.UtcNow.Ticks;
+        }
+
+        public void Touch()
+        {
+            Interlocked.Exchange(ref _lastTicks, DateTime.UtcNow.Ticks);
+        }
+
+        public TimeSpan Idle()
+        {
+            return DateTime.UtcNow - new DateTime(Interlocked.Read(ref _lastTicks));
+        }
+    }
+
+    /// <summary>
+    /// TextReader that reports every byte read to the stall watchdog.
+    /// </summary>
+    private sealed class ActivityReader : TextReader
+    {
+        private readonly TextReader _inner;
+        private readonly StreamActivity _activity;
+
+        public ActivityReader(TextReader inner, StreamActivity activity)
+        {
+            _inner = inner;
+            _activity = activity;
+        }
+
+        public override int Read()
+        {
+            int c = _inner.Read();
+            if (c != -1)
+                _activity.Touch();
+            return c;
         }
     }
 }

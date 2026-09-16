@@ -69,9 +69,6 @@
     <Compile Include="..\..\Shared\SessionStore.cs">
       <Link>Shared\SessionStore.cs</Link>
     </Compile>
-    <Compile Include="..\..\Shared\ContextPrompt.cs">
-      <Link>Shared\ContextPrompt.cs</Link>
-    </Compile>
     <Compile Include="..\..\Shared\ConfigHandler.cs">
       <Link>Shared\ConfigHandler.cs</Link>
     </Compile>

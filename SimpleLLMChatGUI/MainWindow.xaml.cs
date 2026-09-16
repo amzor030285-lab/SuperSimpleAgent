@@ -171,7 +171,6 @@ namespace SimpleLLMChatGUI
             processHandler.ErrorOccurred += OnErrorOccurred;
             processHandler.GenerationComplete += OnGenerationComplete;
             processHandler.ApprovalRequested += OnApprovalRequested;
-            processHandler.ContextActionRequested += OnContextActionRequested;
             processHandler.StatusReceived += OnStatusReceived;
 
             if (tokenTracker != null)
@@ -287,41 +286,6 @@ namespace SimpleLLMChatGUI
                 ExitGeneratingMode();
                 chatInput.Focus();
             }));
-        }
-
-        /// <summary>
-        /// The CLI wrote a context-usage prompt. Show a blocking dialog on the
-        /// UI thread and send the answer back immediately — the CLI is stuck
-        /// on Console.ReadLine waiting for it.
-        /// </summary>
-        private void OnContextActionRequested()
-        {
-            char chosen = 'c';
-            Dispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Background, (Action)(() =>
-            {
-                if (_streamingTurn != null)
-                    _streamingTurn.TrimTrailingBlankParagraphs();
-
-                MessageBoxResult result = MessageBox.Show(
-                    "The conversation is using ~95% or more of the model's context window.\n\n" +
-                    "Yes  = Truncate oldest messages (safe, recommended)\n" +
-                    "No   = Summarize into a compact recap (may lose detail)\n" +
-                    "Cancel = Continue anyway (messages may exceed the limit)",
-                    "Context Usage High",
-                    MessageBoxButton.YesNoCancel,
-                    MessageBoxImage.Warning,
-                    MessageBoxResult.Yes);
-
-                switch (result)
-                {
-                    case MessageBoxResult.Yes:   chosen = 't'; break;
-                    case MessageBoxResult.No:    chosen = 's'; break;
-                    default:                     chosen = 'c'; break;
-                }
-            }));
-
-            if (processHandler != null && processHandler.IsProcessRunning)
-                processHandler.SendContextAction(chosen);
         }
 
         /// <summary>
