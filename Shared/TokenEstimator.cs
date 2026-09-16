@@ -5,7 +5,17 @@ using System;
 /// </summary>
 public static class TokenEstimator
 {
+    /// <summary>Legacy auto-summarize threshold (old behavior).</summary>
     public const double SummarizeThreshold = 0.90;
+
+    /// <summary>At this usage the conversation is micro-compacted (old tool groups dropped).</summary>
+    public const double MicroCompactThreshold = 0.80;
+
+    /// <summary>At this usage the user is offered truncate / summarize / continue anyway.</summary>
+    public const double AskUserThreshold = 0.95;
+
+    /// <summary>Fraction of the oldest messages to drop when truncating (30%).</summary>
+    public const double TruncateFraction = 0.30;
 
     public static int ApproximateTokens(int characterCount)
     {
@@ -19,9 +29,17 @@ public static class TokenEstimator
         if (contextWindowSize <= 0)
             return false;
 
+        return Usage(characterCount, contextWindowSize) >= SummarizeThreshold;
+    }
+
+    /// <summary>Token usage as a fraction (0..1+) of the context window.</summary>
+    public static double Usage(int characterCount, int contextWindowSize)
+    {
+        if (contextWindowSize <= 0)
+            return 0.0;
+
         int approximateTokens = ApproximateTokens(characterCount);
-        double usage = (double)approximateTokens / contextWindowSize;
-        return usage >= SummarizeThreshold;
+        return (double)approximateTokens / contextWindowSize;
     }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Windows.Automation;
 
@@ -106,6 +107,8 @@ namespace SimpleLLMChatGUI.Tests
             bool sawStop = false;
             while (sw.ElapsedMilliseconds < timeoutMs)
             {
+                DismissContextUsageDialogIfPresent();
+
                 AutomationElement send = FindById("sendButton");
                 if (send == null)
                 {
@@ -130,6 +133,41 @@ namespace SimpleLLMChatGUI.Tests
             }
             throw new TestFailureException(
                 "Button did not return to Send within " + timeoutMs + " ms");
+        }
+
+        /// <summary>
+        /// Answers the GUI's modal "Context Usage High" dialog (Yes = truncate)
+        /// whenever it is present, so long-chat turns can proceed. Safe to call
+        /// repeatedly when no dialog is showing.
+        /// </summary>
+        public void DismissContextUsageDialogIfPresent()
+        {
+            try
+            {
+                AutomationElement dialog = FindWindowByTitle("Context Usage High", 200);
+                if (dialog == null)
+                    return;
+
+                TestLog.Detail("Dismissing 'Context Usage High' dialog (Yes=truncate)");
+                AutomationElement yesButton = dialog.FindFirst(TreeScope.Descendants,
+                    new PropertyCondition(AutomationElement.NameProperty, "Yes"));
+                if (yesButton == null)
+                {
+                    LogTopLevelWindows("Context Usage High: no Yes button");
+                    return;
+                }
+                InvokePattern invoke = yesButton.GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
+                if (invoke == null)
+                {
+                    TestLog.Detail("Context Usage High: Yes button has no InvokePattern");
+                    return;
+                }
+                invoke.Invoke();
+            }
+            catch (Exception ex)
+            {
+                TestLog.Detail("DismissContextUsageDialogIfPresent: " + ex.Message);
+            }
         }
 
         /// <summary>Current sendButton caption ("Send", "Stop"), or null if not found.</summary>
@@ -176,6 +214,182 @@ namespace SimpleLLMChatGUI.Tests
             if (_window == null) return null;
             Condition cond = new PropertyCondition(AutomationElement.AutomationIdProperty, automationId);
             return _window.FindFirst(TreeScope.Descendants, cond);
+        }
+
+        /// <summary>Invokes a button in the main window by automation id.</summary>
+        public void ClickMainButton(string automationId)
+        {
+            AutomationElement el = FindById(automationId);
+            if (el == null)
+                throw new TestFailureException("Main-window button not found: " + automationId);
+            InvokePattern invoke = el.GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
+            if (invoke == null)
+                throw new TestFailureException(automationId + " does not support InvokePattern");
+            invoke.Invoke();
+        }
+
+        /// <summary>
+        /// Finds a (dialog) window by its title; the dialog may take a moment to open.
+        /// Enumerates native top-level windows via EnumWindows and wraps the matching
+        /// hwnd with <see cref="AutomationElement.FromHandle"/> — UIA's desktop tree
+        /// can be blind to a brand-new WPF modal dialog. Falls back to a desktop-tree
+        /// probe so exotic providers are still covered.
+        /// </summary>
+        public static AutomationElement FindWindowByTitle(string title, int timeoutMs)
+        {
+            string target = (title ?? "").Trim();
+            Stopwatch sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                IntPtr hwnd = FindWindowNative(target);
+                if (hwnd != IntPtr.Zero)
+                {
+                    try
+                    {
+                        AutomationElement el = AutomationElement.FromHandle(hwnd);
+                        if (el != null)
+                            return el;
+                    }
+                    catch (Exception ex)
+                    {
+                        TestLog.Detail("FromHandle failed: " + ex.Message);
+                    }
+                }
+
+                // Fallback probe of the desktop tree (covers non-hwnd providers).
+                AutomationElement root = AutomationElement.RootElement;
+                AutomationElement w = root.FindFirst(TreeScope.Children,
+                    new PropertyCondition(AutomationElement.NameProperty, target));
+                if (w != null)
+                    return w;
+
+                Thread.Sleep(100);
+            }
+
+            LogTopLevelWindows("timeout waiting for window: " + title);
+            return null;
+        }
+
+        private static IntPtr FindWindowNative(string title)
+        {
+            IntPtr found = IntPtr.Zero;
+            EnumWindows((hwnd, lParam) =>
+            {
+                if (!IsWindowVisible(hwnd))
+                    return true;
+
+                StringBuilder sb = new StringBuilder(512);
+                if (GetWindowText(hwnd, sb, sb.Capacity) > 0 &&
+                    string.Equals(sb.ToString(), title, StringComparison.Ordinal))
+                {
+                    found = hwnd;
+                    return false;
+                }
+                return true;
+            }, IntPtr.Zero);
+            return found;
+        }
+
+        private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+        [System.Runtime.InteropServices.DllImport("user32.dll")]
+        private static extern bool IsWindowVisible(IntPtr hWnd);
+
+        /// <summary>Logs every visible top-level window (name / class) for diagnostics.</summary>
+        public static void LogTopLevelWindows(string context)
+        {
+            try
+            {
+                AutomationElement root = AutomationElement.RootElement;
+                AutomationElementCollection all = root.FindAll(TreeScope.Children, Condition.TrueCondition);
+                StringBuilder sb = new StringBuilder();
+                sb.Append("Top-level windows (" + context + "): " + all.Count);
+                foreach (AutomationElement el in all)
+                {
+                    string name = "";
+                    string cls = "";
+                    try { name = el.Current.Name ?? ""; } catch { }
+                    try { cls = el.Current.ClassName ?? ""; } catch { }
+                    sb.Append("\n  name='" + name + "' class=" + cls);
+                }
+                TestLog.Detail(sb.ToString());
+            }
+            catch (Exception ex)
+            {
+                TestLog.Detail("LogTopLevelWindows failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>Finds an element by automation id inside a titled (dialog) window.</summary>
+        public AutomationElement FindByIdInWindow(string windowTitle, string automationId, int timeoutMs)
+        {
+            AutomationElement window = FindWindowByTitle(windowTitle, timeoutMs);
+            if (window == null)
+                throw new TestFailureException("Dialog window not found: " + windowTitle);
+            return window.FindFirst(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.AutomationIdProperty, automationId));
+        }
+
+        public void SetTextBoxInWindow(string windowTitle, string automationId, string text, int timeoutMs)
+        {
+            AutomationElement el = FindByIdInWindow(windowTitle, automationId, timeoutMs);
+            if (el == null)
+                throw new TestFailureException("Text input not found: " + automationId + " in " + windowTitle);
+            ValuePattern value = el.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
+            if (value == null)
+                throw new TestFailureException(automationId + " does not support ValuePattern");
+            value.SetValue(text ?? "");
+        }
+
+        public void ClickButtonInWindow(string windowTitle, string automationId, int timeoutMs)
+        {
+            AutomationElement el = FindByIdInWindow(windowTitle, automationId, timeoutMs);
+            if (el == null)
+                throw new TestFailureException("Button not found: " + automationId + " in " + windowTitle);
+            InvokePattern invoke = el.GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
+            if (invoke == null)
+                throw new TestFailureException(automationId + " does not support InvokePattern");
+            invoke.Invoke();
+        }
+
+        /// <summary>
+        /// Selects the first list item whose text contains <paramref name="containsText"/>.
+        /// </summary>
+        public void SelectListItemInWindow(string windowTitle, string automationId, string containsText, int timeoutMs)
+        {
+            AutomationElement el = FindByIdInWindow(windowTitle, automationId, timeoutMs);
+            if (el == null)
+                throw new TestFailureException("List not found: " + automationId + " in " + windowTitle);
+
+            Condition selectable = new PropertyCondition(
+                AutomationElement.IsSelectionItemPatternAvailableProperty, true);
+            Stopwatch sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                AutomationElementCollection items = el.FindAll(TreeScope.Descendants, selectable);
+                foreach (AutomationElement item in items)
+                {
+                    string name = item.Current.Name ?? "";
+                    if (name.IndexOf(containsText, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        SelectionItemPattern sip = item.GetCurrentPattern(SelectionItemPattern.Pattern) as SelectionItemPattern;
+                        if (sip != null)
+                        {
+                            sip.Select();
+                            return;
+                        }
+                    }
+                }
+                Thread.Sleep(100);
+            }
+            throw new TestFailureException(
+                "List item \"" + containsText + "\" not found in " + automationId + " in " + windowTitle);
         }
 
         private static AutomationElement WaitForWindow(Process process, int timeoutMs)

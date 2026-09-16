@@ -25,10 +25,16 @@ namespace SimpleLLMChatCLI
             ChatOutput.WriteLine("| /buildindex: Reconcile knowledge index          |");
             ChatOutput.WriteLine("| /clear: Clear chat context                      |");
             ChatOutput.WriteLine("| /clearindex: Clear knowledge index              |");
+            ChatOutput.WriteLine("| /compact: Drop old tool messages                |");
+            ChatOutput.WriteLine("| /delete name: Delete a saved session            |");
             ChatOutput.WriteLine("| /exit: Exit the application                     |");
             ChatOutput.WriteLine("| /image \"path\" prompt: Send an image             |");
+            ChatOutput.WriteLine("| /load keyword: Load a saved session             |");
             ChatOutput.WriteLine("| /reasoning [effort]: Set reasoning effort       |");
             ChatOutput.WriteLine("| /reload: Reload configuration                   |");
+            ChatOutput.WriteLine("| /rename old new: Rename a saved session         |");
+            ChatOutput.WriteLine("| /save [name]: Save current session              |");
+            ChatOutput.WriteLine("| /sessions: List saved sessions                  |");
             ChatOutput.WriteLine("===================================================");
         }
 
@@ -61,6 +67,59 @@ namespace SimpleLLMChatCLI
                     return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Resolves a /load argument to an existing session name: exact match first,
+        /// then a case-insensitive prefix match on the listed sessions. Returns null
+        /// when nothing matches.
+        /// </summary>
+        static string ResolveSessionName(string sessionsDir, string keyword)
+        {
+            keyword = (keyword ?? string.Empty).Trim();
+            List<SessionStore.SessionInfo> sessions = SessionStore.List(sessionsDir);
+            if (sessions.Count == 0)
+                return null;
+
+            if (keyword.Length > 0)
+            {
+                foreach (SessionStore.SessionInfo info in sessions)
+                {
+                    if (string.Equals(info.Name, keyword, StringComparison.OrdinalIgnoreCase))
+                        return info.Name;
+                }
+                foreach (SessionStore.SessionInfo info in sessions)
+                {
+                    if (info.Name.StartsWith(keyword, StringComparison.OrdinalIgnoreCase))
+                        return info.Name;
+                }
+                return null;
+            }
+
+            // No keyword: load the most recent session.
+            return sessions[0].Name;
+        }
+
+        static void PrintSessionList(string sessionsDir)
+        {
+            List<SessionStore.SessionInfo> sessions = SessionStore.List(sessionsDir);
+            if (sessions.Count == 0)
+            {
+                ChatOutput.WriteLine("No saved sessions.");
+                return;
+            }
+
+            foreach (SessionStore.SessionInfo info in sessions)
+            {
+                DateTime local = info.SavedAtUtc != DateTime.MinValue
+                    ? info.SavedAtUtc.ToLocalTime()
+                    : DateTime.MinValue;
+                string when = local != DateTime.MinValue
+                    ? local.ToString("yyyy-MM-dd HH:mm")
+                    : "unknown";
+                double kb = (double)info.SizeBytes / 1024.0;
+                ChatOutput.WriteLine("  " + info.Name + "  (" + when + ", " + info.MessageCount + " messages, " + kb.ToString("F1") + " KB)");
+            }
         }
 
         static void Main(string[] args)
@@ -128,6 +187,8 @@ namespace SimpleLLMChatCLI
 
             // Token status starts at 0; base overhead is measured on the first real request.
             client.PublishStatusTokens(0);
+
+            string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
             bool showBanners = true;
 
@@ -312,6 +373,116 @@ namespace SimpleLLMChatCLI
 
                     // Silent command (the GUI sends this programmatically): produce no
                     // stdout, and don't pad the re-prompt with a separator newline.
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
+
+                if (userInput == "/compact")
+                {
+                    int removed = LLMClient.PerformMicroCompact(conversation);
+                    if (removed > 0)
+                        ChatOutput.WriteLine("Compaction: removed " + removed + " old tool messages.");
+                    else
+                        ChatOutput.WriteLine("Compaction: nothing to remove.");
+                    client.PublishStatusTokens(
+                        LLMClient.GetConversationCharacterCount(conversation) + client.GetBaseCharacterOverhead());
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
+
+                if (userInput == "/save" || userInput.StartsWith("/save "))
+                {
+                    string name = userInput.Length > 6 ? userInput.Substring(6).Trim() : string.Empty;
+                    name = SessionStore.SanitizeName(name);
+                    if (string.IsNullOrEmpty(name) || name == "session")
+                    {
+                        name = "session_" + DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                    }
+
+                    string fullPath;
+                    if (SessionStore.Save(sessionsDir, name, conversation, out fullPath))
+                        ChatOutput.WriteLine("Session saved: " + name);
+                    else
+                        ChatOutput.WriteLine("Error: could not save session '" + name + "'.");
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
+
+                if (userInput == "/load" || userInput.StartsWith("/load "))
+                {
+                    string keyword = userInput.Length > 6 ? userInput.Substring(6).Trim() : string.Empty;
+                    string sessionName = ResolveSessionName(sessionsDir, keyword);
+                    if (sessionName == null)
+                    {
+                        ChatOutput.WriteLine("Error: session not found" + (keyword.Length > 0 ? " for '" + keyword + "'." : "."));
+                        ChatOutput.MarkSeparated();
+                        continue;
+                    }
+
+                    List<LLMClient.ChatMessage> loaded;
+                    if (!SessionStore.Load(sessionsDir, sessionName, out loaded))
+                    {
+                        ChatOutput.WriteLine("Error: could not read session '" + sessionName + "'.");
+                        ChatOutput.MarkSeparated();
+                        continue;
+                    }
+
+                    conversation.Clear();
+                    conversation.AddRange(loaded);
+                    ChatOutput.WriteLine("Session loaded: " + sessionName + " (" + loaded.Count + " messages).");
+                    client.PublishStatusTokens(
+                        LLMClient.GetConversationCharacterCount(conversation) + client.GetBaseCharacterOverhead());
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
+
+                if (userInput == "/sessions")
+                {
+                    PrintSessionList(sessionsDir);
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
+
+                if (userInput == "/delete" || userInput.StartsWith("/delete "))
+                {
+                    string name = userInput.Length > 8 ? userInput.Substring(8).Trim() : string.Empty;
+                    if (name.Length == 0)
+                    {
+                        ChatOutput.WriteLine("Usage: /delete name");
+                        ChatOutput.MarkSeparated();
+                        continue;
+                    }
+                    if (SessionStore.Delete(sessionsDir, name))
+                        ChatOutput.WriteLine("Session deleted: " + SessionStore.SanitizeName(name));
+                    else
+                        ChatOutput.WriteLine("Error: no session named '" + SessionStore.SanitizeName(name) + "'.");
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
+
+                if (userInput == "/rename" || userInput.StartsWith("/rename "))
+                {
+                    string rest = userInput.Length > 8 ? userInput.Substring(8).Trim() : string.Empty;
+                    int space = rest.IndexOf(' ');
+                    if (space <= 0)
+                    {
+                        ChatOutput.WriteLine("Usage: /rename old-name new-name");
+                        ChatOutput.MarkSeparated();
+                        continue;
+                    }
+                    string oldName = rest.Substring(0, space).Trim();
+                    string newName = rest.Substring(space + 1).Trim();
+                    if (oldName.Length == 0 || newName.Length == 0)
+                    {
+                        ChatOutput.WriteLine("Usage: /rename old-name new-name");
+                        ChatOutput.MarkSeparated();
+                        continue;
+                    }
+                    string error = SessionStore.Rename(sessionsDir, oldName, newName);
+                    if (error == null)
+                        ChatOutput.WriteLine("Session renamed: " + SessionStore.SanitizeName(newName));
+                    else
+                        ChatOutput.WriteLine("Error: " + error);
                     ChatOutput.MarkSeparated();
                     continue;
                 }

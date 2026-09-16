@@ -80,8 +80,9 @@ public class LLMClient
         HashSet<string> approvalSet = new HashSet<string>(
             toolsRequiringApproval ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
 
-        // If prior context is already high, summarize it silently first, then run the user prompt.
-        MaybeSummarizeInBackground(
+        // If prior context is already high, compact it (micro/summarize/ask), then
+        // run the user prompt.
+        MaybeManageContext(
             conversation,
             outputOnly,
             "\n\n[Continue from this context. The user's next message follows.]");
@@ -320,7 +321,7 @@ public class LLMClient
                     }
                 }
                 // Mid-turn (after tools): compact context silently, then continue the user request.
-                MaybeSummarizeInBackground(
+                MaybeManageContext(
                     conversation,
                     outputOnly,
                     "\n\n[Continue from this context. The user's original request is being processed.]");
@@ -345,36 +346,304 @@ public class LLMClient
     }
 
     /// <summary>
-    /// If context usage is high, summarize silently (summary text is not shown) and replace
-    /// the conversation with a compact summary message.
+    /// Context-usage ladder (silent). Called before the first request of a turn and again
+    /// after each tool round:
+    ///   &gt;= 80%  micro-compact: drop old assistant(tool_calls)+tool(tool_call_id) groups,
+    ///            keeping the newest 2.
+    ///   &gt;= 90%  summarize the whole conversation into a compact recap.
+    ///   &gt;= 95%  ask the user to truncate / summarize / continue anyway (T/S/C on stdin,
+    ///            the GUI intercepts the prompt and answers via the process pipe).
+    /// In output-only mode (GUI, non-interactive) the 95% branch never blocks on input:
+    /// it silently truncates the oldest 30% instead.
     /// </summary>
-    private void MaybeSummarizeInBackground(List<ChatMessage> conversation, bool outputOnly, string continueHint)
+    private void MaybeManageContext(List<ChatMessage> conversation, bool outputOnly, string continueHint)
     {
         int statusChars = GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead();
+        int contextWindowSize = config.GetConfigInt("contextWindowSize", 0);
+        double usage = TokenEstimator.Usage(statusChars, contextWindowSize);
         PublishStatusTokens(statusChars);
 
-        if (!TokenEstimator.ShouldSummarize(statusChars, config.GetConfigInt("contextWindowSize", 0)))
+        if (usage < TokenEstimator.MicroCompactThreshold)
             return;
 
+        if (usage >= TokenEstimator.AskUserThreshold)
+        {
+            if (outputOnly)
+            {
+                // Must never block on stdin in output/pipe mode; hard-truncate oldest 30%.
+                int removed = TruncateOldestFraction(conversation, TokenEstimator.TruncateFraction);
+                PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
+                return;
+            }
+            AskUserForContextAction(conversation, usage);
+            return;
+        }
+
+        // 80%..95%: drop old tool messages first (largest, least essential).
+        int toolRemoved = MicroCompact(conversation, 2);
+        if (toolRemoved > 0 && !outputOnly)
+        {
+            ChatOutput.StartBlock();
+            ChatOutput.WriteLine("[Context usage high - removed " + toolRemoved + " old tool messages]");
+        }
+
+        // Still &gt;= 90% after micro-compaction: summarize silently.
+        int afterChars = GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead();
+        if (TokenEstimator.ShouldSummarize(afterChars, contextWindowSize))
+            SummaryAndReplace(conversation, outputOnly, continueHint);
+
+        PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
+    }
+
+    /// <summary>
+    /// Blocks on stdin (T/S/C) when context usage is critical (&gt;= 95%).
+    /// Choices:
+    ///   T = truncate the oldest ~30% (group-safe),
+    ///   S = summarize the conversation into one recap message,
+    ///   C = continue anyway (no changes).
+    /// </summary>
+    private void AskUserForContextAction(List<ChatMessage> conversation, double usage)
+    {
+        ChatOutput.WriteLine(ContextPrompt.FormatNotice(usage * 100.0).TrimEnd('\r', '\n'));
+
+        while (true)
+        {
+            ChatOutput.Write(ContextPrompt.AskPrompt);
+            Console.Out.Flush();
+
+            string input = Console.ReadLine();
+            ChatOutput.EndInputLine();
+            if (input == null)
+                return; // EOF: treat as "continue anyway"
+
+            string action = ContextPrompt.TryParseAnswer(input);
+            if (action == null)
+            {
+                ChatOutput.WriteLine("Please enter T, S or C.");
+                continue;
+            }
+
+            switch (action)
+            {
+                case "truncate":
+                    int removed = TruncateOldestFraction(conversation, TokenEstimator.TruncateFraction);
+                    ChatOutput.WriteLine("[Context usage high - truncated " + removed + " oldest messages]");
+                    break;
+
+                case "summarize":
+                    ChatOutput.StartBlock();
+                    ChatOutput.WriteLine("[Context usage high - summarizing conversation...]");
+                    string previousSummary = ExtractPreviousSummary(conversation);
+                    string summary = SummarizeConversation(conversation, previousSummary);
+                    if (!string.IsNullOrEmpty(summary))
+                    {
+                        conversation.Clear();
+                        conversation.Add(new ChatMessage(
+                            "user",
+                            SessionStore.SummaryMarker + "\n" + summary
+                            + "\n\n[Continue from this context. The user's next message follows.]"));
+                        ChatOutput.WriteLine("[Conversation summarized - continuing...]");
+                    }
+                    break;
+
+                case "continue":
+                    break;
+            }
+
+            ChatOutput.MarkSeparated();
+            PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
+            return;
+        }
+    }
+
+    /// <summary>
+    /// Silent summarize-and-replace used by the 90% branch.
+    /// </summary>
+    private void SummaryAndReplace(List<ChatMessage> conversation, bool outputOnly, string continueHint)
+    {
         if (!outputOnly)
         {
             ChatOutput.StartBlock();
             ChatOutput.WriteLine("[Context usage high - summarizing conversation...]");
         }
 
-        string summary = SummarizeConversation(conversation);
+        string previousSummary = ExtractPreviousSummary(conversation);
+        string summary = SummarizeConversation(conversation, previousSummary);
         if (string.IsNullOrEmpty(summary))
             return;
 
         conversation.Clear();
         conversation.Add(new ChatMessage(
             "user",
-            "[Previous conversation summary]\n" + summary + continueHint));
+            SessionStore.SummaryMarker + "\n" + summary + continueHint));
 
         if (!outputOnly)
             ChatOutput.WriteLine("[Conversation summarized - continuing...]");
 
         PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
+    }
+
+    /// <summary>
+    /// Removes whole assistant(tool_calls) + tool(tool_call_id) groups from the OLDEST
+    /// end of the conversation, keeping the newest <paramref name="keepLastGroups"/>
+    /// groups untouched. Returns the number of messages removed.
+    /// </summary>
+    internal static int MicroCompact(List<ChatMessage> conversation, int keepLastGroups)
+    {
+        if (conversation == null || conversation.Count == 0 || keepLastGroups < 0)
+            return 0;
+
+        bool[] inGroup = ComputeToolGroupMask(conversation);
+        List<int> groupStarts = new List<int>();
+        for (int i = 0; i < conversation.Count; i++)
+        {
+            if (conversation[i].Role == "assistant"
+                && conversation[i].ToolCalls != null
+                && conversation[i].ToolCalls.Count > 0)
+            {
+                groupStarts.Add(i);
+            }
+        }
+
+        int groupsToRemove = groupStarts.Count - keepLastGroups;
+        if (groupsToRemove <= 0)
+            return 0;
+
+        HashSet<int> removeIndexes = new HashSet<int>();
+        int targetLastGroup = groupStarts[groupStarts.Count - keepLastGroups];
+        for (int i = 0; i < targetLastGroup; i++)
+        {
+            if (inGroup[i])
+                removeIndexes.Add(i);
+        }
+
+        if (removeIndexes.Count == 0)
+            return 0;
+
+        List<ChatMessage> compacted = new List<ChatMessage>(conversation.Count - removeIndexes.Count);
+        for (int i = 0; i < conversation.Count; i++)
+        {
+            if (!removeIndexes.Contains(i))
+                compacted.Add(conversation[i]);
+        }
+
+        conversation.Clear();
+        conversation.AddRange(compacted);
+        return removeIndexes.Count;
+    }
+
+    /// <summary>
+    /// Marks indexes that belong to an intermediate tool group: an assistant message
+    /// with tool_calls plus every following "tool" message. Such groups must be
+    /// compacted atomically so the OpenAI payload stays well-formed.
+    /// </summary>
+    private static bool[] ComputeToolGroupMask(List<ChatMessage> conversation)
+    {
+        bool[] inGroup = new bool[conversation.Count];
+        for (int i = 0; i < conversation.Count; i++)
+        {
+            if (conversation[i].Role == "assistant"
+                && conversation[i].ToolCalls != null
+                && conversation[i].ToolCalls.Count > 0)
+            {
+                inGroup[i] = true;
+                for (int j = i + 1; j < conversation.Count && conversation[j].Role == "tool"; j++)
+                    inGroup[j] = true;
+            }
+        }
+        return inGroup;
+    }
+
+    /// <summary>
+    /// Hard-truncates the oldest messages, removing whole tool groups when they are
+    /// hit and never wiping the conversation entirely. Returns messages removed.
+    /// </summary>
+    internal static int TruncateOldestFraction(List<ChatMessage> conversation, double fraction)
+    {
+        if (conversation == null || conversation.Count == 0)
+            return 0;
+
+        int target = (int)Math.Ceiling(conversation.Count * Math.Max(0.0, Math.Min(1.0, fraction)));
+        if (target <= 0)
+            return 0;
+        if (target >= conversation.Count)
+            target = conversation.Count - 1;
+        if (target <= 0)
+            return 0;
+
+        // Mark the oldest `target` messages as the base removal prefix
+        // (no whole-group instruction here; the prefix is expanded below to stay
+        // group-safe).
+        HashSet<int> removeIndexes = new HashSet<int>();
+        for (int i = 0; i < target; i++)
+            removeIndexes.Add(i);
+
+        // Expand the removal prefix so no group is cut: any assistant(tool_calls)
+        // removed also removes its following tool messages, and any removed tool
+        // message also removes its preceding assistant call.
+        bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            for (int i = 0; i < conversation.Count; i++)
+            {
+                if (!removeIndexes.Contains(i))
+                    continue;
+
+                if (conversation[i].Role == "assistant")
+                {
+                    for (int j = i + 1; j < conversation.Count && conversation[j].Role == "tool"; j++)
+                    {
+                        if (removeIndexes.Add(j))
+                            changed = true;
+                    }
+                }
+                else if (conversation[i].Role == "tool")
+                {
+                    for (int j = i - 1; j >= 0; j--)
+                    {
+                        if (conversation[j].Role == "assistant")
+                        {
+                            if (removeIndexes.Add(j))
+                                changed = true;
+                            break;
+                        }
+                        if (conversation[j].Role != "tool")
+                            break;
+                    }
+                }
+            }
+        }
+
+        int removed = removeIndexes.Count;
+
+        if (removed == 0)
+            return 0;
+        if (removed >= conversation.Count)
+        {
+            // Always keep the very newest message.
+            removeIndexes.Remove(conversation.Count - 1);
+        }
+
+        List<ChatMessage> compacted = new List<ChatMessage>(conversation.Count - removeIndexes.Count);
+        for (int i = 0; i < conversation.Count; i++)
+        {
+            if (!removeIndexes.Contains(i))
+                compacted.Add(conversation[i]);
+        }
+
+        conversation.Clear();
+        conversation.AddRange(compacted);
+        return removed;
+    }
+
+    /// <summary>
+    /// Manual /compact command: runs the 80% micro-compaction regardless of the
+    /// current usage so the user can trim old tool traffic on demand.
+    /// </summary>
+    public static int PerformMicroCompact(List<ChatMessage> conversation)
+    {
+        return MicroCompact(conversation, 2);
     }
 
     public void PublishStatusTokens(int characterCount)
@@ -519,20 +788,46 @@ public class LLMClient
     }
 
     /// <summary>
-    /// Asks the model for a concise summary of the conversation (tools disabled).
-    /// Runs silently — summary text is not streamed to the user.
+    /// Asks the model for a compact structured recap of the conversation (tools disabled).
+    /// Runs silently — summary text is not streamed to the user. When a previous recap
+    /// exists (the floating summary message), it is folded in so details are not lost.
     /// </summary>
-    private string SummarizeConversation(List<ChatMessage> conversation)
+    private string SummarizeConversation(List<ChatMessage> conversation, string previousSummary)
     {
         if (conversation == null || conversation.Count == 0)
             return string.Empty;
 
         List<ChatMessage> summaryConversation = new List<ChatMessage>(conversation);
-        summaryConversation.Add(new ChatMessage(
-            "user",
-            "Please provide a concise summary of our conversation so far. " +
-            "Focus on: the main topics discussed, important details or decisions, " +
-            "and anything that still needs follow-up."));
+
+        bool previousAlreadyInConversation = conversation.Count > 0
+            && conversation[conversation.Count - 1].Content != null
+            && conversation[conversation.Count - 1].Content.StartsWith(
+                SessionStore.SummaryMarker, StringComparison.Ordinal);
+
+        // Inject the earlier recap only when it is not already the floating message.
+        if (!string.IsNullOrEmpty(previousSummary) && !previousAlreadyInConversation)
+        {
+            summaryConversation.Add(new ChatMessage(
+                "user",
+                "Earlier recap you produced; fold it into the updated recap below:\n" + previousSummary));
+        }
+
+        summaryConversation.Add(new ChatMessage("user",
+            "Produce a compact, well-structured recap of the conversation above so that you " +
+            "can continue seamlessly after this context is replaced.\n" +
+            "Preserve EXACT file paths, URLs, identifiers (UUIDs, tokens, IDs), numbers and " +
+            "version strings verbatim — do not abbreviate, guess, or invent them.\n" +
+            "Use exactly these 9 sections, one short bullet per line, '-' when empty:\n" +
+            "1. Main topics discussed\n" +
+            "2. Key facts and information learned\n" +
+            "3. Decisions made and open questions\n" +
+            "4. Code, commands, file paths, URLs, identifiers (verbatim)\n" +
+            "5. Current state / in-progress work\n" +
+            "6. Tools used and their outcomes\n" +
+            "7. User preferences and constraints\n" +
+            "8. What still needs follow-up\n" +
+            "9. Anything that would be hard to reconstruct\n" +
+            "Keep it dense; prefer nouns and exact names over prose."));
 
         // No tools, null output — silent background pass.
         LLMCompletionResponse response = sendMessages(summaryConversation, new List<string>(), null);
@@ -540,6 +835,36 @@ public class LLMClient
             return string.Empty;
 
         return response.Content ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Pulls the floating recap out of a previously-compacted conversation, stripping
+    /// the marker prefix and any trailing "Continue from" hint so a re-summarization
+    /// does not treat the hint as conversation content.
+    /// </summary>
+    private static string ExtractPreviousSummary(List<ChatMessage> conversation)
+    {
+        if (conversation == null)
+            return null;
+
+        for (int i = conversation.Count - 1; i >= 0; i--)
+        {
+            string content = conversation[i].Content;
+            if (string.IsNullOrEmpty(content)
+                || !content.StartsWith(SessionStore.SummaryMarker, StringComparison.Ordinal))
+                continue;
+
+            int newline = content.IndexOf('\n');
+            string body = (newline < 0)
+                ? content.Substring(SessionStore.SummaryMarker.Length)
+                : content.Substring(newline + 1);
+
+            int hint = body.IndexOf("[Continue from", StringComparison.Ordinal);
+            if (hint >= 0)
+                body = body.Substring(0, hint);
+            return body.TrimEnd('\r', '\n', ' ');
+        }
+        return null;
     }
 
     private JObject BuildMessageObject(ChatMessage msg)

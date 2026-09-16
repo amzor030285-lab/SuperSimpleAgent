@@ -106,6 +106,44 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("gui.save_load_dialogs", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    server.FixedReply = "Saved nicely.";
+                    server.StreamDelayMs = 5;
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+
+                        gui.SendTurn("hello dialogs", 30000);
+
+                        gui.ClickMainButton("saveButton");
+                        gui.SetTextBoxInWindow("Save Session", "saveNameInput", "gui_sess", 10000);
+                        gui.ClickButtonInWindow("Save Session", "dialogOkButton", 10000);
+
+                        string sessionFile = Path.Combine(ws.Path, "sessions", "gui_sess.json");
+                        Stopwatch sw = Stopwatch.StartNew();
+                        while (sw.ElapsedMilliseconds < 10000 && !File.Exists(sessionFile))
+                            Thread.Sleep(100);
+                        TestAssert.True(File.Exists(sessionFile), "session file saved");
+                        string json = File.ReadAllText(sessionFile, Encoding.UTF8);
+                        TestAssert.Contains(json, "hello dialogs", "user content preserved");
+
+                        gui.WaitUntilIdle(15000);
+
+                        gui.ClickMainButton("loadButton");
+                        gui.SelectListItemInWindow("Load Session", "sessionListBox", "gui_sess", 10000);
+                        gui.ClickButtonInWindow("Load Session", "dialogOkButton", 10000);
+
+                        gui.WaitUntilIdle(15000);
+                    }
+                }
+            });
+
             TestRunner.Run("gui.window_and_long_chat", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

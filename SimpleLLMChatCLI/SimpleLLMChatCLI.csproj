@@ -85,6 +85,12 @@
     <Compile Include="..\Shared\TokenEstimator.cs">
       <Link>Shared\TokenEstimator.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\SessionStore.cs">
+      <Link>Shared\SessionStore.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\ContextPrompt.cs">
+      <Link>Shared\ContextPrompt.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\TlsConfig.cs">
       <Link>Shared\TlsConfig.cs</Link>
     </Compile>

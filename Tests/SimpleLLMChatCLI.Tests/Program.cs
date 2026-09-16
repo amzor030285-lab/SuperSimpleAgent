@@ -142,6 +142,150 @@ namespace SimpleLLMChatCLI.Tests
                     }
                 }
             });
+
+            TestRunner.Run("cli.session_save_load", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.FixedReply = "Hello there.";
+                    server.StreamDelayMs = 5;
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForText(cli, "Hello there.", 15000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("/save my_session");
+                        CliRunner.WaitForText(cli, "Session saved: my_session", 15000);
+
+                        string sessionFile = Path.Combine(ws.Path, "sessions", "my_session.json");
+                        TestAssert.True(File.Exists(sessionFile), "session file created");
+                        string json = File.ReadAllText(sessionFile, Encoding.UTF8);
+                        TestAssert.Contains(json, "\"Role\": \"assistant\"", "assistant message");
+                        TestAssert.Contains(json, "Hello there.", "content preserved");
+                        TestAssert.Contains(json, "\"Version\": 1", "envelope version");
+
+                        cli.WriteLine("/sessions");
+                        CliRunner.WaitForText(cli, "  my_session", 15000);
+                        TestAssert.Contains(cli.Stdout, "messages", "count printed");
+
+                        cli.WriteLine("/load my_session");
+                        CliRunner.WaitForText(cli, "Session loaded: my_session", 15000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.session_auto_name_and_list", () =>
+            {
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    WriteCliIni(ws.Path, "http://127.0.0.1:1");
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("/save");
+                        CliRunner.WaitForText(cli, "Session saved: session_", 15000);
+
+                        cli.WriteLine("/sessions");
+                        CliRunner.WaitForText(cli, "  session_", 15000);
+                        TestAssert.Contains(cli.Stdout, "messages", "count printed");
+
+                        // No-keyword load picks the most recent session.
+                        cli.WriteLine("/load");
+                        CliRunner.WaitForText(cli, "Session loaded: session_", 15000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.ask_context_high_truncate", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // ~2 KB markdown per turn keeps the test offline and deterministic.
+                    server.LongMarkdownReplies = true;
+                    server.StreamDelayMs = 5;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 850);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("first message");
+                        CliRunner.WaitForText(cli, "# Reply turn 1", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("second message");
+                        CliRunner.WaitForText(cli, "# Reply turn 2", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        // After two turns the context is far beyond the (tiny) window;
+                        // the CLI must ask the user instead of silently proceeding.
+                        cli.WriteLine("third message");
+                        CliRunner.WaitForText(cli, ContextPrompt.AskPrompt, 30000);
+
+                        cli.WriteLine("t");
+                        CliRunner.WaitForText(cli, "[Context usage high - truncated", 30000);
+
+                        CliRunner.WaitForText(cli, "# Reply turn 3", 30000);
+                        CliRunner.WaitForText(cli, "You:", 30000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.compaction_micro_command", () =>
+            {
+                string fileToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "FileTools", "bin", "Release"));
+                string fileToolsExe = Path.Combine(fileToolsDir, "FileTools.exe");
+                if (!File.Exists(fileToolsExe))
+                {
+                    TestRunner.Skip("FileTools.exe not built: " + fileToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.ToolCallRoundsRemaining = 3;
+                    server.ToolCallName = "read_file";
+                    server.StreamDelayMs = 5;
+                    var args = new JObject();
+                    args["filename"] = Path.Combine(ws.Path, "LLMSettings.ini");
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(fileToolsExe, Path.Combine(toolsDir, "FileTools.exe"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "FileTools.json"), Path.Combine(toolsDir, "FileTools.json"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "read_file");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("read the settings file");
+                        // Three tool rounds then a plain reply => three tool groups in context.
+                        CliRunner.WaitForText(cli, "[tool output]", 30000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("/compact");
+                        CliRunner.WaitForText(cli, "Compaction: removed 2 old tool messages.", 20000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                    }
+                }
+            });
         }
 
         static TempWorkspace PackageCliWorkspace()
@@ -157,7 +301,7 @@ namespace SimpleLLMChatCLI.Tests
             return ws;
         }
 
-        static void WriteCliIni(string dir, string llmServer)
+        static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "")
         {
             string path = Path.Combine(dir, "LLMSettings.ini");
             File.WriteAllText(path,
@@ -166,9 +310,9 @@ namespace SimpleLLMChatCLI.Tests
                 "llmserver=" + llmServer + "\r\n" +
                 "model=test-model\r\n" +
                 "sysprompt=\"You are a test assistant.\"\r\n" +
-                "contextWindowSize=0\r\n" +
+                "contextWindowSize=" + contextWindowSize + "\r\n" +
                 "[Tools]\r\n" +
-                "tools=\r\n" +
+                "tools=" + (tools ?? "") + "\r\n" +
                 "toolsrequiringapproval=\r\n" +
                 "[Appearance]\r\n" +
                 "assistantname=LLM\r\n" +

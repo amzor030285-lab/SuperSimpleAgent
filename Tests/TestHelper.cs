@@ -819,6 +819,21 @@ public sealed class FakeOpenAiServer : IDisposable
     /// <summary>Characters per SSE content delta.</summary>
     public int StreamChunkChars { get; set; }
 
+    /// <summary>
+    /// Remaining chat requests that should respond with a tool-call delta instead of
+    /// text. Each consumes one request; when it reaches 0, replies return to content.
+    /// The id increments per tool call ("call_1", "call_2", ...).
+    /// </summary>
+    public int ToolCallRoundsRemaining { get; set; }
+
+    /// <summary>Tool name to emit while tool-call rounds remain.</summary>
+    public string ToolCallName { get; set; }
+
+    /// <summary>Serialized JSON arguments to emit while tool-call rounds remain.</summary>
+    public string ToolCallArguments { get; set; }
+
+    private int _toolCallSeq;
+
     public FakeOpenAiServer()
     {
         FixedReply = "Hello from FakeOpenAiServer.";
@@ -900,6 +915,14 @@ public sealed class FakeOpenAiServer : IDisposable
     private void WriteSseChat(HttpListenerContext ctx)
     {
         _turn++;
+
+        if (ToolCallRoundsRemaining > 0)
+        {
+            ToolCallRoundsRemaining--;
+            WriteToolCallStream(ctx);
+            return;
+        }
+
         string content;
         if (LongMarkdownReplies)
         {
@@ -956,6 +979,44 @@ public sealed class FakeOpenAiServer : IDisposable
                 "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
                 "data: [DONE]\n\n");
             output.Write(trail, 0, trail.Length);
+            output.Flush();
+        }
+        ctx.Response.Close();
+    }
+
+    private void WriteToolCallStream(HttpListenerContext ctx)
+    {
+        _toolCallSeq++;
+        string id = "call_" + _toolCallSeq;
+        string name = string.IsNullOrEmpty(ToolCallName) ? "run_shell_command" : ToolCallName;
+        string args = string.IsNullOrEmpty(ToolCallArguments)
+            ? "{\"command\":\"echo hi\"}"
+            : ToolCallArguments;
+
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "text/event-stream";
+        ctx.Response.SendChunked = true;
+
+        using (Stream output = ctx.Response.OutputStream)
+        {
+            string head = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null," +
+                "\"tool_calls\":[{\"index\":0,\"id\":\"" + id + "\",\"type\":\"function\"," +
+                "\"function\":{\"name\":\"" + EscapeJson(name) + "\",\"arguments\":\"\"}}]}}]}\n\n";
+            byte[] headBytes = Encoding.UTF8.GetBytes(head);
+            output.Write(headBytes, 0, headBytes.Length);
+            output.Flush();
+
+            // Stream the arguments in a second delta (exercises the accumulation path).
+            string body = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[" +
+                "{\"index\":0,\"function\":{\"arguments\":\"" + EscapeJson(args) + "\"}}]}}]}\n\n";
+            byte[] bodyBytes = Encoding.UTF8.GetBytes(body);
+            output.Write(bodyBytes, 0, bodyBytes.Length);
+            output.Flush();
+
+            string tail = "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n" +
+                "data: [DONE]\n\n";
+            byte[] tailBytes = Encoding.UTF8.GetBytes(tail);
+            output.Write(tailBytes, 0, tailBytes.Length);
             output.Flush();
         }
         ctx.Response.Close();

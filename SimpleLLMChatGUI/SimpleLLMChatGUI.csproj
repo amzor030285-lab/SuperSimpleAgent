@@ -100,6 +100,12 @@
     <Compile Include="..\Shared\TokenEstimator.cs">
       <Link>Shared\TokenEstimator.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\SessionStore.cs">
+      <Link>Shared\SessionStore.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\ContextPrompt.cs">
+      <Link>Shared\ContextPrompt.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\StatusPipe\StatusPipe.cs">
       <Link>Shared\StatusPipe\StatusPipe.cs</Link>
     </Compile>
@@ -157,6 +163,7 @@
       <DependentUpon>ModelChooserDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="ProcessHandler.cs" />
+    <Compile Include="SessionDialogs.cs" />
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
     </Compile>
