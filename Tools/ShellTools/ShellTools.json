@@ -1,0 +1,22 @@
+{
+    "name": "Shell Tools",
+    "executable": "ShellTools.exe",
+    "options": [
+        {
+            "name": "outputEncoding",
+            "label": "Shell Output Encoding",
+            "type": "string",
+            "description": "Encoding for cmd.exe output. 'auto' = system OEM code page (866 on Russian, 437 on English). Or: 'utf-8', '866', '1251'.",
+            "default": "auto"
+        }
+    ],
+    "tools": [
+        {
+            "name": "run_shell_command",
+            "description": "Execute a shell command on the host system and return its output.",
+            "parameters": [
+                { "name": "command", "type": "string", "description": "Full command line to execute. Keep it short and avoid interactive programs.", "required": true }
+            ]
+        }
+    ]
+}

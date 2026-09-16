@@ -1,0 +1,85 @@
+{
+    "name": "File Tools",
+    "executable": "FileTools.exe",
+    "options": [
+        { "name": "maxFileContentLength", "label": "Maximum Processing Length for File Content", "type": "int", "default": "8000" },
+        { "name": "outputEncoding", "label": "Output Encoding", "type": "string", "description": "Encoding for external tool output (7za.exe). 'auto' = system OEM code page. Or: 'utf-8', '866', '1251'.", "default": "auto" }
+    ],
+    "tools": [
+        {
+            "name": "read_file",
+            "description": "Read the contents of a local file and return it as a string. Always reads up to {config.maxFileContentLength} characters. Use the offset parameter to read different parts of large files.",
+            "parameters": [
+                { "name": "filename", "type": "string", "description": "The full path of the file to read. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true },
+                { "name": "offset", "type": "string", "description": "Optional. Character offset to start reading from (default: 0). Use this to read different parts of large files. For example, offset {config.maxFileContentLength} reads characters {config.maxFileContentLength}-{config.maxFileContentLength*2}.", "required": false }
+            ]
+        },
+        {
+            "name": "write_file",
+            "description": "Write the given content to a local file, creating or overwriting it. Prefer this for new files or deliberate full-file rewrites. For targeted edits to an existing file, prefer edit_file when available.",
+            "parameters": [
+                { "name": "filename", "type": "string", "description": "The full path of the file to write to. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true },
+                { "name": "content", "type": "string", "description": "The content to write into the file.", "required": true }
+            ]
+        },
+        {
+            "name": "edit_file",
+            "description": "Replace exact text in an existing file. Prefer this over write_file for targeted edits. Provide one or more edits; each edit's old_string must match exactly (including whitespace, indentation, and line endings) and occur exactly once in the file. Multiple edits can be provided to make multiple changes to the same file in one call.",
+            "parameters": [
+                { "name": "filename", "type": "string", "description": "The full path of the file to modify. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true },
+                {
+                    "name": "edits",
+                    "type": "array",
+                    "description": "One or more edits to apply. Each edit's old_string must be unique in the file.",
+                    "required": true,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "old_string": { "type": "string", "description": "The exact text to find, including whitespace and indentation. Must occur exactly once in the file." },
+                            "new_string": { "type": "string", "description": "The text to replace old_string with." }
+                        },
+                        "required": ["old_string", "new_string"]
+                    }
+                }
+            ]
+        },
+        {
+            "name": "extract_file",
+            "description": "Extract an archive file using 7za.exe to a specified destination directory.",
+            "parameters": [
+                { "name": "archive_path", "type": "string", "description": "The full path of the archive file to extract. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true },
+                { "name": "destination_path", "type": "string", "description": "The full path of the destination directory where files will be extracted. Directory will be created if it doesn't exist. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true }
+            ]
+        },
+        {
+            "name": "move_file",
+            "description": "Move or rename a file from one location to another. Destination directory will be created if it doesn't exist.",
+            "parameters": [
+                { "name": "source_path", "type": "string", "description": "The full path of the file to move. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true },
+                { "name": "destination_path", "type": "string", "description": "The full path where the file should be moved to. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true }
+            ]
+        },
+        {
+            "name": "copy_file",
+            "description": "Copy a file from one location to another. Destination directory will be created if it doesn't exist.",
+            "parameters": [
+                { "name": "source_path", "type": "string", "description": "The full path of the file to copy. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true },
+                { "name": "destination_path", "type": "string", "description": "The full path where the file should be copied to. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true }
+            ]
+        },
+        {
+            "name": "delete_file",
+            "description": "Delete a file from the file system. Use with caution as this operation cannot be undone.",
+            "parameters": [
+                { "name": "file_path", "type": "string", "description": "The full path of the file to delete. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true }
+            ]
+        },
+        {
+            "name": "list_directory",
+            "description": "List all files and subdirectories in a given directory.",
+            "parameters": [
+                { "name": "directory_path", "type": "string", "description": "The full path of the directory to list. Supports environment variables like %USERPROFILE%, %APPDATA%, %TEMP%, etc.", "required": true }
+            ]
+        }
+    ]
+}

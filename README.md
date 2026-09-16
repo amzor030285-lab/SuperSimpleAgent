@@ -1,0 +1,224 @@
+<p align="center">
+	<img src="SimpleLLMChatGUI/sllmc.ico" alt="SLLMC Icon" width="120" />
+</p>
+<h3 align="center">SimpleLLMChat</h3>
+<p align="center"><em>AI Chatbot/Agent for Windows XP+</em></p>
+
+## About
+
+SimpleLLMChat is a lightweight C# CLI and GUI application that makes LLMs accessible on both legacy and modern Windows systems. The software is designed to work with OpenAI-compatible endpoints and can be extended via a tool system.
+
+## Features
+- **Customizable GUI** - The GUI's colors and fonts can be customized.
+- **GUI/CLI Modes** - The software can be used either via its REPL CLI or a GUI wrapper.
+- **Image Support** - Images can be passed to supported models via both the CLI and GUI.
+- **Markdown Rendering** - The GUI can render Markdown formatting for easier reading.
+- **OpenAI-Compatible Endpoint Support** - In addition to OpenAI, any service/server offering the OpenAI v1 chat endpoint can be used, including [llama.cpp](https://github.com/ggerganov/llama.cpp) and [LM Studio](https://lmstudio.ai/).
+- **Retrieval Augmented Generation (RAG)** - Retrieve information from documents via a local knowledge folder (see [RAG](#rag)).
+- **Script-Friendly** - Output without tool calls, tool outputs, and reasoning can be piped out of the CLI using the `-o` or `--output-only` flag. **Note**: Tool calls requiring approval will automatically be denied.
+- **Streaming Responses** - Responses are streamed from the LLM server in real-time.
+- **Tools** - A modular, extensible tool system is available. For information about the included tools, see [Tools](#tools).
+
+## Requirements
+
+- Access to the OpenAI API or a compatible LLM server
+  - **Note**: If your server or endpoint requires modern TLS that the OS does not support, a `curl.exe` and `curl-ca-bundle.crt` can be placed in the same folder as the application executable as a fallback (already included in the XP release build).
+- Windows XP (SP3 recommended) or later
+
+## Setup
+
+To use the application, download and extract the appropriate build for your system from the Releases page (builds ending in -XP are recommended for Windows XP systems).
+
+On first launch of `SimpleLLMChatGUI.exe`, if `LLMSettings.ini` does not exist next to the executable, a setup wizard walks through System settings. Settings can also be changed later via Options.
+
+Once configured, the software can be used via the `SimpleLLMChatCLI.exe` or `SimpleLLMChatGUI.exe` executables.
+
+## Building
+
+The project can be built via the included `build.bat` script (Visual Studio/Visual Studio Build Tools/MSBuild required).
+
+Alternatively, the project can be built using the `SimpleLLMChat.sln` file directly in Visual Studio.
+
+Both methods require the .NET 4.0 Targeting Pack to be installed.
+
+**Note**: Builds generated using these methods include only the core executables by default. Optional binaries (`7za.exe`, `curl.exe`, `curl-ca-bundle.crt`, `yt-dlp.exe`) are packaged when present under `deps\` or can be manually placed beside the matching tool's executable. Optional binaries are specified in [Tools](#tools).
+
+## Tests
+
+Test projects live under `Tests\` and are not included in release builds. To build and run tests, from the repo root, run:
+
+```
+build-tests.bat
+run-tests.bat
+```
+
+`build-tests.bat` builds the product and test suites. `run-tests.bat` runs every suite (or one suite when a name is passed, e.g. `run-tests.bat FileTools`) and writes logs under `Tests\logs\`.
+
+**Note**: For cases that need external executables (7za, cURL, YT-DLP), either put them in `deps\` before `build-tests.bat`, or place them beside the matching tool executable before `run-tests.bat`.
+
+## Configuration
+
+On first use, if `LLMSettings.ini` does not exist, the GUI setup wizard creates it from System settings. Appearance, RAG, Tools, and other options can be changed later via Options or by editing the INI manually. The options available within the INI file are as follows:
+
+**Appearance**
+- `assistantname`: Display name for assistant responses (default `LLM`)
+- `codeblockfontfamily`: Font used for rendering code blocks in the GUI
+- `customfontfamily`: Font used for all non-code block text in the GUI
+- `fontsize`: Font size for chat and input text
+- `markdownparsing`: Enables/disables Markdown rendering in the GUI (`1` or `0`)
+- `thinkingdisplay`: Model reasoning appearance (`shown`, `collapsed`, or `hidden`; default `collapsed`). Hidden shows a short `[thought for N seconds]` stub instead of the full reasoning.
+- `toolcalldisplay`: Model tool call appearance (`shown`, `collapsed`, or `hidden`; default `collapsed`). Hidden shows an expanded tool-call header with the tool name only (no arguments).
+- `tooloutputdisplay`: Tool result appearance (`shown`, `collapsed`, or `hidden`; default `shown`). Hidden shows `[tool output]` with the exit code only.
+
+**RAG**
+- `ragenabled`: Enables RAG (`1` or `0`, default off)
+- `ragallowedextensions`: Comma-separated file extensions to index (blank = built-in defaults, provided below)
+  - Allowed formats: `.md`, `.markdown`, `.txt`, `.rst`, `.csv`, `.json`, `.xml`, `.yaml`, `.yml`, `.toml`, `.ini`, `.html`, `.htm`, `.css`, `.cs`, `.py`, `.js`, `.ts`, `.tsx`, `.jsx`, `.java`, `.go`, `.rs`, `.c`, `.h`, `.cpp`, `.hpp`, `.rb`, `.php`, `.sql`, `.sh`, `.ps1`, `.bat`
+- `indexchunkoverlap`: Chunk overlap in lines (default `10`)
+- `indexchunklines`: Chunk size in lines (default `60`)
+- `embeddingsapikey`: Embeddings API key (`apikey` if blank)
+- `embeddingsendpoint`: Embeddings API base URL (`llmserver` if blank)
+- `embeddingsmodel`: Embeddings model name (required)
+- `ragknowledgepath`: Knowledge folder path (`knowledge` folder next to EXE by default)
+- `ragmaxsnippetlength`: Max characters per chunk for embedding/injection (default `2000`)
+- `ragmaxresults`: Number of chunks to retrieve per search (default `5`)
+- `ragretrievemode`: When to retrieve information from knowledge (`everyturn` or `newchat`) (default: `newchat`)
+
+**System**
+- `apikey`: API key (if required by model provider)
+- `llmserver`: Base URL of the OpenAI-compatible endpoint
+- `model`: Model name to use for text generation (if supported by the endpoint)
+- `sysprompt`: System prompt for the LLM
+- `contextWindowSize`: If known, can be set here to enable automatic context summarization when context fills
+
+**Tools**
+- `tools`: Comma-separated list of tools the AI is allowed to use
+- `toolsrequiringapproval`: Comma-separated list of tools that require manual approval for the AI to use
+- `tooltimeout.<toolname>`: Timeout for tool-call in seconds
+
+Tool-specific configuration options for the included tools are available in the [Tools](#tools) section.
+
+## Usage
+
+**GUI**: To launch the GUI interface, open `SimpleLLMChatGUI.exe`.
+
+- To adjust application settings, select `Options`.
+- To attach an image, press the image attachment button (camera icon) and choose a file using the file picker.
+- To clear the chat, press `Clear Chat`.
+- To send a message, type it into the input box and press `Enter` or `Send`. To create multi-line messages, press `Shift+Enter`.
+
+**CLI**: To run the CLI in interactive/REPL mode, open `SimpleLLMChatCLI.exe` directly or from a terminal.
+
+Interactive mode provides the following commands:
+- `/buildindex`: Reconciles the knowledge index (adds/updates/removes changed files)
+- `/clear`: Clears chat context
+- `/clearindex`: Clears the on-disk knowledge index
+- `/exit`: Exits the application
+- `/image`: Sends an image to the model alongside the next message, used as `/image "path" prompt`
+- `/reasoning`: Sets reasoning effort for supported models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`); `/reasoning` alone uses the API default
+- `/reload`: Reloads configuration in place (doesn't clear chat)
+
+The application can also be used in a non-interactive mode.
+
+For a single prompt, use `SimpleLLMChatCLI.exe <prompt>`.
+
+To pass in an image alongside a prompt, use `SimpleLLMChatCLI.exe --image <path> <prompt>`.
+
+CLI mode provides the following additional flags:
+- `--no-banners`: Suppresses instructional prompts
+- `-o`, `--output-only`: Outputs only the model's response text (no thinking, tool-call, or tool-output UI). Tools that do not require approval still run silently. If the model calls a tool that requires approval, the session ends with `Error: Model called <tool> which requires approval`.
+- `--reasoning-effort`: Sets initial reasoning effort for supported models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`)
+
+## Tools
+
+SimpleLLMChat includes the following 6 tool packages:
+
+- File Tools
+  - Tools
+    - `copy_file`: Copies a file from one location to another
+    - `delete_file`: Deletes a file from the file system
+    - `edit_file`: Replaces exact text in an existing file via one or more old_string/new_string edits
+    - `extract_file`: Extracts an archive to a destination directory
+    - `list_directory`: Lists all files and subdirectories in a given directory
+    - `move_file`: Moves a file from one location to another
+    - `read_file`: Reads the contents of a local file
+    - `write_file`: Writes contents to a local file
+  - Configuration Options
+    - `maxFileContentLength`: Maximum number of characters to read from a file (default: `8000`)
+  - Dependencies
+    - `7za.exe`: used to extract archives
+- Memory Tools
+  - Tools
+    - `delete_memory`: Deletes a saved memory entry
+    - `list_memories`: Lists the names of all saved memory entries
+    - `recall_memory`: Reads a saved memory entry
+    - `save_memory`: Saves or updates a memory entry
+    - `search_memories`: Searches all memory entries by keyword
+  - Configuration Options
+    - `memoriesDirectory`: Directory for memory `.md` files (default: `memories` folder next to `MemoryTools.exe`)
+    - `maxContentLength`: Maximum length of a memory entry (in characters) (default: `2000`)
+    - `maxMemories`: Maximum number of memories to store (default: `50`)
+  - Context Injector
+    - `get_memory_context`: Creates a summary of saved memories to be injected into the system prompt
+- Python Tools
+  - Tools
+    - `run_python_script`: Creates and executes a Python script
+  - Dependencies
+    - Python must be installed and available on PATH.
+- Shell Tools
+  - Tools
+    - `run_shell_command`: Executes a shell command
+- Desktop Tools
+  - Tools
+    - `list_windows`: Lists visible top-level windows; optional `window_title` filter. Use for browsing or disambiguation — other tools accept `window_title` directly.
+    - `list_controls`: Lists controls with element indices (`#N`), roles and capture-relative rects (`@x,y` same space as a window screenshot)
+    - `navigate`: Pointer/focus — `click`, `double_click`, `scroll`, `focus` (target via `element`, `hwnd`, or `x`/`y`); `drag` with start (`element` or `x`/`y`) and end (`to_element` or `to_x`/`to_y`); optional `modifiers` (`ctrl`/`shift`/`alt`/`win`) on click/drag. `x`/`y` use the same pixel space as `screenshot` for that scope (window image if `hwnd`/`window_title` is set; desktop image if not).
+    - `set_control_text`: Sets text in a control (target via `element` or `hwnd`)
+    - `send_keys`: Sends keystrokes to the foreground window
+    - `screenshot`: Capture a window or the virtual desktop as JPEG; click with `navigate` using image `x`/`y` and the same scope
+  - Configuration Options
+    - `maxTreeDepth`: Maximum depth when listing control trees (default: `8`)
+    - `maxControls`: Maximum number of controls returned per query (default: `80`)
+  - Context Injector
+    - `get_desktop_context`: Injects a one-line summary of open windows (up to 5 titles, then "and N more")
+- Skill Tools
+  - Tools
+    - `create_skill`: Creates a new agent skill
+    - `edit_skill`: Updates an existing agent skill (description and/or instructions; omitted fields unchanged)
+    - `edit_skill_file`: Creates or overwrites a supporting file under an existing skill (e.g. scripts, references)
+    - `remove_skill`: Deletes an agent skill
+    - `view_skill`: Loads a skill's full `SKILL.md`, absolute path to the skill folder, and relative paths for linked files (optional `relative_path` loads one relative file)
+  - Configuration Options
+    - `skillsDirectory`: Directory to scan recursively for skill folders (folders containing 'SKILL.md') (default: `skills` folder next to `SkillTools.exe`)
+  - Context Injector
+    - `get_skills_context`: Injects the skills directory path, skill names and descriptions, and instructions to load matching skills via `view_skill`, run scripts as shell commands under the skill root, and author skills with `create_skill` / `edit_skill` / `edit_skill_file` / `remove_skill`.
+- Web Tools
+  - Tools
+    - `download_file`: Downloads a file using cURL
+    - `download_video`: Downloads an online video using YT-DLP and saves it to the user's desktop
+    - `read_website`: Reads a webpage as Title/Description, body text (image alt+src kept), and a Links section with a configurable cap
+    - `run_web_search`: Searches the web using SearXNG, with Firecrawl, DDG, and Wiby as fallbacks
+  - Configuration Options
+    - `maxSearchResults`: Maximum number of search results to retrieve (default: `20`)
+    - `maxWebContentLength`: Maximum number of characters to return when reading a webpage (default: `10000`; `0` = no limit)
+    - `maxLinks`: Maximum number of unique links to include at the end of a webpage read (default: `40`)
+    - `FirecrawlEndpoint`: Firecrawl API base URL (e.g. `http://localhost:3002`). If set, `read_website` will attempt to use it to view page content. (default: none)
+    - `FirecrawlApiKey`: Firecrawl API key (optional) (default: none)
+    - `SearXNGInstance`: SearXNG instance to use for running web searches (must support JSON API) (default: none)
+    - `userAgent`: User agent to use when making web requests (default: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36`)
+  - Dependencies
+    - `curl-ca-bundle.crt`: used for cURL
+    - `curl.exe`:  used to download web content
+    - `yt-dlp.exe`: used to download online videos
+
+**Note**: Dependencies should be placed alongside tool executables. The release builds already include these dependencies, with the exclusion of Python.
+
+Third-party tools can be installed by extracting them into the `tools` folder. For more information on developing/distributing custom tools, see [SimpleLLMChat-Tool-SDK](https://github.com/randomNinja64/SimpleLLMChat-Tool-SDK)
+
+## Credits
+
+Thank you to the following for all of their contributions:
+
+- [LoRd_MuldeR](https://github.com/lordmulder/cURL-build-win32) for the cURL builds for XP
+- [myamano4](https://mininet.neocities.org) for the icon
+- [nicolaasjan](https://github.com/nicolaasjan) for the YT-DLP builds for XP

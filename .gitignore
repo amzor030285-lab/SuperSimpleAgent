@@ -1,0 +1,8 @@
+bin/
+obj/
+Tests-Build/
+Tests/logs/
+*.user
+*.suo
+.vs/
+packages/
