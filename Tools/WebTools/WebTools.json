@@ -2,7 +2,7 @@
     "name": "Web Tools",
     "executable": "WebTools.exe",
     "options": [
-        { "name": "maxWebContentLength", "label": "Maximum Processing Length for Web Content (0 = no limit)", "type": "int", "default": "10000" },
+        { "name": "maxWebContentLength", "label": "Maximum Processing Length for Web Content (0 = no limit)", "type": "int", "default": "20000" },
         { "name": "maxLinks", "label": "Maximum Links from Webpage", "type": "int", "default": "40" },
         { "name": "maxSearchResults", "label": "Maximum Search Results", "type": "int", "default": "20" },
         { "name": "FirecrawlEndpoint", "label": "Firecrawl API base URL (optional)", "type": "string", "default": "" },
@@ -13,7 +13,7 @@
     "tools": [
         {
             "name": "read_website",
-            "description": "Browse to a URL and return Title/Desc, page text and images (alts+srcs), and a Links section. Output is capped at {config.maxWebContentLength} characters; truncating body as needed.",
+            "description": "Browse to a URL and return Title/Desc, the main page text (navigation/footers removed, duplicates dropped) and images (alts+srcs), plus a Links section. Output is capped at {config.maxWebContentLength} characters (head+tail); the full text is saved to a temp file that can be read in parts with read_file (offset).",
             "parameters": [
                 { "name": "URL", "type": "string", "description": "The URL of the web page to get the content of.", "required": true }
             ]

@@ -44,9 +44,7 @@ namespace WebTools
                 catch
                 {
                     // Conversion failed: fall back to the older HTML stripper so the LLM still gets something.
-                    text = FallbackPlainText(html);
-                    if (maxContentLength > 0 && text.Length > maxContentLength)
-                        text = TruncateBody(text, maxContentLength);
+                    text = CapReadableOutput(FallbackPlainText(html), maxContentLength);
                 }
 
                 if (string.IsNullOrWhiteSpace(text))
@@ -186,6 +184,7 @@ namespace WebTools
             string desc = ExtractMetaDescription(html);
 
             html = StripNonContentBlocks(html);
+            html = SelectMainContent(html);
 
             Uri baseUri = null;
             if (!string.IsNullOrWhiteSpace(pageUrl))
@@ -261,31 +260,34 @@ namespace WebTools
             int maxContentLength)
         {
             string header = "Title: " + (title ?? "") + "\nDesc: " + (desc ?? "") + "\n\n";
-            List<KeyValuePair<string, string>> usedLinks = new List<KeyValuePair<string, string>>(links);
-            string linksSection = FormatLinksSection(usedLinks);
+            string full = header
+                + DedupeParagraphs(body ?? "")
+                + FormatLinksSection(links);
+            return CapReadableOutput(full, maxContentLength);
+        }
 
-            // 0 (or negative) = no length limit — keep full body and links.
-            if (maxContentLength > 0)
-            {
-                while (header.Length + linksSection.Length > maxContentLength && usedLinks.Count > 0)
-                {
-                    usedLinks.RemoveAt(usedLinks.Count - 1);
-                    linksSection = FormatLinksSection(usedLinks);
-                }
+        /// <summary>
+        /// Caps the assembled page text to maxContentLength (0 = no limit):
+        /// head + marker + tail. The full uncapped text is offloaded to a temp
+        /// file the model can read in parts via read_file (offset).
+        /// </summary>
+        private static string CapReadableOutput(string text, int maxContentLength)
+        {
+            if (maxContentLength <= 0 || string.IsNullOrEmpty(text) || text.Length <= maxContentLength)
+                return text;
 
-                int bodyBudget = maxContentLength - header.Length - linksSection.Length;
-                if (bodyBudget < 0)
-                    bodyBudget = 0;
-
-                if (body.Length > bodyBudget)
-                    body = TruncateBody(body, bodyBudget);
-            }
-
-            StringBuilder sb = new StringBuilder();
-            sb.Append(header);
-            sb.Append(body);
-            sb.Append(linksSection);
-            return sb.ToString();
+            int headChars = Math.Min(12000, maxContentLength / 2);
+            int tailChars = Math.Min(6000, maxContentLength / 4);
+            string head = text.Substring(0, headChars);
+            string tail = text.Substring(text.Length - tailChars);
+            int omitted = text.Length - headChars - tailChars;
+            string offloadPath = ToolHelper.OffloadToTempFile(text, "read_website");
+            string pathHint = offloadPath != null
+                ? " Full output saved to " + offloadPath + " - read it in parts with the read_file tool (offset)."
+                : "";
+            return head
+                + "\n[... " + omitted + " characters omitted: page text exceeded the " + maxContentLength + " character limit." + pathHint + "]\n"
+                + tail;
         }
 
         private static string FormatLinksSection(List<KeyValuePair<string, string>> links)
@@ -303,15 +305,6 @@ namespace WebTools
                 sb.Append(links[i].Value);
             }
             return sb.ToString();
-        }
-
-        private static string TruncateBody(string body, int maxLength)
-        {
-            // 0 (or negative) = no limit
-            if (maxLength <= 0 || body.Length <= maxLength)
-                return body;
-            else
-                return body.Substring(0, maxLength);
         }
 
         private static string ExtractMetaDescription(string html)
@@ -437,6 +430,7 @@ namespace WebTools
         private static string StripNonContentBlocks(string html)
         {
             html = Regex.Replace(html, @"<!DOCTYPE[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            html = Regex.Replace(html, @"<!--.*?-->", "", RegexOptions.Singleline);
             html = Regex.Replace(html, @"<html\b[^>]*>", "<html>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             html = Regex.Replace(html, @"<script\b[^<]*(?:(?!</script>)<[^<]*)*</script>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             html = Regex.Replace(html, @"<style\b[^<]*(?:(?!</style>)<[^<]*)*</style>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
@@ -444,9 +438,67 @@ namespace WebTools
             html = Regex.Replace(html, @"<noscript\b[^<]*(?:(?!</noscript>)<[^<]*)*</noscript>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             html = Regex.Replace(html, @"<nav\b[^<]*(?:(?!</nav>)<[^<]*)*</nav>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             html = Regex.Replace(html, @"<header\b[^<]*(?:(?!</header>)<[^<]*)*</header>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            html = Regex.Replace(html, @"<footer\b[^<]*(?:(?!</footer>)<[^<]*)*</footer>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            html = Regex.Replace(html, @"<aside\b[^<]*(?:(?!</aside>)<[^<]*)*</aside>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             html = Regex.Replace(html, @"<form\b[^<]*(?:(?!</form>)<[^<]*)*</form>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            html = Regex.Replace(html, @"<iframe\b[^>]*>", "", RegexOptions.IgnoreCase);
             html = Regex.Replace(html, @"<head\b[^>]*>.*?</head>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             return html;
+        }
+
+        /// <summary>
+        /// Picks the main content region: prefers &lt;main&gt;, then &lt;article&gt;,
+        /// then &lt;body&gt;. A region is rejected when its visible text is too
+        /// short to be the article (e.g. an empty loader stub), falling back
+        /// to the next wider region, then to the whole document.
+        /// </summary>
+        private static string SelectMainContent(string html)
+        {
+            string[] regionPatterns =
+            {
+                @"<main\b[^>]*>(.*?)</main>",
+                @"<article\b[^>]*>(.*?)</article>",
+                @"<body\b[^>]*>(.*?)</body>"
+            };
+            for (int i = 0; i < regionPatterns.Length; i++)
+            {
+                Match m = Regex.Match(html, regionPatterns[i], RegexOptions.IgnoreCase | RegexOptions.Singleline);
+                if (!m.Success)
+                    continue;
+                string region = m.Groups[1].Value;
+                int textLength = NormalizeWhitespace(StripTags(region)).Length;
+                if (textLength < 100)
+                    continue;
+                return region;
+            }
+            return html;
+        }
+
+        /// <summary>
+        /// Drops paragraph blocks that repeat verbatim (nav copies, repeated
+        /// "read more" rows). First occurrence wins, order preserved.
+        /// </summary>
+        private static string DedupeParagraphs(string body)
+        {
+            if (string.IsNullOrEmpty(body))
+                return body ?? "";
+
+            string[] parts = body.Split(new[] { "\n\n" }, StringSplitOptions.None);
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string p = parts[i].Trim();
+                if (p.Length == 0)
+                    continue;
+                string key = NormalizeWhitespace(p);
+                if (!seen.Add(key))
+                    continue;
+                if (sb.Length > 0)
+                    sb.Append("\n\n");
+                sb.Append(p);
+            }
+            return sb.ToString();
         }
 
         /// <summary>

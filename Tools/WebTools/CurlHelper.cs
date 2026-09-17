@@ -13,7 +13,9 @@ namespace WebTools
             string hdrs = string.Concat(System.Array.ConvertAll(extraHeaders, h => " -H \"" + h + "\""));
             string flags = string.IsNullOrEmpty(extraFlags) ? "" : extraFlags + " ";
             string arguments = "-s -L " + flags + ua + hdrs + " \"" + url + "\"";
-            return ToolHelper.ExecuteProcess("curl.exe", arguments, out exitCode, combineErrorOutput);
+            // Raw HTML/JSON is an intermediate artifact: the parsed result is
+            // capped by WebBrowser, not the raw bytes.
+            return ToolHelper.ExecuteProcess("curl.exe", arguments, out exitCode, combineErrorOutput, null, false);
         }
 
         /// <summary>
@@ -26,7 +28,7 @@ namespace WebTools
                 + string.Concat(System.Array.ConvertAll(extraHeaders, h => " -H \"" + h + "\""));
             string escapedJson = (jsonBody ?? "").Replace("\"", "\\\"");
             string arguments = "-s -L -X POST" + hdrs + " -d \"" + escapedJson + "\" \"" + url + "\"";
-            return ToolHelper.ExecuteProcess("curl.exe", arguments, out exitCode, combineErrorOutput);
+            return ToolHelper.ExecuteProcess("curl.exe", arguments, out exitCode, combineErrorOutput, null, false);
         }
 
         public static string[] FirecrawlAuthHeaders(string apiKey)

@@ -287,9 +287,10 @@ namespace SimpleLLMChatCLI.Tests
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
                 using (TempWorkspace ws = PackageCliWorkspace())
                 {
-                    // A file much larger than the 120k process-output ceiling: the
+                    // A file much larger than the 20k process-output ceiling: the
                     // shell tool must cap the captured output (head + tail + marker)
-                    // instead of dumping ~300KB into the conversation.
+                    // and offload the full output to a file instead of dumping
+                    // ~300KB into the conversation.
                     StringBuilder big = new StringBuilder();
                     for (int i = 0; i < 30000; i++)
                         big.Append("0123456789");
@@ -317,7 +318,8 @@ namespace SimpleLLMChatCLI.Tests
                         CliRunner.WaitForText(cli, "You:", 20000);
 
                         cli.WriteLine("print the big file");
-                        CliRunner.WaitForText(cli, "characters omitted: output exceeded the 120000 character limit", 60000);
+                        CliRunner.WaitForText(cli, "characters omitted: output exceeded the 20000 character limit", 60000);
+                        CliRunner.WaitForText(cli, "Full output saved to", 60000);
                         CliRunner.WaitForText(cli, server.FixedReply, 30000);
                         CliRunner.WaitForText(cli, "You:", 15000);
                     }

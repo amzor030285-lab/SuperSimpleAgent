@@ -13,7 +13,7 @@ namespace WebTools
                     case "read_website":
                         {
                             string URL = ToolHelper.GetRequiredArg(argumentsJson, "URL");
-                            int maxContentLength = ToolHelper.GetConfigInt("maxwebcontentlength", 10000);
+                            int maxContentLength = ToolHelper.GetConfigInt("maxwebcontentlength", 20000);
                             int maxLinks = ToolHelper.GetConfigInt("maxlinks", 40);
                             string firecrawlEndpoint = ToolHelper.GetConfigValue("firecrawlendpoint");
                             string firecrawlApiKey = ToolHelper.GetConfigValue("firecrawlapikey");

@@ -190,15 +190,49 @@ public static class ToolHelper
     private const int PipeDrainTimeoutMs = 500;
     private const int PipeCloseJoinTimeoutMs = 100;
 
-    // Hard ceiling for raw process output so a single tool result (e.g. a
-    // chatty shell command) can never blow the conversation past the context
-    // window on its own. Head and tail are kept; the middle is replaced by
-    // a marker.
-    private const int MaxProcessOutputChars = 120000;
-    private const int ProcessOutputHeadChars = 80000;
-    private const int ProcessOutputTailChars = 40000;
+    // Hard ceiling for raw tool output so a single tool result (e.g. a chatty
+    // shell command or a huge web page) can never blow the conversation past
+    // the context window on its own. Head and tail are kept; the middle is
+    // replaced by a marker, and the full output is offloaded to a temp file
+    // the model can read in parts with read_file (offset).
+    public const int MaxProcessOutputChars = 20000;
+    private const int ProcessOutputHeadChars = 12000;
+    private const int ProcessOutputTailChars = 6000;
 
-    private static string CapProcessOutput(string text)
+    /// <summary>
+    /// Saves the full uncapped output to %TEMP%\webtools-offload so the model
+    /// can read it in parts via read_file with offset. Returns the file path,
+    /// or null when writing failed.
+    /// </summary>
+    public static string OffloadToTempFile(string text, string toolName)
+    {
+        if (string.IsNullOrEmpty(text))
+            return null;
+        try
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "webtools-offload");
+            Directory.CreateDirectory(dir);
+            string name = SafeFileToken(toolName) + "-" + Process.GetCurrentProcess().Id + "-"
+                + DateTime.Now.ToString("HHmmssfff") + ".txt";
+            string file = Path.Combine(dir, name);
+            File.WriteAllText(file, text, Encoding.UTF8);
+            return file;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string SafeFileToken(string name)
+    {
+        string token = (name ?? "").Trim();
+        if (token.Length == 0)
+            return "tool";
+        return System.Text.RegularExpressions.Regex.Replace(token, @"[^a-zA-Z0-9_.-]", "_");
+    }
+
+    private static string CapProcessOutput(string text, string toolName)
     {
         if (string.IsNullOrEmpty(text) || text.Length <= MaxProcessOutputChars)
             return text;
@@ -206,12 +240,21 @@ public static class ToolHelper
         string head = text.Substring(0, ProcessOutputHeadChars);
         string tail = text.Substring(text.Length - ProcessOutputTailChars);
         int omitted = text.Length - ProcessOutputHeadChars - ProcessOutputTailChars;
+        string offloadPath = OffloadToTempFile(text, toolName);
+        string pathHint = offloadPath != null
+            ? " Full output saved to " + offloadPath + " - read it in parts with the read_file tool (offset)."
+            : "";
         return head
-            + "\n[... " + omitted + " characters omitted: output exceeded the " + MaxProcessOutputChars + " character limit ...]\n"
+            + "\n[... " + omitted + " characters omitted: output exceeded the " + MaxProcessOutputChars + " character limit." + pathHint + "]\n"
             + tail;
     }
 
-    public static string ExecuteProcess(string fileName, string arguments, out int exitCode, bool combineErrorOutput = true, Encoding outputEncoding = null)
+    /// <summary>
+    /// Runs a process and returns its (optionally capped) output. capOutput=false
+    /// is for intermediate artifacts (e.g. raw HTML fetched for parsing) where
+    /// the caller caps the final parsed result instead.
+    /// </summary>
+    public static string ExecuteProcess(string fileName, string arguments, out int exitCode, bool combineErrorOutput = true, Encoding outputEncoding = null, bool capOutput = true)
     {
         Encoding enc = outputEncoding ?? Encoding.UTF8;
         try
@@ -264,7 +307,9 @@ public static class ToolHelper
                 string combined = combineErrorOutput && !string.IsNullOrEmpty(error)
                     ? output + error
                     : output;
-                return CapProcessOutput(combined);
+                if (!capOutput)
+                    return combined;
+                return CapProcessOutput(combined, SafeFileToken(Path.GetFileNameWithoutExtension(fileName)));
             }
         }
         catch (Exception ex)

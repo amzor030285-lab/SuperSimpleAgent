@@ -436,7 +436,7 @@ public class LLMClient
     /// Per-message ceiling used when no context window is configured: a single
     /// message larger than this would overflow the context window on its own.
     /// </summary>
-    private const int MaxMessageChars = 120000;
+    private const int MaxMessageChars = 20000;
 
     /// <summary>
     /// Caps every message whose content exceeds the per-message budget (head and
