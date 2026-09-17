@@ -97,6 +97,7 @@ namespace SimpleLLMChatGUI
                 ContentRendered -= onRendered;
                 OnboardingWizardWindow.ShowIfNeeded(this);
                 StartLLMProcess();
+                AutoRestoreLastSession();
             };
             ContentRendered += onRendered;
         }
@@ -661,8 +662,69 @@ namespace SimpleLLMChatGUI
             EndStreamingTurn();
             _chatTurns.Clear();
             _streamingTurn = null;
+            RenderHistoricTurns(sessionsDir, sessionName);
             EnterGeneratingMode();
             processHandler.SendInput("/load " + sessionName);
+        }
+
+        /// <summary>
+        /// Draws a saved session's past messages straight into the window so the
+        /// user sees the conversation itself, not just the CLI's one-line
+        /// "session loaded, N messages" acknowledgement.
+        /// </summary>
+        private void RenderHistoricTurns(string sessionsDir, string sessionName)
+        {
+            List<HistoricMessage> loaded = null;
+            try
+            {
+                SessionStore.Load(sessionsDir, sessionName, out loaded);
+            }
+            catch
+            {
+                loaded = null;
+            }
+
+            if (loaded == null)
+                return;
+
+            foreach (HistoricMessage msg in loaded)
+            {
+                ChatTurn turn = AddTurn();
+                if (string.Equals(msg.Role, "user", StringComparison.OrdinalIgnoreCase))
+                    turn.AppendText("You: " + msg.Content);
+                else
+                    turn.AppendText("Assistant: " + msg.Content);
+                if (IsMarkdownParsingEnabled())
+                    turn.ProcessMarkdown();
+                turn.Complete();
+            }
+        }
+
+        private void AutoRestoreLastSession()
+        {
+            try
+            {
+                string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
+                string sessionFile = Path.Combine(sessionsDir, "lastsession.json");
+                if (File.Exists(sessionFile))
+                {
+                    // Render the previously saved conversation into the window so a
+                    // freshly reopened app shows the actual past messages instead of
+                    // an empty chat. The CLI itself also restores this session into
+                    // its own context, so nothing is lost or overwritten.
+                    RenderHistoricTurns(sessionsDir, "lastsession");
+                }
+            }
+            catch
+            {
+                // Best-effort: never block startup on history rendering failures.
+            }
+        }
+
+        private sealed class HistoricMessage
+        {
+            public string Role { get; set; }
+            public string Content { get; set; }
         }
 
         private void clearButton_Click(object sender, RoutedEventArgs e)

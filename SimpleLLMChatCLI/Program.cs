@@ -191,6 +191,17 @@ namespace SimpleLLMChatCLI
 
             string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
+            // Restore the most recent session so a freshly reopened app picks up
+            // where the user left off instead of silently starting a blank chat
+            // (which previously overwrote "lastsession" on the first new message).
+            List<LLMClient.ChatMessage> restored = null;
+            if (SessionStore.Load(sessionsDir, "lastsession", out restored)
+                && restored != null && restored.Count > 0)
+            {
+                conversation.AddRange(restored);
+                ChatOutput.WriteLine("\n-- restored lastsession: " + restored.Count + " messages --");
+            }
+
             bool showBanners = true;
 
             // Check if any command-line arguments were provided
