@@ -329,6 +329,10 @@ namespace SimpleLLMChatCLI
                 if (userInput == "/clear")
                 {
                     conversation.Clear();
+                    // Also wipe the auto-saved last session on disk, otherwise
+                    // the next startup (or a restarted GUI CLI process) would
+                    // restore the conversation the user just cleared.
+                    SessionStore.Delete(sessionsDir, "lastsession");
                     client.PublishStatusTokens(client.GetBaseCharacterOverhead());
                     if (showBanners)
                     {

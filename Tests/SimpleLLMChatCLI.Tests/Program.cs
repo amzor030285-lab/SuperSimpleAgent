@@ -326,6 +326,42 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.clear_wipes_lastsession", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.StreamDelayMs = 5;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0);
+
+                    string lastsessionFile = Path.Combine(ws.Path, "sessions", "lastsession.json");
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        // After a completed turn the CLI mirrors the
+                        // conversation into lastsession.json; the re-prompt
+                        // only appears once that save is done.
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                        TestAssert.True(File.Exists(lastsessionFile), "lastsession saved after a turn");
+
+                        // /clear must wipe the in-memory context AND the
+                        // on-disk auto-saved session, otherwise the next
+                        // startup would restore the conversation the user
+                        // just cleared.
+                        cli.WriteLine("/clear");
+                        DateTime deadline = DateTime.UtcNow.AddMilliseconds(15000);
+                        while (File.Exists(lastsessionFile) && DateTime.UtcNow < deadline)
+                            System.Threading.Thread.Sleep(50);
+                        TestAssert.True(!File.Exists(lastsessionFile), "lastsession wiped by /clear");
+                        TestAssert.True(!cli.HasExited, "CLI still alive after /clear");
+                    }
+                }
+            });
+
             TestRunner.Run("cli.restored_oversized_session_capped", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

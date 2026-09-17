@@ -611,6 +611,15 @@ namespace SimpleLLMChatGUI
                 _chatTurns.Clear();
                 _streamingTurn = null;
                 SetInputControlsEnabled(false);
+                // Wipe the auto-saved last session so the restarted CLI does
+                // not restore it into a freshly cleared chat.
+                try
+                {
+                    SessionStore.Delete(
+                        SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory),
+                        "lastsession");
+                }
+                catch { }
                 StartLLMProcess();
             }), System.Windows.Threading.DispatcherPriority.Background);
         }
