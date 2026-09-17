@@ -190,6 +190,27 @@ public static class ToolHelper
     private const int PipeDrainTimeoutMs = 500;
     private const int PipeCloseJoinTimeoutMs = 100;
 
+    // Hard ceiling for raw process output so a single tool result (e.g. a
+    // chatty shell command) can never blow the conversation past the context
+    // window on its own. Head and tail are kept; the middle is replaced by
+    // a marker.
+    private const int MaxProcessOutputChars = 120000;
+    private const int ProcessOutputHeadChars = 80000;
+    private const int ProcessOutputTailChars = 40000;
+
+    private static string CapProcessOutput(string text)
+    {
+        if (string.IsNullOrEmpty(text) || text.Length <= MaxProcessOutputChars)
+            return text;
+
+        string head = text.Substring(0, ProcessOutputHeadChars);
+        string tail = text.Substring(text.Length - ProcessOutputTailChars);
+        int omitted = text.Length - ProcessOutputHeadChars - ProcessOutputTailChars;
+        return head
+            + "\n[... " + omitted + " characters omitted: output exceeded the " + MaxProcessOutputChars + " character limit ...]\n"
+            + tail;
+    }
+
     public static string ExecuteProcess(string fileName, string arguments, out int exitCode, bool combineErrorOutput = true, Encoding outputEncoding = null)
     {
         Encoding enc = outputEncoding ?? Encoding.UTF8;
@@ -240,11 +261,10 @@ public static class ToolHelper
                 outThread.Join(PipeCloseJoinTimeoutMs);
                 errThread.Join(PipeCloseJoinTimeoutMs);
 
-                if (combineErrorOutput && !string.IsNullOrEmpty(error))
-                {
-                    return output + error;
-                }
-                return output;
+                string combined = combineErrorOutput && !string.IsNullOrEmpty(error)
+                    ? output + error
+                    : output;
+                return CapProcessOutput(combined);
             }
         }
         catch (Exception ex)

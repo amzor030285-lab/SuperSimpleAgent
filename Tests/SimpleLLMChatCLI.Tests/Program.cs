@@ -273,6 +273,96 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.shell_output_capped", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // A file much larger than the 120k process-output ceiling: the
+                    // shell tool must cap the captured output (head + tail + marker)
+                    // instead of dumping ~300KB into the conversation.
+                    StringBuilder big = new StringBuilder();
+                    for (int i = 0; i < 30000; i++)
+                        big.Append("0123456789");
+                    string bigPath = Path.Combine(ws.Path, "big.txt");
+                    File.WriteAllText(bigPath, big.ToString());
+
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var args = new JObject();
+                    args["command"] = "type " + bigPath;
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("print the big file");
+                        CliRunner.WaitForText(cli, "characters omitted: output exceeded the 120000 character limit", 60000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.restored_oversized_session_capped", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // Hand-crafted session (pre-cap era) whose tool message is ~160KB.
+                    // With contextWindowSize=0 the percentage ladder never fires, so
+                    // the absolute per-message guard must cap it before the request.
+                    StringBuilder huge = new StringBuilder();
+                    for (int i = 0; i < 20000; i++)
+                        huge.Append("abcdefgh");
+                    string sessionJson =
+                        "{\"Version\":1,\"SavedAtUtc\":\"2026-01-01T00:00:00Z\",\"Messages\":[" +
+                        "{\"Role\":\"user\",\"Content\":\"do the thing\",\"ToolCallId\":\"\",\"ToolCalls\":[]}," +
+                        "{\"Role\":\"tool\",\"Content\":\"" + huge.ToString() + "\",\"ToolCallId\":\"call_1\",\"ToolCalls\":[]}" +
+                        "]}";
+                    string sessionsDir = Path.Combine(ws.Path, "sessions");
+                    Directory.CreateDirectory(sessionsDir);
+                    File.WriteAllText(Path.Combine(sessionsDir, "huge.json"), sessionJson, Encoding.UTF8);
+
+                    server.StreamDelayMs = 5;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("/load huge");
+                        CliRunner.WaitForText(cli, "Session loaded: huge", 15000);
+
+                        cli.WriteLine("continue");
+                        CliRunner.WaitForText(cli, "[Context safety - oversized message(s) capped to the per-message limit]", 30000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                    }
+                }
+            });
+
             TestRunner.Run("cli.compaction_micro_command", () =>
             {
                 string fileToolsDir = Path.GetFullPath(Path.Combine(

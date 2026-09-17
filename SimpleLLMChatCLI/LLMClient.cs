@@ -227,6 +227,16 @@ public class LLMClient
 
             if (response.FinishReason == "request_failed")
             {
+                // A single oversized message (e.g. a huge tool output restored from an
+                // old session) can make the server reject the whole request. Force
+                // hard compaction and retry once before giving up.
+                if (LooksLikeContextOverflow(response.Content)
+                    && CapOversizedMessages(conversation, config.GetConfigInt("contextWindowSize", 0)) > 0)
+                {
+                    ChatOutput.WriteLine("[Context overflow detected - capped oversized messages and retrying]");
+                    continue;
+                }
+
                 if (!outputOnly)
                     ChatOutput.StartBlock();
                 ChatOutput.WriteLine("Request to LLM Failed (" + response.Content + ")");
@@ -376,6 +386,16 @@ public class LLMClient
         int contextWindowSize = config.GetConfigInt("contextWindowSize", 0);
         PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
 
+        // Absolute guard: with no context window configured the percentage-based
+        // ladder below can never fire, so enforce a hard per-message ceiling
+        // (this also heals sessions that were restored with an oversized message).
+        if (contextWindowSize <= 0 && CapOversizedMessages(conversation, 0) > 0)
+        {
+            ChatOutput.WriteLine("[Context safety - oversized message(s) capped to the per-message limit]");
+            PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
+            return;
+        }
+
         if (UsageOf(conversation, contextWindowSize) < TokenEstimator.MicroCompactThreshold)
             return;
 
@@ -410,6 +430,67 @@ public class LLMClient
         return TokenEstimator.Usage(
             GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead(),
             contextWindowSize);
+    }
+
+    /// <summary>
+    /// Per-message ceiling used when no context window is configured: a single
+    /// message larger than this would overflow the context window on its own.
+    /// </summary>
+    private const int MaxMessageChars = 120000;
+
+    /// <summary>
+    /// Caps every message whose content exceeds the per-message budget (head and
+    /// tail kept, middle replaced by a marker). The budget is ~60% of the context
+    /// window when one is configured, otherwise the absolute MaxMessageChars.
+    /// Returns the number of messages capped.
+    /// </summary>
+    private int CapOversizedMessages(List<ChatMessage> conversation, int contextWindowSize)
+    {
+        int budget = contextWindowSize > 0
+            ? (int)(contextWindowSize * 0.6 / TokenEstimator.TokensPerCharacter)
+            : MaxMessageChars;
+        if (budget < 8000)
+            budget = 8000;
+
+        int headChars = budget * 2 / 3;
+        int tailChars = budget / 3;
+        int capped = 0;
+
+        for (int i = 0; i < conversation.Count; i++)
+        {
+            ChatMessage message = conversation[i];
+            if (message.Content == null || message.Content.Length <= budget)
+                continue;
+
+            string head = message.Content.Substring(0, headChars);
+            string tail = message.Content.Substring(message.Content.Length - tailChars);
+            int omitted = message.Content.Length - headChars - tailChars;
+            message.Content = head
+                + "\n[... " + omitted + " characters omitted: message exceeded the " + budget + " character budget ...]\n"
+                + tail;
+            capped++;
+        }
+        return capped;
+    }
+
+    /// <summary>
+    /// True when a request-failure error text looks like the server rejected the
+    /// prompt because it is too large for the context window (400/413 with a
+    /// context/token/length hint), rather than a network or auth problem.
+    /// </summary>
+    private static bool LooksLikeContextOverflow(string errorText)
+    {
+        if (string.IsNullOrEmpty(errorText))
+            return false;
+
+        string text = errorText.ToLowerInvariant();
+        bool isHttpError = text.Contains("http 400") || text.Contains("http 413");
+        bool overflowHint = text.Contains("context")
+            || text.Contains("token")
+            || text.Contains("too long")
+            || text.Contains("maximum")
+            || text.Contains("length");
+        return isHttpError && overflowHint;
     }
 
     /// <summary>
