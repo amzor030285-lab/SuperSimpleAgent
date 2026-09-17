@@ -409,6 +409,30 @@ namespace SimpleLLMChatGUI
                     // On error, do nothing (use system defaults)
                 }
             }
+            UpdateThemeButton();
+        }
+
+        private void UpdateThemeButton()
+        {
+            string theme = ColorHelper.GetTheme(App.ColorsFileName);
+            bool dark = ColorHelper.IsDarkTheme(theme);
+            themeButton.Content = dark ? "☾" : "☀";
+            themeButton.ToolTip = "Theme: " + ColorHelper.GetThemeDisplayName(theme);
+        }
+
+        private void compactButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (processHandler != null && processHandler.IsProcessRunning)
+                processHandler.SendInput("/compactfull");
+        }
+
+        private void themeButton_Click(object sender, RoutedEventArgs e)
+        {
+            string current = ColorHelper.GetTheme(App.ColorsFileName);
+            int idx = Array.IndexOf(ColorHelper.ThemeOrder, current);
+            string theme = ColorHelper.ThemeOrder[(idx + 1) % ColorHelper.ThemeOrder.Length];
+            ColorHelper.SaveTheme(theme, App.ColorsFileName);
+            LoadAndApplyColors();
         }
 
 

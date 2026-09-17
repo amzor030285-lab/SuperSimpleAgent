@@ -283,6 +283,36 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.compaction_full_command", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // One tool round (run_shell_command is NOT enabled => produces a
+                    // disabled-tool message, which still creates a compactable tool
+                    // group), then a plain reply. /compactfull must run the whole
+                    // ladder: micro-compact + silent summarize-and-replace.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.StreamDelayMs = 5;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("compact me");
+                        // The disabled tool rounds through and the plain reply follows.
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("/compactfull");
+                        CliRunner.WaitForText(cli, "[Conversation summarized - continuing...]", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                    }
+                }
+            });
+
             TestRunner.Run("cli.stream_stall_abort_and_save", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

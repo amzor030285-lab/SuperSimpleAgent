@@ -130,15 +130,35 @@
                         Click="loadButton_Click" />
             </StackPanel>
 
-            <Button Name="optionsButton"
-                    Content="Options"
-                    MinWidth="80"
-                    MinHeight="25"
-                    Margin="5,0,0,0"
-                    VerticalAlignment="Center"
-                    HorizontalAlignment="Right"
-                    Grid.Column="1"
-                    Click="optionsButton_Click" />
+            <StackPanel Grid.Column="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Center">
+                <Button Name="compactButton"
+                        AutomationProperties.AutomationId="compactButton"
+                        Content="Compact"
+                        MinWidth="65"
+                        MinHeight="25"
+                        Margin="0,0,5,0"
+                        ToolTip="Force full context compaction (micro + summarize)"
+                        Click="compactButton_Click" />
+
+                <Button Name="themeButton"
+                        AutomationProperties.AutomationId="themeButton"
+                        Content="&#x263E;"
+                        MinWidth="40"
+                        MinHeight="25"
+                        Margin="0,0,5,0"
+                        ToolTip="Switch to dark theme"
+                        Click="themeButton_Click" />
+
+                <Button Name="optionsButton"
+                        Content="Options"
+                        MinWidth="80"
+                        MinHeight="25"
+                        VerticalAlignment="Center"
+                        Click="optionsButton_Click" />
+            </StackPanel>
         </Grid>
 
         <!-- Chat history: one ListBox item per turn -->

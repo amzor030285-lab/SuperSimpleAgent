@@ -19,6 +19,7 @@ namespace SimpleLLMChatGUI
         }
 
         private Dictionary<string, ColorSetting> _colorSettings;
+        private string _theme = ColorHelper.ThemeSystem;
 
         public ColorsForm()
         {
@@ -166,6 +167,10 @@ namespace SimpleLLMChatGUI
             {
                 var settings = IniFileHandler.LoadIni(path);
 
+                string themeValue;
+                if (settings.TryGetValue(ColorHelper.ThemeKey, out themeValue) && !string.IsNullOrWhiteSpace(themeValue))
+                    _theme = themeValue.Trim().ToLowerInvariant();
+
                 foreach (var key in _colorSettings.Keys)
                 {
                     if (settings.TryGetValue(key, out string colorValue))
@@ -195,6 +200,7 @@ namespace SimpleLLMChatGUI
         private void SaveColors(string path)
         {
             var lines = new List<string>();
+            lines.Add(ColorHelper.ThemeKey + "=" + _theme);
 
             foreach (var setting in _colorSettings.Values)
             {

@@ -631,6 +631,32 @@ public class LLMClient
         return MicroCompact(conversation, 2);
     }
 
+    /// <summary>
+    /// Manual /compactfull command: runs the full automatic context-usage ladder
+    /// ignoring thresholds - first the free micro-compaction (drops old tool
+    /// groups), then a silent summarize-and-replace that swaps the whole
+    /// conversation for a compact recap. Frees the most context on demand.
+    /// </summary>
+    public void PerformFullCompaction(List<ChatMessage> conversation)
+    {
+        if (conversation == null || conversation.Count == 0)
+        {
+            ChatOutput.WriteLine("Compaction: nothing to compact.");
+            return;
+        }
+
+        int toolRemoved = MicroCompact(conversation, 2);
+        if (toolRemoved > 0)
+            ChatOutput.WriteLine("[Context usage high - removed " + toolRemoved + " old tool messages]");
+
+        SummaryAndReplace(
+            conversation,
+            outputOnly: false,
+            "\n\n[Continue from this context. Manual compaction was requested.]");
+
+        PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
+    }
+
     public void PublishStatusTokens(int characterCount)
     {
         if (Program.StatusPipe == null)

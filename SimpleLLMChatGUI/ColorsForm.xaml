@@ -61,6 +61,41 @@
                             VerticalAlignment="Center"/>
                 </Grid>
 
+                <!-- Button Background -->
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="100"/>
+                        <ColumnDefinition Width="70"/>
+                        <ColumnDefinition Width="70"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Label Content="Button BG"
+                           VerticalAlignment="Center"/>
+
+                    <Button Grid.Column="1"
+                            Content="Choose"
+                            Height="23"
+                            Margin="0,0,8,0"
+                            Tag="buttonbackgroundcolor"
+                            Click="ChooseColorButton_Click"/>
+
+                    <Button Grid.Column="2"
+                            Content="Clear"
+                            Height="23"
+                            Margin="0,0,8,0"
+                            Tag="buttonbackgroundcolor"
+                            Click="ClearColorButton_Click"/>
+
+                    <Border x:Name="ButtonBackgroundPreview"
+                            Grid.Column="3"
+                            Width="50"
+                            Height="23"
+                            BorderBrush="Gray"
+                            BorderThickness="1"
+                            VerticalAlignment="Center"/>
+                </Grid>
+
                 <!-- Chat Background -->
                 <Grid Margin="0,0,0,10">
                     <Grid.ColumnDefinitions>

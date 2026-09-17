@@ -66,6 +66,14 @@
                              Text="{Binding ChatFontSize, UpdateSourceTrigger=PropertyChanged}"
                              Height="23"/>
 
+                    <!-- Theme -->
+                    <Label Content="Theme:"/>
+                    <ComboBox x:Name="ThemeComboBox"
+                              Height="23"
+                              HorizontalAlignment="Left"
+                              Width="160"
+                              SelectedIndex="0"/>
+
                     <!-- Colors -->
                     <Label Content="Colors:"/>
                     <Button x:Name="ChooseColorsButton"

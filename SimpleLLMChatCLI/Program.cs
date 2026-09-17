@@ -26,6 +26,7 @@ namespace SimpleLLMChatCLI
             ChatOutput.WriteLine("| /clear: Clear chat context                      |");
             ChatOutput.WriteLine("| /clearindex: Clear knowledge index              |");
             ChatOutput.WriteLine("| /compact: Drop old tool messages                |");
+            ChatOutput.WriteLine("| /compactfull: Full compaction (micro+summarize)  |");
             ChatOutput.WriteLine("| /delete name: Delete a saved session            |");
             ChatOutput.WriteLine("| /exit: Exit the application                     |");
             ChatOutput.WriteLine("| /image \"path\" prompt: Send an image             |");
@@ -384,6 +385,15 @@ namespace SimpleLLMChatCLI
                         ChatOutput.WriteLine("Compaction: removed " + removed + " old tool messages.");
                     else
                         ChatOutput.WriteLine("Compaction: nothing to remove.");
+                    client.PublishStatusTokens(
+                        LLMClient.GetConversationCharacterCount(conversation) + client.GetBaseCharacterOverhead());
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
+
+                if (userInput == "/compactfull")
+                {
+                    client.PerformFullCompaction(conversation);
                     client.PublishStatusTokens(
                         LLMClient.GetConversationCharacterCount(conversation) + client.GetBaseCharacterOverhead());
                     ChatOutput.MarkSeparated();

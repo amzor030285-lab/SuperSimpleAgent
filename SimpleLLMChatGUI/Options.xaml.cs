@@ -365,6 +365,9 @@ namespace SimpleLLMChatGUI
         {
             FontHandler.ApplyFontToWindow(this);
 
+            foreach (string themeKey in ColorHelper.ThemeOrder)
+                ThemeComboBox.Items.Add(ColorHelper.GetThemeDisplayName(themeKey));
+
             var config = App.Config;
             LoadSettings(config);
             LoadToolSelections(config);
@@ -390,6 +393,7 @@ namespace SimpleLLMChatGUI
             ToolCallDisplayModeText = config.GetChatBlockDisplayMode("toolcalldisplay", ChatBlockDisplayMode.Collapsed).ToString();
             ToolOutputDisplayModeText = config.GetChatBlockDisplayMode("tooloutputdisplay", ChatBlockDisplayMode.Shown).ToString();
             MarkdownParsing = config.GetConfigBool("markdownparsing", true);
+            ThemeComboBox.SelectedIndex = ThemeIndex(ColorHelper.GetTheme(App.ColorsFileName));
             CodeFontFamily = config.GetConfigValue("codeblockfontfamily");
             CustomFontFamily = config.GetConfigValue("customfontfamily");
             ChatFontSize = config.GetConfigInt("fontsize", AppConstants.DefaultChatFontSize);
@@ -478,7 +482,27 @@ namespace SimpleLLMChatGUI
             ApiKey = ApiKeyPasswordBox.Password;
             EmbeddingsApiKey = EmbeddingsApiKeyPasswordBox.Password;
             SyncRetrieveModeFromCombo();
+            SaveThemeSelection();
             SaveIni(App.ConfigFilePath);
+        }
+
+        private static int ThemeIndex(string theme)
+        {
+            for (int i = 0; i < ColorHelper.ThemeOrder.Length; i++)
+            {
+                if (ColorHelper.ThemeOrder[i] == theme)
+                    return i;
+            }
+            return 0;
+        }
+
+        private void SaveThemeSelection()
+        {
+            int idx = ThemeComboBox.SelectedIndex;
+            string theme = (idx >= 0 && idx < ColorHelper.ThemeOrder.Length)
+                ? ColorHelper.ThemeOrder[idx]
+                : ColorHelper.ThemeSystem;
+            ColorHelper.SaveTheme(theme, App.ColorsFileName);
         }
 
         private void ClearIndexButton_Click(object sender, RoutedEventArgs e)
