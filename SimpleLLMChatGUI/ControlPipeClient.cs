@@ -15,6 +15,16 @@ namespace SimpleLLMChatGUI
     {
         public static bool SendStop(int processId)
         {
+            return SendCommand(processId, ControlPipe.StopCommand);
+        }
+
+        public static bool SendStopTool(int processId)
+        {
+            return SendCommand(processId, ControlPipe.StopToolCommand);
+        }
+
+        private static bool SendCommand(int processId, string command)
+        {
             string pipeName = ControlPipe.GetPipeName(processId);
 
             for (int attempt = 0; attempt < 5; attempt++)
@@ -27,7 +37,7 @@ namespace SimpleLLMChatGUI
 
                         using (var writer = new StreamWriter(pipe, new UTF8Encoding(false)))
                         {
-                            writer.WriteLine(ControlPipe.StopCommand);
+                            writer.WriteLine(command);
                             writer.Flush();
                         }
                     }

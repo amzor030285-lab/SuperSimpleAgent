@@ -17,6 +17,7 @@ namespace SimpleLLMChatGUI
         public event Action GenerationComplete;
         public event Func<string, string, bool> ApprovalRequested;
         public event Action<int> StatusReceived;
+        public event Action<string> RunningToolReceived;
 
         private readonly StringBuilder streamBuffer = new StringBuilder();
         private readonly Decoder utf8Decoder = Encoding.UTF8.GetDecoder();
@@ -61,6 +62,7 @@ namespace SimpleLLMChatGUI
                 statusPipeClient = new StatusPipeClient(llmProcess.Id);
                 statusPipeClient.StatusReceived += OnStatusPipeReceived;
                 statusPipeClient.IndexingStatusReceived += OnIndexingStatusPipeReceived;
+                statusPipeClient.RunningToolReceived += OnRunningToolPipeReceived;
                 statusPipeClient.Start();
 
                 // 256 byte async buffer
@@ -89,12 +91,20 @@ namespace SimpleLLMChatGUI
             IndexingStatusHub.Publish(status);
         }
 
+        private void OnRunningToolPipeReceived(string toolName)
+        {
+            Action<string> handler = RunningToolReceived;
+            if (handler != null)
+                handler(toolName);
+        }
+
         private void DisposeStatusPipeClient()
         {
             if (statusPipeClient != null)
             {
                 statusPipeClient.StatusReceived -= OnStatusPipeReceived;
                 statusPipeClient.IndexingStatusReceived -= OnIndexingStatusPipeReceived;
+                statusPipeClient.RunningToolReceived -= OnRunningToolPipeReceived;
                 statusPipeClient.Dispose();
                 statusPipeClient = null;
             }
@@ -165,6 +175,26 @@ namespace SimpleLLMChatGUI
             catch (Exception ex)
             {
                 ErrorOccurred?.Invoke("Error stopping generation: " + ex.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Asks the CLI to cancel the currently running tool via its control pipe.
+        /// Returns false if the process is gone or the request could not be delivered.
+        /// </summary>
+        public bool RequestStopTool()
+        {
+            if (llmProcess == null || llmProcess.HasExited)
+                return false;
+
+            try
+            {
+                return ControlPipeClient.SendStopTool(llmProcess.Id);
+            }
+            catch (Exception ex)
+            {
+                ErrorOccurred?.Invoke("Error stopping tool: " + ex.Message);
                 return false;
             }
         }

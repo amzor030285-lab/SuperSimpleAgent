@@ -283,6 +283,7 @@ public class LLMClient
 
                     int exitCode = 0;
                     string toolContent;
+                    double toolSeconds = 0;
 
                     string toolImage = null;
                     string toolImageMime = null;
@@ -299,7 +300,7 @@ public class LLMClient
                     {
                         if (requestToolApproval(call.Name, call.Arguments))
                         {
-                            registry.ExecuteToolCall(call.Name, call.Arguments, out toolContent, out exitCode, out toolImage, out toolImageMime);
+                            ExecuteTool(call, out toolContent, out exitCode, out toolImage, out toolImageMime, out toolSeconds, outputOnly);
                         }
                         else
                         {
@@ -313,7 +314,7 @@ public class LLMClient
                     }
                     else
                     {
-                        registry.ExecuteToolCall(call.Name, call.Arguments, out toolContent, out exitCode, out toolImage, out toolImageMime);
+                        ExecuteTool(call, out toolContent, out exitCode, out toolImage, out toolImageMime, out toolSeconds, outputOnly);
                     }
 
                     ChatMessage toolMsg = new ChatMessage
@@ -328,15 +329,16 @@ public class LLMClient
 
                     if (!outputOnly)
                     {
+                        string seconds = toolSeconds.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
                         startBlock();
                         if (toolOutputDisplay == ChatBlockDisplayMode.Hidden)
                         {
-                            ChatOutput.WriteLine("[tool output]");
+                            ChatOutput.WriteLine("[tool output] (" + seconds + "s)");
                             ChatOutput.WriteLine("Exit Code: " + exitCode);
                         }
                         else
                         {
-                            ChatOutput.WriteLine("[tool output]");
+                            ChatOutput.WriteLine("[tool output] (" + seconds + "s)");
                             ChatOutput.Write(toolContent ?? "");
                             if (string.IsNullOrEmpty(toolContent) || !toolContent.EndsWith("\n"))
                                 ChatOutput.WriteLine();
@@ -757,6 +759,42 @@ public class LLMClient
             return;
 
         Program.StatusPipe.PublishStatus(TokenEstimator.ApproximateTokens(characterCount));
+    }
+
+    /// <summary>
+    /// Notifies the GUI which tool is currently executing (empty name = none)
+    /// so it can enable its "Stop tool" button.
+    /// </summary>
+    public void PublishRunningTool(string toolName)
+    {
+        if (Program.StatusPipe == null)
+            return;
+
+        Program.StatusPipe.PublishLine(StatusPipe.RunningToolPrefix + (toolName ?? ""));
+    }
+
+    /// <summary>
+    /// Runs one tool call with a visible status: a "[running tool: name ...]"
+    /// line for the console (suppressed in output-only mode) plus the status
+    /// pipe line, and reports the elapsed seconds.
+    /// </summary>
+    private void ExecuteTool(ToolRegistry.ToolCall call, out string toolContent, out int exitCode,
+        out string toolImage, out string toolImageMime, out double elapsedSeconds, bool outputOnly)
+    {
+        toolContent = "";
+        exitCode = 0;
+        toolImage = null;
+        toolImageMime = null;
+
+        if (!outputOnly)
+            ChatOutput.WriteLine("[running tool: " + call.Name + " ...]");
+        PublishRunningTool(call.Name);
+
+        DateTime start = DateTime.UtcNow;
+        registry.ExecuteToolCall(call.Name, call.Arguments, out toolContent, out exitCode, out toolImage, out toolImageMime);
+        PublishRunningTool(null);
+
+        elapsedSeconds = (DateTime.UtcNow - start).TotalSeconds;
     }
 
     /// <summary>

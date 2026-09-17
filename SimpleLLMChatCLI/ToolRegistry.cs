@@ -391,34 +391,55 @@ namespace SimpleLLMChatCLI
                     var stdoutTask = Task.Factory.StartNew(() => process.StandardOutput.ReadToEnd());
                     var stderrTask = Task.Factory.StartNew(() => process.StandardError.ReadToEnd());
 
-                    bool exited;
-                    if (timeoutMs > 0)
-                        exited = process.WaitForExit(timeoutMs);
-                    else
+                    // Poll instead of blocking so the GUI's STOPTOOL (control pipe)
+                    // can interrupt a hung tool; the deadline enforces the per-tool
+                    // timeout when one is configured.
+                    AbortSupport.RegisterToolProcess(process);
+                    try
                     {
-                        process.WaitForExit();
-                        exited = true;
-                    }
+                        DateTime deadline = timeoutMs > 0
+                            ? DateTime.UtcNow.AddMilliseconds(timeoutMs)
+                            : DateTime.MaxValue;
 
-                    if (!exited)
+                        while (!process.HasExited
+                            && !AbortSupport.ToolAbortRequested
+                            && DateTime.UtcNow < deadline)
+                        {
+                            process.WaitForExit(200);
+                        }
+
+                        if (AbortSupport.ToolAbortRequested)
+                        {
+                            try { process.Kill(); } catch { }
+                            toolContent = FormatCommandResult(toolName, "error: tool call was cancelled by the user.", -1);
+                            exitCode = -1;
+                            return;
+                        }
+
+                        if (!process.HasExited)
+                        {
+                            try { process.Kill(); } catch { }
+                            toolContent = FormatCommandResult(toolName, "error: tool call timed out after " + timeoutSecs + " second(s).", -1);
+                            exitCode = -1;
+                            return;
+                        }
+
+                        string stdout = stdoutTask.Result;
+                        string stderr = stderrTask.Result;
+                        exitCode = process.ExitCode;
+
+                        string output = stdout ?? "";
+                        if (!string.IsNullOrEmpty(stderr))
+                            output += stderr;
+
+                        string text;
+                        ToolResultParser.Parse(output, out text, out imageBase64, out imageMime);
+                        toolContent = FormatCommandResult(toolName, text, exitCode);
+                    }
+                    finally
                     {
-                        try { process.Kill(); } catch { }
-                        toolContent = FormatCommandResult(toolName, "error: tool call timed out after " + timeoutSecs + " second(s).", -1);
-                        exitCode = -1;
-                        return;
+                        AbortSupport.UnregisterToolProcess();
                     }
-
-                    string stdout = stdoutTask.Result;
-                    string stderr = stderrTask.Result;
-                    exitCode = process.ExitCode;
-
-                    string output = stdout ?? "";
-                    if (!string.IsNullOrEmpty(stderr))
-                        output += stderr;
-
-                    string text;
-                    ToolResultParser.Parse(output, out text, out imageBase64, out imageMime);
-                    toolContent = FormatCommandResult(toolName, text, exitCode);
                 }
             }
             catch (Exception ex)

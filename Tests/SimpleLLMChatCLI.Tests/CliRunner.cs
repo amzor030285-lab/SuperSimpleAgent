@@ -97,6 +97,20 @@ namespace SimpleLLMChatCLI.Tests
         /// </summary>
         public bool SendStop(int timeoutMs)
         {
+            return SendControlCommand("STOP", timeoutMs);
+        }
+
+        /// <summary>
+        /// Sends the STOPTOOL command (cancel the running tool) to the CLI's control pipe.
+        /// Returns false if the pipe was unreachable (e.g. CLI already exited).
+        /// </summary>
+        public bool SendStopTool(int timeoutMs)
+        {
+            return SendControlCommand("STOPTOOL", timeoutMs);
+        }
+
+        private bool SendControlCommand(string command, int timeoutMs)
+        {
             string pipeName = "SimpleLLMChat.Control." + _process.Id.ToString(CultureInfo.InvariantCulture);
             Stopwatch sw = Stopwatch.StartNew();
             int attempt = 0;
@@ -108,8 +122,8 @@ namespace SimpleLLMChatCLI.Tests
                     using (var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.Out))
                     {
                         pipe.Connect(Math.Min(500, (int)(timeoutMs - sw.ElapsedMilliseconds)));
-                        byte[] command = Encoding.UTF8.GetBytes("STOP\n");
-                        pipe.Write(command, 0, command.Length);
+                        byte[] bytes = Encoding.UTF8.GetBytes(command + "\n");
+                        pipe.Write(bytes, 0, bytes.Length);
                         pipe.Flush();
                     }
                     return true;

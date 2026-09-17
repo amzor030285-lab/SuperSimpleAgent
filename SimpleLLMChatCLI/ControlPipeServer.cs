@@ -10,7 +10,7 @@ namespace SimpleLLMChatCLI
     /// <summary>
     /// Listens on SimpleLLMChat.Control.{pid} for the GUI's stop requests.
     /// A background thread accepts connections (re-accepting after a disconnect)
-    /// and raises AbortSupport for each STOP command line.
+    /// and raises AbortSupport for each STOP / STOPTOOL command line.
     /// </summary>
     internal sealed class ControlPipeServer : IDisposable
     {
@@ -57,8 +57,11 @@ namespace SimpleLLMChatCLI
                             string line;
                             while (_running && (line = reader.ReadLine()) != null && line.Length > 0)
                             {
-                                if (string.Equals(line.Trim(), ControlPipe.StopCommand, StringComparison.OrdinalIgnoreCase))
+                                string command = line.Trim();
+                                if (string.Equals(command, ControlPipe.StopCommand, StringComparison.OrdinalIgnoreCase))
                                     AbortSupport.RequestAbort();
+                                else if (string.Equals(command, ControlPipe.StopToolCommand, StringComparison.OrdinalIgnoreCase))
+                                    AbortSupport.RequestToolAbort();
                             }
                         }
                     }

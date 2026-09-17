@@ -326,6 +326,98 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.tool_cancelled_by_user", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // A ~30 second sleep: long enough for the test to send
+                    // STOPTOOL while it runs, with no configured timeout, so
+                    // only the user can stop it.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var args = new JObject();
+                    args["command"] = "ping 127.0.0.1 -n 30 > nul";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("sleep for a while");
+                        CliRunner.WaitForText(cli, "[running tool: run_shell_command", 30000);
+
+                        TestAssert.True(cli.SendStopTool(5000), "STOPTOOL delivered through the control pipe");
+
+                        CliRunner.WaitForText(cli, "cancelled by the user", 30000);
+                        CliRunner.WaitForTextAfter(cli, "cancelled by the user", "You: ", 30000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.tool_timeout", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // tooltimeout.run_shell_command=2 must kill the ~30s sleep
+                    // after two seconds and report the timeout to the model.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var args = new JObject();
+                    args["command"] = "ping 127.0.0.1 -n 30 > nul";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
+                        toolTimeout: "run_shell_command=2");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("sleep for a while");
+                        CliRunner.WaitForText(cli, "timed out after 2 second(s)", 60000);
+                        CliRunner.WaitForTextAfter(cli, "timed out after 2 second(s)", "You: ", 30000);
+                    }
+                }
+            });
+
             TestRunner.Run("cli.clear_wipes_lastsession", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
@@ -617,7 +709,7 @@ namespace SimpleLLMChatCLI.Tests
         }
 
         static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "",
-            int streamStallTimeout = 120, int requestTimeout = 300)
+            int streamStallTimeout = 120, int requestTimeout = 300, string toolTimeout = "")
         {
             string path = Path.Combine(dir, "LLMSettings.ini");
             File.WriteAllText(path,
@@ -632,6 +724,7 @@ namespace SimpleLLMChatCLI.Tests
                 "[Tools]\r\n" +
                 "tools=" + (tools ?? "") + "\r\n" +
                 "toolsrequiringapproval=\r\n" +
+                (string.IsNullOrEmpty(toolTimeout) ? "" : "tooltimeout." + toolTimeout + "\r\n") +
                 "[Appearance]\r\n" +
                 "assistantname=LLM\r\n" +
                 "markdownparsing=0\r\n" +

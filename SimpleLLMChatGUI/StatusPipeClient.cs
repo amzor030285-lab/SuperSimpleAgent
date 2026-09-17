@@ -16,6 +16,7 @@ public sealed class StatusPipeClient : IDisposable
 
     public event Action<int> StatusReceived;
     public event Action<IndexingStatusEvent> IndexingStatusReceived;
+    public event Action<string> RunningToolReceived;
 
     public StatusPipeClient(int processId)
     {
@@ -64,6 +65,15 @@ public sealed class StatusPipeClient : IDisposable
                             continue;
                         }
 
+                        string runningTool;
+                        if (StatusPipe.TryParseRunningToolLine(line, out runningTool))
+                        {
+                            Action<string> runningHandler = RunningToolReceived;
+                            if (runningHandler != null)
+                                runningHandler(runningTool);
+                            continue;
+                        }
+
                         IndexingStatusEvent indexing;
                         if (StatusPipe.TryParseIndexingLine(line, out indexing))
                         {
@@ -97,6 +107,7 @@ public sealed class StatusPipeClient : IDisposable
         _running = false;
         StatusReceived = null;
         IndexingStatusReceived = null;
+        RunningToolReceived = null;
 
         NamedPipeClientStream pipe = _pipe;
         _pipe = null;

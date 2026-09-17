@@ -165,6 +165,7 @@ namespace SimpleLLMChatGUI
                 processHandler.Dispose();
                 processHandler = null;
             }
+            stopToolButton.IsEnabled = false;
 
             processHandler = new ProcessHandler();
 
@@ -173,6 +174,7 @@ namespace SimpleLLMChatGUI
             processHandler.GenerationComplete += OnGenerationComplete;
             processHandler.ApprovalRequested += OnApprovalRequested;
             processHandler.StatusReceived += OnStatusReceived;
+            processHandler.RunningToolReceived += OnRunningToolReceived;
 
             if (tokenTracker != null)
                 tokenTracker.Reset();
@@ -197,6 +199,14 @@ namespace SimpleLLMChatGUI
             {
                 if (tokenTracker != null)
                     tokenTracker.SetTokens(tokens);
+            }), System.Windows.Threading.DispatcherPriority.Background);
+        }
+
+        private void OnRunningToolReceived(string toolName)
+        {
+            Dispatcher.BeginInvoke((Action)(() =>
+            {
+                stopToolButton.IsEnabled = !string.IsNullOrEmpty(toolName);
             }), System.Windows.Threading.DispatcherPriority.Background);
         }
 
@@ -474,6 +484,13 @@ namespace SimpleLLMChatGUI
             sendButton.IsEnabled = true;
             saveButton.IsEnabled = true;
             loadButton.IsEnabled = true;
+            stopToolButton.IsEnabled = false;
+        }
+
+        private void stopToolButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (processHandler != null && processHandler.IsProcessRunning)
+                processHandler.RequestStopTool();
         }
 
         private void StopGeneration()

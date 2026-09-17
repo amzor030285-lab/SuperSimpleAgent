@@ -202,11 +202,12 @@
             </ListBox.ItemTemplate>
         </ListBox>
 
-        <!-- Bottom bar: attach + input + send -->
+        <!-- Bottom bar: attach + input + stop tool + send -->
         <Grid Grid.Row="2" Margin="0,0,0,2">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
@@ -236,9 +237,21 @@
                      VerticalScrollBarVisibility="Auto"
                      PreviewKeyDown="chatInput_PreviewKeyDown" />
 
+            <Button Name="stopToolButton"
+                    AutomationProperties.AutomationId="stopToolButton"
+                    Grid.Column="2"
+                    Content="Stop tool"
+                    MinWidth="75"
+                    MinHeight="40"
+                    Margin="0,0,5,0"
+                    VerticalAlignment="Stretch"
+                    IsEnabled="False"
+                    ToolTip="Cancel the currently running tool call"
+                    Click="stopToolButton_Click" />
+
             <Button Name="sendButton"
                     AutomationProperties.AutomationId="sendButton"
-                    Grid.Column="2"
+                    Grid.Column="3"
                     Content="Send"
                     MinWidth="60"
                     MinHeight="40"
