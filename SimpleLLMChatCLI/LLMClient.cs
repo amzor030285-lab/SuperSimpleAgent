@@ -55,12 +55,14 @@ public class LLMClient
         public string Content;
         public List<ToolRegistry.ToolCall> ToolCalls;
         public string FinishReason;
+        public int PromptTokens;
 
         public LLMCompletionResponse(string content, List<ToolRegistry.ToolCall> toolCalls, string finishReason)
         {
             Content = content;
             ToolCalls = toolCalls ?? new List<ToolRegistry.ToolCall>();
             FinishReason = finishReason;
+            PromptTokens = 0;
         }
     }
 
@@ -204,6 +206,17 @@ public class LLMClient
             }
 
             LLMCompletionResponse response = sendMessages(conversation, enabledTools, ChatOutput.Write, toolCallStreamCallback, onContentStart, startBlock, outputOnly, contextInjections);
+
+            // Calibrate the token estimator against the server's real tokenizer. The
+            // conversation has not changed during the request, so the character count
+            // here is exactly what was sent. Only main-loop requests calibrate: the
+            // silent summary pass builds a different prompt shape.
+            if (response.PromptTokens > 0)
+            {
+                TokenEstimator.Recalibrate(
+                    response.PromptTokens,
+                    GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
+            }
 
             if (toolCallUiOpen)
             {
@@ -407,7 +420,7 @@ public class LLMClient
     /// </summary>
     private void TruncateToFit(List<ChatMessage> conversation, int contextWindowSize)
     {
-        int budgetChars = (int)(contextWindowSize * 3 * 0.6);
+        int budgetChars = (int)(contextWindowSize * 0.6 / TokenEstimator.TokensPerCharacter);
         int guard = 0;
         while (UsageOf(conversation, contextWindowSize) >= TokenEstimator.AskUserThreshold && guard++ < 10)
         {

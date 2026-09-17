@@ -53,6 +53,14 @@ namespace SimpleLLMChatCLI
                 try
                 {
                     JObject obj = JObject.Parse(jsonPart);
+
+                    // llama.cpp (and some proxies) send usage in a final chunk - either
+                    // alongside the finish_reason or as a standalone {"choices":[],..."usage"...}
+                    // event. Capture it before the choices-null check so both shapes work.
+                    JToken promptTokens = obj["usage"]?["prompt_tokens"];
+                    if (promptTokens != null && promptTokens.Type == JTokenType.Integer && (int)promptTokens > 0)
+                        response.PromptTokens = (int)promptTokens;
+
                     JArray choices = (JArray)obj["choices"];
                     if (choices == null) continue;
 

@@ -842,12 +842,23 @@ public sealed class FakeOpenAiServer : IDisposable
     /// <summary>Serialized JSON arguments to emit while tool-call rounds remain.</summary>
     public string ToolCallArguments { get; set; }
 
+    /// <summary>
+    /// When true, the final SSE chunk carries a real usage.prompt_tokens computed from
+    /// the request's message content at <see cref="UsageTokenRatio"/> tokens/char —
+    /// simulating llama.cpp's final usage chunk so the CLI can recalibrate its counter.
+    /// </summary>
+    public bool IncludeUsagePromptTokens { get; set; }
+
+    /// <summary>Tokens-per-char ratio used when <see cref="IncludeUsagePromptTokens"/> is on.</summary>
+    public double UsageTokenRatio { get; set; }
+
     private int _toolCallSeq;
 
     public FakeOpenAiServer()
     {
         FixedReply = "Hello from FakeOpenAiServer.";
         StreamDelayMs = 30;
+        UsageTokenRatio = 0.48;
         StreamChunkChars = 16;
         string baseUrl;
         _listener = TestHttpListener.StartLoopback(out baseUrl);
@@ -999,11 +1010,41 @@ public sealed class FakeOpenAiServer : IDisposable
 
             byte[] trail = Encoding.UTF8.GetBytes(
                 "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+                (IncludeUsagePromptTokens
+                    ? "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":" + ComputePromptTokens(LastBody) +
+                      ",\"completion_tokens\":0,\"total_tokens\":0}}\n\n"
+                    : "") +
                 "data: [DONE]\n\n");
             output.Write(trail, 0, trail.Length);
             output.Flush();
         }
         ctx.Response.Close();
+    }
+
+    /// <summary>
+    /// Simulates a real tokenizer: prompt_tokens = message content chars (+ the test
+    /// system prompt) at <see cref="UsageTokenRatio"/> tokens/char.
+    /// </summary>
+    private int ComputePromptTokens(string body)
+    {
+        int chars = 0;
+        try
+        {
+            JObject obj = JObject.Parse(body);
+            JArray messages = obj["messages"] as JArray;
+            if (messages != null)
+            {
+                foreach (JToken message in messages)
+                {
+                    string content = (string)message["content"];
+                    if (content != null)
+                        chars += content.Length;
+                }
+            }
+        }
+        catch { }
+        chars += 27; // "You are a test assistant." sysprompt from WriteCliIni
+        return (int)(chars * UsageTokenRatio);
     }
 
     private void WriteStalledFirstChunk(HttpListenerContext ctx)

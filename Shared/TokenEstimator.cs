@@ -20,11 +20,35 @@ public static class TokenEstimator
     /// <summary>Fraction of the oldest messages to drop when truncating (30%).</summary>
     public const double TruncateFraction = 0.30;
 
+    /// <summary>
+    /// Working tokens-per-character ratio used by <see cref="ApproximateTokens"/>.
+    /// Starts at the legacy chars/3 heuristic and is recalibrated toward the
+    /// server's real tokenizer via <see cref="Recalibrate"/> (usage.prompt_tokens).
+    /// </summary>
+    public static double TokensPerCharacter = 1.0 / 3.0;
+
+    /// <summary>
+    /// Moves the tokens-per-character ratio toward a measured value taken from the
+    /// server's actual prompt token count. Smoothed 50/50 and clamped to a sane
+    /// range so a single outlier response cannot skew the estimate wildly.
+    /// </summary>
+    public static void Recalibrate(int actualPromptTokens, int measuredCharacterCount)
+    {
+        if (actualPromptTokens <= 0 || measuredCharacterCount <= 0)
+            return;
+
+        double measured = (double)actualPromptTokens / measuredCharacterCount;
+        TokensPerCharacter = 0.5 * TokensPerCharacter + 0.5 * measured;
+        if (TokensPerCharacter < 0.05) TokensPerCharacter = 0.05;
+        if (TokensPerCharacter > 1.0) TokensPerCharacter = 1.0;
+    }
+
     public static int ApproximateTokens(int characterCount)
     {
         if (characterCount <= 0)
             return 0;
-        return characterCount / 3;
+        double tokens = characterCount * TokensPerCharacter;
+        return tokens > int.MaxValue ? int.MaxValue : (int)tokens;
     }
 
     public static bool ShouldSummarize(int characterCount, int contextWindowSize)

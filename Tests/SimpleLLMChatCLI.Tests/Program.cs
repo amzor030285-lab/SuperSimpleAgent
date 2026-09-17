@@ -24,6 +24,38 @@ namespace SimpleLLMChatCLI.Tests
                 TestAssert.True(!TokenEstimator.ShouldSummarize(100, 1000), "no summarize");
             });
 
+            TestRunner.Run("TokenEstimator.calibration", () =>
+            {
+                double original = TokenEstimator.TokensPerCharacter;
+                try
+                {
+                    TokenEstimator.Recalibrate(0, 100);
+                    TokenEstimator.Recalibrate(-1, 100);
+                    TestAssert.True(
+                        Math.Abs(TokenEstimator.TokensPerCharacter - (1.0 / 3.0)) < 0.0001,
+                        "invalid measurements ignored");
+
+                    TokenEstimator.Recalibrate(300, 600); // measured 0.50 -> blend (1/3+0.5)/2
+                    double expected = (1.0 / 3.0 + 0.5) / 2.0;
+                    TestAssert.True(
+                        Math.Abs(TokenEstimator.TokensPerCharacter - expected) < 0.0001,
+                        "measured value blended in");
+                    TestAssert.Equal((int)(1000 * expected), TokenEstimator.ApproximateTokens(1000), "approx uses ratio");
+
+                    TokenEstimator.TokensPerCharacter = 1.0;
+                    TokenEstimator.Recalibrate(1, 10000000); // measured ~0 -> blend clamps at floor 0.05
+                    TestAssert.True(TokenEstimator.TokensPerCharacter >= 0.05, "lower clamp");
+
+                    TokenEstimator.TokensPerCharacter = 0.05;
+                    TokenEstimator.Recalibrate(int.MaxValue, 1); // measured huge -> clamps at ceiling 1.0
+                    TestAssert.True(TokenEstimator.TokensPerCharacter <= 1.0, "upper clamp");
+                }
+                finally
+                {
+                    TokenEstimator.TokensPerCharacter = original;
+                }
+            });
+
             TestRunner.Run("ToolApproval.roundtrip", () =>
             {
                 string msg = ToolApproval.FormatApprovalMessage("read_file", "{\\\"filename\\\":\\\"a.txt\\\"}");
@@ -309,6 +341,51 @@ namespace SimpleLLMChatCLI.Tests
                         cli.WriteLine("/compactfull");
                         CliRunner.WaitForText(cli, "[Conversation summarized - continuing...]", 30000);
                         CliRunner.WaitForText(cli, "You:", 15000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.token_calibration_usage", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The server reports real-ish usage (0.48 tok/char). With a window of
+                    // 1720, before turn 3 the legacy chars/3 heuristic would sit at ~0.70
+                    // (below every compaction threshold), while the recalibrated counter
+                    // crosses the ladder thresholds - so turn 3 MUST trigger an automatic
+                    // compaction pass, and turn 2 must not.
+                    server.LongMarkdownReplies = true;
+                    server.StreamDelayMs = 5;
+                    server.IncludeUsagePromptTokens = true;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 1720);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("first message");
+                        CliRunner.WaitForText(cli, "# Reply turn 1", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        // Turn 2 is still below every threshold => plain reply, no compaction.
+                        cli.WriteLine("second message");
+                        CliRunner.WaitForText(cli, "# Reply turn 2", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        TestAssert.True(
+                            !cli.Stdout.Contains("[Context usage high")
+                            && !cli.Stdout.Contains("[Conversation summarized"),
+                            "no compaction before turn 3");
+
+                        // Calibration accrued over turns 1-2 => turn 3 (before processing) crosses the
+                        // ladder and truncates the oldest messages (the chars/3 heuristic
+                        // would be at ~0.70 here and do nothing). The reply follows as #3.
+                        cli.WriteLine("third message");
+                        CliRunner.WaitForText(cli, "[Context usage high - truncated", 30000);
+                        CliRunner.WaitForText(cli, "# Reply turn 3", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        TestAssert.Contains(cli.Stdout, "[Context usage high", "calibrated usage triggered compaction at turn 3");
                     }
                 }
             });
