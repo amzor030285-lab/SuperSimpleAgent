@@ -526,6 +526,12 @@ namespace SimpleLLMChatCLI
                                 enabledTools,
                                 toolsRequiringApproval,
                                 false);
+
+                // Keep the last session always available: after every completed turn
+                // the current conversation is mirrored into a reserved "lastsession"
+                // file so closing the app / starting a new chat never loses it.
+                if (conversation != null && conversation.Count > 0)
+                    SessionStore.Save(sessionsDir, "lastsession", conversation, out _);
             }
         }
     }

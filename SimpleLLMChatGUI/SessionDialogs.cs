@@ -8,17 +8,20 @@ namespace SimpleLLMChatGUI
 {
     /// <summary>
     /// Save dialog: optionally names the session; an empty name lets the CLI pick an
-    /// auto-generated one. Name + automation ids are the contract for GUI tests.
+    /// auto-generated one. When existing sessions are supplied, they are listed so the
+    /// user can pick one to overwrite (the name is copied in) or just type a new name.
+    /// Name + automation ids are the contract for GUI tests.
     /// </summary>
     public sealed class SessionSaveDialog : Window
     {
         private readonly TextBox nameInput;
+        private readonly ListBox existingList;
 
-        public SessionSaveDialog()
+        public SessionSaveDialog(List<SessionStore.SessionInfo> existing = null)
         {
             Title = "Save Session";
             Width = 320;
-            Height = 130;
+            Height = 150;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             SizeToContent = SizeToContent.WidthAndHeight;
@@ -26,14 +29,37 @@ namespace SimpleLLMChatGUI
             var panel = new Grid { Margin = new Thickness(12) };
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
             var label = new TextBlock
             {
                 Text = "Session name (leave empty for auto name):",
-                Margin = new Thickness(0, 0, 0, 6)
+                Margin = new Thickness(0, 0, 0, 4)
             };
             Grid.SetRow(label, 0);
             panel.Children.Add(label);
+
+            existingList = new ListBox
+            {
+                Margin = new Thickness(0, 4, 0, 8),
+                MaxHeight = 110,
+                Visibility = existing != null && existing.Count > 0 ? Visibility.Visible : Visibility.Collapsed
+            };
+            existingList.SetValue(AutomationProperties.AutomationIdProperty, "existingSessionListBox");
+            existingList.Name = "existingSessionListBox";
+            if (existing != null)
+            {
+                foreach (SessionStore.SessionInfo info in existing)
+                    existingList.Items.Add(new SessionListItem(info));
+            }
+            existingList.SelectionChanged += (s, e) =>
+            {
+                var item = existingList.SelectedItem as SessionListItem;
+                if (item != null)
+                    nameInput.Text = item.Info.Name;
+            };
+            Grid.SetRow(existingList, 1);
+            panel.Children.Add(existingList);
 
             var inside = new Grid { Margin = new Thickness(0, 0, 0, 8) };
             inside.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -69,7 +95,8 @@ namespace SimpleLLMChatGUI
 
             Grid.SetColumn(buttonPanel, 1);
             inside.Children.Add(buttonPanel);
-            Grid.SetRow(inside, 1);
+
+            Grid.SetRow(inside, 2);
             panel.Children.Add(inside);
 
             Content = panel;
@@ -78,6 +105,26 @@ namespace SimpleLLMChatGUI
 
         /// <summary>Trimmed session name; empty when the user wants an auto name.</summary>
         public string SessionName { get; private set; }
+
+        private sealed class SessionListItem
+        {
+            public SessionListItem(SessionStore.SessionInfo info)
+            {
+                Info = info;
+            }
+
+            public SessionStore.SessionInfo Info { get; }
+
+            public override string ToString()
+            {
+                DateTime local = Info.SavedAtUtc != DateTime.MinValue
+                    ? Info.SavedAtUtc.ToLocalTime()
+                    : DateTime.MinValue;
+                string when = local != DateTime.MinValue ? local.ToString("yyyy-MM-dd HH:mm") : "unknown";
+                double kb = (double)Info.SizeBytes / 1024.0;
+                return Info.Name + "  (" + when + ", " + Info.MessageCount + " msgs, " + kb.ToString("F1") + " KB)";
+            }
+        }
     }
 
     /// <summary>

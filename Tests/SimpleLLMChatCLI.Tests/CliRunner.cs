@@ -140,6 +140,26 @@ namespace SimpleLLMChatCLI.Tests
                 "Stdout so far:\n" + cli.Stdout);
         }
 
+        /// <summary>
+        /// Polls Stdout until <paramref name="needle"/> appears at an index greater than
+        /// the last occurrence of <paramref name="after"/>, or the timeout expires.
+        /// </summary>
+        public static void WaitForTextAfter(CliRunner cli, string after, string needle, int timeoutMs)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                string text = cli.Stdout;
+                int anchor = text.LastIndexOf(after, StringComparison.Ordinal);
+                if (anchor >= 0 && text.IndexOf(needle, anchor + after.Length, StringComparison.Ordinal) >= 0)
+                    return;
+                Thread.Sleep(50);
+            }
+            throw new TestFailureException(
+                "Timeout (" + timeoutMs + " ms) waiting for \"" + needle + "\" after \"" + after + "\"\n" +
+                "Stdout so far:\n" + cli.Stdout);
+        }
+
         public void Dispose()
         {
             try

@@ -160,6 +160,11 @@ namespace SimpleLLMChatCLI.Tests
 
                         CliRunner.WaitForText(cli, "[Generation stopped by user]", 15000);
 
+                        // The CLI mirrors the conversation to "lastsession" between the
+                        // notice and the re-prompt, so wait for a fresh prompt after the
+                        // notice instead of reading stdout immediately.
+                        CliRunner.WaitForTextAfter(cli, "[Generation stopped by user]", "You: ", 15000);
+
                         // The CLI must have returned to its prompt after the notice.
                         string outText = cli.Stdout;
                         TestAssert.Contains(outText, "[Generation stopped by user]", "notice present");

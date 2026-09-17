@@ -622,7 +622,9 @@ namespace SimpleLLMChatGUI
                 return;
             }
 
-            var dialog = new SessionSaveDialog();
+            string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
+            List<SessionStore.SessionInfo> sessions = SessionStore.List(sessionsDir);
+            var dialog = new SessionSaveDialog(sessions);
             dialog.Owner = this;
             if (dialog.ShowDialog() != true)
                 return;
