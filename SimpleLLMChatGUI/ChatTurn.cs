@@ -397,9 +397,10 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Rescales every TextBlock under <paramref name="element"/> (tables and
-        /// lists rendered into <see cref="BlockUIContainer"/>s). Walks the logical
-        /// child/children chain so it works before the element is connected.
+        /// Rescales every TextBlock/TextBox under <paramref name="element"/>
+        /// (tables, lists and code blocks rendered into
+        /// <see cref="BlockUIContainer"/>s). Walks the logical child/children
+        /// chain so it works before the element is connected.
         /// </summary>
         private static void ApplyFontSizeToTree(FrameworkElement element, double fontSize)
         {
@@ -410,6 +411,13 @@ namespace SimpleLLMChatGUI
             if (textBlock != null)
             {
                 textBlock.FontSize = fontSize;
+                return;
+            }
+
+            TextBox textBox = element as TextBox;
+            if (textBox != null)
+            {
+                textBox.FontSize = fontSize;
                 return;
             }
 

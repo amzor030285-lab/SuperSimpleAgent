@@ -25,6 +25,10 @@ namespace SimpleLLMChatGUI
         private static readonly Regex ItalicPattern = new Regex(@"(?<![a-zA-Z0-9_])(?<!\*)\*(.+?)\*(?![a-zA-Z0-9_])(?!\*)|(?<![a-zA-Z0-9_])(?<!_)_(.+?)_(?![a-zA-Z0-9_])(?!_)", RegexOptions.Compiled);
         private static readonly Regex StrikethroughPattern = new Regex(@"~~(.+?)~~", RegexOptions.Compiled);
         private static readonly Regex InlineCodePattern = new Regex(@"`([^`]+)`", RegexOptions.Compiled);
+        // Markers that ApplyInlineFormatting would render (used to decide whether
+        // hosted text must stay in a formatted TextBlock instead of a selectable
+        // TextBox).
+        private static readonly Regex InlineMarkdownPattern = new Regex(@"(\*\*|__|~~|`|\[[^\]]+\]\()", RegexOptions.Compiled);
         // Bold italic link: ***[text](url)*** or ___[text](url)___
         private static readonly Regex BoldItalicLinkPattern = new Regex(@"(?<![a-zA-Z0-9_])(\*\*\*|___)\[([^\[\]]+)\]\(([^()]+)\)\1(?![a-zA-Z0-9_])", RegexOptions.Compiled);
         // Bold link: **[text](url)** or __[text](url)__
@@ -344,10 +348,10 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Builds a table as a star-sized <see cref="System.Windows.Controls.Grid"/>
+        /// Builds a table as an auto-sized <see cref="System.Windows.Controls.Grid"/>
         /// of bordered cell <see cref="Border"/>s, wrapped in a
-        /// <see cref="BlockUIContainer"/>. Columns are weighted by each column's
-        /// widest cell so the table spans the text width. The outer frame supplies
+        /// <see cref="BlockUIContainer"/>. Columns size to their content (capped so
+        /// long text wraps instead of widening the table). The outer frame supplies
         /// the outer border; each cell supplies only its right/bottom border so
         /// inner lines are 1px.
         /// </summary>
@@ -355,26 +359,11 @@ namespace SimpleLLMChatGUI
             List<Block> blocks, int firstDataRow, int lastRow, double baseFontSize)
         {
             int columnCount = headerCells.Count;
-            double[] columnWeights = new double[columnCount];
-            for (int c = 0; c < columnCount; c++)
-                columnWeights[c] = ColumnWeight(headerCells[c]);
-
-            for (int i = firstDataRow; i <= lastRow; i++)
-            {
-                List<string> cells = SplitTableCells(StripOuterPipes(ParagraphText(blocks[i] as Paragraph) ?? ""));
-                for (int c = 0; c < columnCount && c < cells.Count; c++)
-                {
-                    double weight = ColumnWeight(cells[c]);
-                    if (weight > columnWeights[c])
-                        columnWeights[c] = weight;
-                }
-            }
-
             int rowCount = (lastRow - firstDataRow + 1) + 1;
 
             var grid = new System.Windows.Controls.Grid();
             for (int c = 0; c < columnCount; c++)
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(columnWeights[c], GridUnitType.Star) });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
             for (int r = 0; r < rowCount; r++)
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
@@ -419,21 +408,52 @@ namespace SimpleLLMChatGUI
             System.Windows.Controls.Grid.SetColumn(cellBorder, column);
             System.Windows.Controls.Grid.SetRow(cellBorder, row);
 
-            var textBlock = new TextBlock
+            // Plain cells become a read-only TextBox so part of the cell can be
+            // selected and copied; cells with inline markdown stay formatted
+            // (hosted TextBlocks are not selectable in WPF).
+            FrameworkElement content;
+            if (HasInlineMarkdown(text))
             {
-                TextAlignment = alignment,
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = baseFontSize,
-                LineHeight = ChatTurn.LineHeightMultiplier
-            };
-            textBlock.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
-            if (isHeader)
-                textBlock.FontWeight = FontWeights.Bold;
+                var textBlock = new TextBlock
+                {
+                    TextAlignment = alignment,
+                    TextWrapping = TextWrapping.Wrap,
+                    FontSize = baseFontSize,
+                    LineHeight = ChatTurn.LineHeightMultiplier,
+                    MaxWidth = TableCellMaxWidth
+                };
+                textBlock.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+                if (isHeader)
+                    textBlock.FontWeight = FontWeights.Bold;
 
-            textBlock.Inlines.Add(new Run(text));
-            ApplyInlineFormatting(textBlock.Inlines);
+                textBlock.Inlines.Add(new Run(text));
+                ApplyInlineFormatting(textBlock.Inlines);
+                content = textBlock;
+            }
+            else
+            {
+                var textBox = new TextBox
+                {
+                    Text = text,
+                    IsReadOnly = true,
+                    IsReadOnlyCaretVisible = true,
+                    IsTabStop = false,
+                    Background = Brushes.Transparent,
+                    BorderThickness = new Thickness(0),
+                    Padding = new Thickness(0),
+                    FontSize = baseFontSize,
+                    TextWrapping = TextWrapping.Wrap,
+                    TextAlignment = alignment,
+                    VerticalContentAlignment = VerticalAlignment.Center,
+                    MaxWidth = TableCellMaxWidth
+                };
+                textBox.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+                if (isHeader)
+                    textBox.FontWeight = FontWeights.Bold;
+                content = textBox;
+            }
 
-            cellBorder.Child = textBlock;
+            cellBorder.Child = content;
             return cellBorder;
         }
 
@@ -442,13 +462,11 @@ namespace SimpleLLMChatGUI
             return column < alignments.Count ? alignments[column] : TextAlignment.Left;
         }
 
-        private static double ColumnWeight(string text)
-        {
-            int length = text == null ? 0 : text.Length;
-            if (length < 3)
-                return 3;
-            return length > 25 ? 25 : length;
-        }
+        /// <summary>
+        /// Maximum pixel width of a table column; longer text wraps instead of
+        /// stretching the table.
+        /// </summary>
+        private const double TableCellMaxWidth = 300;
 
         /// <summary>
         /// Builds a list as a vertical stack of two-column rows (marker, then
@@ -475,11 +493,23 @@ namespace SimpleLLMChatGUI
                 Grid.SetColumn(markerBlock, 0);
                 row.Children.Add(markerBlock);
 
-                var textBlock = CreateListTextBlock(baseFontSize, new Thickness(0, 1, 0, 1));
-                textBlock.Inlines.Add(new Run(text));
-                ApplyInlineFormatting(textBlock.Inlines);
-                Grid.SetColumn(textBlock, 1);
-                row.Children.Add(textBlock);
+                // Plain items become a read-only TextBox so part of the item can be
+                // selected and copied; items with inline markdown stay formatted
+                // (hosted TextBlocks are not selectable in WPF).
+                FrameworkElement content;
+                if (HasInlineMarkdown(text))
+                {
+                    var textBlock = CreateListTextBlock(baseFontSize, new Thickness(0, 1, 0, 1));
+                    textBlock.Inlines.Add(new Run(text));
+                    ApplyInlineFormatting(textBlock.Inlines);
+                    content = textBlock;
+                }
+                else
+                {
+                    content = CreateListTextBox(text, baseFontSize, new Thickness(0, 1, 0, 1));
+                }
+                Grid.SetColumn(content, 1);
+                row.Children.Add(content);
 
                 stack.Children.Add(row);
             }
@@ -526,20 +556,36 @@ namespace SimpleLLMChatGUI
                 VerticalAlignment = VerticalAlignment.Center
             };
             AutomationProperties.SetAutomationId(copyButton, "codeCopyButton");
+            var copyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
+            copyTimer.Tick += (s, e) =>
+            {
+                copyButton.Content = "Copy";
+                copyTimer.Stop();
+            };
             copyButton.Click += (s, e) =>
             {
                 try { Clipboard.SetText(codeText); } catch { }
+                copyButton.Content = "Copied";
+                copyTimer.Stop();
+                copyTimer.Start();
             };
 
             var headerRow = new StackPanel { Orientation = Orientation.Horizontal };
             headerRow.Children.Add(labelArea);
             headerRow.Children.Add(copyButton);
 
-            var code = new TextBlock
+            // A read-only TextBox (not a TextBlock) so the user can select part of
+            // the code and copy the selection.
+            var code = new TextBox
             {
                 Text = codeText,
+                IsReadOnly = true,
+                IsReadOnlyCaretVisible = true,
+                IsTabStop = false,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0),
                 FontSize = baseFontSize,
-                LineHeight = 1.3,
                 TextWrapping = TextWrapping.Wrap
             };
             code.SetResourceReference(TextElement.FontFamilyProperty, FontHandler.CodeBlockFontFamilyKey);
@@ -567,6 +613,41 @@ namespace SimpleLLMChatGUI
             };
             textBlock.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
             return textBlock;
+        }
+
+        /// <summary>
+        /// Plain list item text as a read-only selectable
+        /// <see cref="TextBox"/> (same metrics as
+        /// <see cref="CreateListTextBlock"/>).
+        /// </summary>
+        private static TextBox CreateListTextBox(string text, double baseFontSize, Thickness margin)
+        {
+            var textBox = new TextBox
+            {
+                Text = text,
+                Margin = margin,
+                IsReadOnly = true,
+                IsReadOnlyCaretVisible = true,
+                IsTabStop = false,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0),
+                FontSize = baseFontSize,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalContentAlignment = VerticalAlignment.Center
+            };
+            textBox.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+            return textBox;
+        }
+
+        /// <summary>
+        /// True when the text contains inline markdown markers that
+        /// <see cref="ApplyInlineFormatting"/> would render, so the text must stay
+        /// in a formatted (non-selectable) TextBlock.
+        /// </summary>
+        private static bool HasInlineMarkdown(string text)
+        {
+            return text != null && InlineMarkdownPattern.IsMatch(text);
         }
 
         /// <summary>

@@ -177,6 +177,18 @@ namespace SimpleLLMChatGUI.Tests
                         if (!string.IsNullOrEmpty(text))
                             sb.Append(text).Append("\n");
                     }
+                    else if (element.Current.ControlType == ControlType.Edit)
+                    {
+                        // Hosted read-only TextBoxes (code blocks, table cells, list
+                        // items) expose their text via ValuePattern.
+                        object valuePattern;
+                        if (element.TryGetCurrentPattern(ValuePattern.Pattern, out valuePattern))
+                        {
+                            string value = (valuePattern as ValuePattern).Current.Value;
+                            if (!string.IsNullOrEmpty(value))
+                                sb.Append(value).Append("\n");
+                        }
+                    }
                     else if (element.Current.ControlType == ControlType.Text)
                     {
                         string name = element.Current.Name;

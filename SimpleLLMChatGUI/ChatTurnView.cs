@@ -190,9 +190,18 @@ namespace SimpleLLMChatGUI
             };
             AutomationProperties.SetAutomationId(_copyButton, "copyButton");
             ChatTurn turn = Turn;
+            var copyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
+            copyTimer.Tick += (s, e) =>
+            {
+                _copyButton.Content = "Copy";
+                copyTimer.Stop();
+            };
             _copyButton.Click += (s, e) =>
             {
                 try { Clipboard.SetText(turn.SourceText); } catch { }
+                _copyButton.Content = "Copied";
+                copyTimer.Stop();
+                copyTimer.Start();
             };
 
             var headerRow = new Grid();
