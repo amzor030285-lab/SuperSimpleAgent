@@ -39,12 +39,14 @@ namespace SimpleLLMChatGUI
         private static readonly Regex BacktickFencePattern = new Regex(@"^([^`]*:\s*)?(`{3,})([^`]*)$", RegexOptions.Compiled);
         // One markdown table separator cell: dashes with optional alignment colons (---, :---, ---:, :---:).
         private static readonly Regex TableSeparatorCellPattern = new Regex(@"^:?-+:?$", RegexOptions.Compiled);
-        // Unordered list item: "- item", "* item", "+ item".
-        private static readonly Regex UnorderedListItemPattern = new Regex(@"^[-*+]\s+(\S.*)$", RegexOptions.Compiled);
-        // Ordered list item: "1. item", "2) item".
-        private static readonly Regex OrderedListItemPattern = new Regex(@"^(\d{1,9})[.)]\s+(\S.*)$", RegexOptions.Compiled);
-        // Blockquote line: a leading ">" marker followed by the quoted text.
-        private static readonly Regex BlockquotePattern = new Regex(@"^>\s?(.+)$", RegexOptions.Compiled);
+        // Unordered list item marker: "-", "*", "+".
+        private static readonly Regex UnorderedListItemPattern = new Regex(@"^([-*+])\s+(\S.*)$", RegexOptions.Compiled);
+        // Ordered list item marker: "1.", "2)", or dotted numbers like "1.1." / "2.4.1."
+        // (dotted markers are displayed literally).
+        private static readonly Regex OrderedListItemPattern = new Regex(@"^(\d{1,9}(?:\.\d{1,9})*[.)])\s+(\S.*)$", RegexOptions.Compiled);
+        // Blockquote line: one or more leading ">" markers followed by the quoted text
+        // (nested markers collapse into a single-level quote).
+        private static readonly Regex BlockquotePattern = new Regex(@"^(?:>\s?)+(.+)$", RegexOptions.Compiled);
 
         /// <summary>
         /// H1–H6 size relative to the document base font size.
@@ -131,6 +133,7 @@ namespace SimpleLLMChatGUI
                         double baseFontSize = document.FontSize > 0 ? document.FontSize : FontHandler.GetFontSize();
                         Block container = BuildCodeBlockContainer(language, codeLines, baseFontSize);
                         blocks = ReplaceBlockRange(document, blocks, rangeStart, i, container);
+                        i = rangeStart;
                         continue;
                     }
                 }
@@ -314,34 +317,41 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// If block <paramref name="i"/> begins a markdown list (consecutive items of
-        /// one kind), replaces those paragraphs with a bullet/numbered block wrapped
-        /// in a <see cref="BlockUIContainer"/>. The caller's <c>continue</c> then
-        /// resumes at the first block after the list.
+        /// If block <paramref name="i"/> begins a markdown list (consecutive items,
+        /// nesting via indentation), replaces those paragraphs with a bullet/numbered
+        /// block wrapped in a <see cref="BlockUIContainer"/>. The caller's
+        /// <c>continue</c> then resumes at the first block after the list.
         /// </summary>
         private static bool TryConvertList(FlowDocument document, int i, ref List<Block> blocks)
         {
-            bool ordered;
+            int baseIndent;
+            bool baseOrdered;
             string marker;
             string itemText;
-            if (!TryParseListItem(ParagraphText(blocks[i] as Paragraph), out ordered, out marker, out itemText))
+            if (!TryParseListItem(RawParagraphText(blocks[i] as Paragraph), out baseIndent, out baseOrdered, out marker, out itemText))
                 return false;
+
+            var items = new List<ListItemNode>();
+            items.Add(new ListItemNode { Indent = baseIndent, Ordered = baseOrdered, Marker = marker, Text = itemText });
 
             int lastItem = i;
             while (lastItem + 1 < blocks.Count)
             {
+                int nextIndent;
                 bool nextOrdered;
                 string nextMarker;
                 string nextText;
-                if (!TryParseListItem(ParagraphText(blocks[lastItem + 1] as Paragraph), out nextOrdered, out nextMarker, out nextText))
+                if (!TryParseListItem(RawParagraphText(blocks[lastItem + 1] as Paragraph), out nextIndent, out nextOrdered, out nextMarker, out nextText))
                     break;
-                if (nextOrdered != ordered)
+                // A same-or-shallower item of a different kind starts a new list.
+                if (nextIndent <= baseIndent && nextOrdered != baseOrdered)
                     break;
                 lastItem++;
+                items.Add(new ListItemNode { Indent = nextIndent, Ordered = nextOrdered, Marker = nextMarker, Text = nextText });
             }
 
             double baseFontSize = document.FontSize > 0 ? document.FontSize : FontHandler.GetFontSize();
-            Block container = BuildListContainer(blocks, i, lastItem, baseFontSize);
+            Block container = BuildListContainer(BuildListTree(items), baseFontSize);
 
             blocks = ReplaceBlockRange(document, blocks, i, lastItem, container);
             return true;
@@ -432,7 +442,7 @@ namespace SimpleLLMChatGUI
             }
             else
             {
-                var textBox = new TextBox
+                var textBox = new NoScrollTextBox
                 {
                     Text = text,
                     IsReadOnly = true,
@@ -469,55 +479,120 @@ namespace SimpleLLMChatGUI
         private const double TableCellMaxWidth = 300;
 
         /// <summary>
-        /// Builds a list as a vertical stack of two-column rows (marker, then
-        /// wrapping text), wrapped in a <see cref="BlockUIContainer"/> so wrapped
-        /// lines hang under the text instead of the marker.
+        /// One parsed list item; <see cref="Children"/> holds the items indented
+        /// under it, <see cref="Parent"/> the nearest shallower item.
         /// </summary>
-        private static Block BuildListContainer(List<Block> blocks, int firstItem, int lastItem, double baseFontSize)
+        private sealed class ListItemNode
+        {
+            public int Indent;
+            public bool Ordered;
+            public string Marker;
+            public string Text;
+            public ListItemNode Parent;
+            public readonly List<ListItemNode> Children = new List<ListItemNode>();
+        }
+
+        /// <summary>
+        /// Maps a flat sequence of indented items to a nested tree: each item
+        /// attaches to the nearest preceding item with a smaller indent (indent
+        /// stack), which also absorbs malformed indentation sanely.
+        /// </summary>
+        private static List<ListItemNode> BuildListTree(List<ListItemNode> items)
+        {
+            var root = new ListItemNode { Indent = -1 };
+            var stack = new List<ListItemNode>();
+
+            for (int i = 0; i < items.Count; i++)
+            {
+                ListItemNode item = items[i];
+
+                while (stack.Count > 0 && stack[stack.Count - 1].Indent > item.Indent)
+                    stack.RemoveAt(stack.Count - 1);
+
+                ListItemNode parent;
+                if (stack.Count == 0)
+                {
+                    parent = root;
+                }
+                else if (stack[stack.Count - 1].Indent == item.Indent)
+                {
+                    parent = stack[stack.Count - 1].Parent ?? root;
+                }
+                else
+                {
+                    parent = stack[stack.Count - 1];
+                }
+
+                item.Parent = parent;
+                parent.Children.Add(item);
+                stack.Add(item);
+            }
+
+            return root.Children;
+        }
+
+        /// <summary>
+        /// Builds a (nested) list as a vertical stack of two-column rows (marker,
+        /// then wrapping text), wrapped in a <see cref="BlockUIContainer"/> so
+        /// wrapped lines hang under the text instead of the marker. Nested levels
+        /// are indented inside the previous level's text column.
+        /// </summary>
+        private static Block BuildListContainer(List<ListItemNode> topLevel, double baseFontSize)
+        {
+            return new BlockUIContainer(BuildListLevel(topLevel, baseFontSize))
+            {
+                Margin = new Thickness(0, 4, 0, 4)
+            };
+        }
+
+        private static StackPanel BuildListLevel(List<ListItemNode> items, double baseFontSize)
         {
             var stack = new StackPanel { Orientation = Orientation.Vertical };
 
-            for (int k = firstItem; k <= lastItem; k++)
+            for (int i = 0; i < items.Count; i++)
             {
-                bool itemOrdered;
-                string marker;
-                string text;
-                TryParseListItem(ParagraphText(blocks[k] as Paragraph), out itemOrdered, out marker, out text);
+                ListItemNode item = items[i];
 
                 var row = new Grid();
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
                 var markerBlock = CreateListTextBlock(baseFontSize, new Thickness(0, 1, 8, 1));
-                markerBlock.Inlines.Add(new Run(marker));
+                markerBlock.Inlines.Add(new Run(item.Marker));
                 Grid.SetColumn(markerBlock, 0);
                 row.Children.Add(markerBlock);
+
+                var content = new StackPanel { Orientation = Orientation.Vertical };
 
                 // Plain items become a read-only TextBox so part of the item can be
                 // selected and copied; items with inline markdown stay formatted
                 // (hosted TextBlocks are not selectable in WPF).
-                FrameworkElement content;
-                if (HasInlineMarkdown(text))
+                if (HasInlineMarkdown(item.Text))
                 {
                     var textBlock = CreateListTextBlock(baseFontSize, new Thickness(0, 1, 0, 1));
-                    textBlock.Inlines.Add(new Run(text));
+                    textBlock.Inlines.Add(new Run(item.Text));
                     ApplyInlineFormatting(textBlock.Inlines);
-                    content = textBlock;
+                    content.Children.Add(textBlock);
                 }
                 else
                 {
-                    content = CreateListTextBox(text, baseFontSize, new Thickness(0, 1, 0, 1));
+                    content.Children.Add(CreateListTextBox(item.Text, baseFontSize, new Thickness(0, 1, 0, 1)));
                 }
+
+                if (item.Children.Count > 0)
+                {
+                    var childPanel = BuildListLevel(item.Children, baseFontSize);
+                    childPanel.Margin = new Thickness(Math.Max(12.0, baseFontSize), 2, 0, 2);
+                    content.Children.Add(childPanel);
+                }
+
                 Grid.SetColumn(content, 1);
                 row.Children.Add(content);
 
                 stack.Children.Add(row);
             }
 
-            return new BlockUIContainer(stack)
-            {
-                Margin = new Thickness(0, 4, 0, 4)
-            };
+            return stack;
         }
 
         /// <summary>
@@ -577,7 +652,7 @@ namespace SimpleLLMChatGUI
 
             // A read-only TextBox (not a TextBlock) so the user can select part of
             // the code and copy the selection.
-            var code = new TextBox
+            var code = new NoScrollTextBox
             {
                 Text = codeText,
                 IsReadOnly = true,
@@ -623,7 +698,7 @@ namespace SimpleLLMChatGUI
         /// </summary>
         private static TextBox CreateListTextBox(string text, double baseFontSize, Thickness margin)
         {
-            var textBox = new TextBox
+            var textBox = new NoScrollTextBox
             {
                 Text = text,
                 Margin = margin,
@@ -652,33 +727,49 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// A list item: <c>-</c>/<c>*</c>/<c>+</c> text (unordered) or
-        /// <c>1.</c>/<c>1)</c> text (ordered). <paramref name="marker"/> is the
-        /// displayed bullet or the literal item number.
+        /// A list item with its indentation: <c>-</c>/<c>*</c>/<c>+</c> text
+        /// (unordered) or <c>1.</c>/<c>1.1.</c>/<c>1)</c> text (ordered).
+        /// <paramref name="indent"/> is the leading whitespace (tabs count as
+        /// 4 spaces); <paramref name="marker"/> is the displayed bullet or the
+        /// literal item number.
         /// </summary>
-        private static bool TryParseListItem(string trimmedText, out bool ordered, out string marker, out string text)
+        private static bool TryParseListItem(string rawText, out int indent, out bool ordered, out string marker, out string text)
         {
+            indent = 0;
             ordered = false;
             marker = null;
             text = null;
-            if (string.IsNullOrEmpty(trimmedText))
+            if (string.IsNullOrEmpty(rawText))
                 return false;
 
-            Match orderedMatch = OrderedListItemPattern.Match(trimmedText);
+            int pos = 0;
+            while (pos < rawText.Length && (rawText[pos] == ' ' || rawText[pos] == '\t'))
+            {
+                indent += rawText[pos] == '\t' ? 4 : 1;
+                pos++;
+            }
+
+            string rest = rawText.Substring(pos).TrimEnd();
+            if (rest.Length == 0)
+                return false;
+
+            Match orderedMatch = OrderedListItemPattern.Match(rest);
             if (orderedMatch.Success)
             {
                 ordered = true;
-                marker = orderedMatch.Groups[1].Value + ".";
+                marker = orderedMatch.Groups[1].Value;
+                if (marker.EndsWith(")", StringComparison.Ordinal))
+                    marker = marker.Substring(0, marker.Length - 1) + ".";
                 text = orderedMatch.Groups[2].Value;
                 return true;
             }
 
-            Match unorderedMatch = UnorderedListItemPattern.Match(trimmedText);
+            Match unorderedMatch = UnorderedListItemPattern.Match(rest);
             if (unorderedMatch.Success)
             {
                 ordered = false;
                 marker = "\u2022";
-                text = unorderedMatch.Groups[1].Value;
+                text = unorderedMatch.Groups[2].Value;
                 return true;
             }
 
@@ -711,7 +802,7 @@ namespace SimpleLLMChatGUI
             for (int j = last + 1; j < blocks.Count; j++)
                 tail.Add(blocks[j]);
 
-            for (int j = first; j <= last; j++)
+            for (int j = first; j < blocks.Count; j++)
                 document.Blocks.Remove(blocks[j]);
 
             document.Blocks.Add(block);
@@ -786,6 +877,16 @@ namespace SimpleLLMChatGUI
             if (paragraph == null)
                 return null;
             return new TextRange(paragraph.ContentStart, paragraph.ContentEnd).Text.Trim();
+        }
+
+        /// <summary>
+        /// Paragraph text with leading whitespace preserved (list indentation).
+        /// </summary>
+        private static string RawParagraphText(Paragraph paragraph)
+        {
+            if (paragraph == null)
+                return null;
+            return new TextRange(paragraph.ContentStart, paragraph.ContentEnd).Text;
         }
 
         private static string StripOuterPipes(string text)
