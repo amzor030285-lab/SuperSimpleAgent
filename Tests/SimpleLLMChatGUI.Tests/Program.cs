@@ -144,6 +144,106 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("gui.markdown_table", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    server.FixedReply =
+                        "Here is the table.\n\n" +
+                        "| Name | Value |\n" +
+                        "|:-----|------:|\n" +
+                        "| alpha | 1 |\n" +
+                        "| beta  | 22 |";
+                    server.StreamDelayMs = 5;
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.SendTurn("show the table", 30000);
+
+                        string text = gui.GetAllText();
+                        TestAssert.Contains(text, "alpha", "table cell rendered");
+                        TestAssert.True(!text.Contains(":-----"), "separator row consumed into WPF table");
+                    }
+                }
+            });
+
+            TestRunner.Run("gui.markdown_lists_blockquote", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    server.FixedReply =
+                        "Here are the items:\n\n" +
+                        "- alpha\n" +
+                        "- beta\n\n" +
+                        "1. first\n" +
+                        "2. second\n\n" +
+                        "> quoted line";
+                    server.StreamDelayMs = 5;
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.SendTurn("show the list", 30000);
+
+                        string text = gui.GetAllText();
+                        TestAssert.Contains(text, "alpha", "unordered item rendered");
+                        TestAssert.Contains(text, "\u2022", "bullet marker rendered");
+                        TestAssert.Contains(text, "first", "ordered item rendered");
+                        TestAssert.Contains(text, "2.", "ordered marker rendered");
+                        TestAssert.Contains(text, "quoted line", "blockquote text rendered");
+                        TestAssert.True(!text.Contains("- alpha"), "list marker consumed");
+                        TestAssert.True(!text.Contains("> quoted"), "blockquote marker consumed");
+                    }
+                }
+            });
+
+            TestRunner.Run("gui.code_block_copy", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    server.FixedReply =
+                        "Here is the code:\n\n" +
+                        "```python\n" +
+                        "print('hello')\n" +
+                        "print('world')\n" +
+                        "```\n\n" +
+                        "Done.";
+                    server.StreamDelayMs = 5;
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.SendTurn("show the code", 30000);
+
+                        string text = gui.GetAllText();
+                        TestAssert.Contains(text, "print('hello')", "code text rendered");
+                        TestAssert.Contains(text, "python", "language label rendered");
+                        TestAssert.Contains(text, "Done.", "text after code block preserved");
+                        TestAssert.True(!text.Contains("```"), "fence markers consumed");
+
+                        gui.ClearClipboard();
+                        gui.ClickMainButton("codeCopyButton");
+                        string copied = gui.ReadClipboardContaining("print('hello')", 5000);
+                        TestAssert.Contains(copied, "print('hello')", "code copied");
+                        TestAssert.True(!copied.Contains("```"), "fence markers excluded from copied code");
+                        TestAssert.True(!copied.Contains("Done."), "surrounding text excluded from copied code");
+
+                        // Index 1 = the assistant turn's message copy button (index 0 is the user turn).
+                        gui.ClickMainButton("copyButton", 1);
+                        string message = gui.ReadClipboardContaining("```python", 5000);
+                        TestAssert.Contains(message, "Done.", "message copy includes full reply");
+                        TestAssert.Contains(message, "```python", "message copy keeps raw markdown");
+                    }
+                }
+            });
+
             TestRunner.Run("gui.window_and_long_chat", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

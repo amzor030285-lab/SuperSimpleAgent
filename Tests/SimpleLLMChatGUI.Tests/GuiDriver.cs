@@ -153,6 +153,78 @@ namespace SimpleLLMChatGUI.Tests
             invoke.Invoke();
         }
 
+        /// <summary>
+        /// Concatenates the text of every text-pattern element under the window
+        /// (chat input and each turn's FlowDocument), plus the Name of Text controls
+        /// without a text pattern (e.g. table cell TextBlocks hosted in BlockUIContainers).
+        /// </summary>
+        public string GetAllText()
+        {
+            var sb = new StringBuilder();
+            if (_window == null)
+                return sb.ToString();
+
+            AutomationElementCollection elements = _window.FindAll(TreeScope.Descendants,
+                Condition.TrueCondition);
+            foreach (AutomationElement element in elements)
+            {
+                try
+                {
+                    object pattern;
+                    if (element.TryGetCurrentPattern(TextPattern.Pattern, out pattern))
+                    {
+                        string text = (pattern as TextPattern).DocumentRange.GetText(int.MaxValue);
+                        if (!string.IsNullOrEmpty(text))
+                            sb.Append(text).Append("\n");
+                    }
+                    else if (element.Current.ControlType == ControlType.Text)
+                    {
+                        string name = element.Current.Name;
+                        if (!string.IsNullOrEmpty(name))
+                            sb.Append(name).Append("\n");
+                    }
+                }
+                catch
+                {
+                    // Element stopped exposing text; skip it.
+                }
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>Dumps every descendant's control type / name / text-pattern flag (diagnostics).</summary>
+        public void DumpAutomationTree(string context)
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                sb.Append("Automation tree (" + context + "):");
+                AutomationElementCollection all = _window.FindAll(TreeScope.Descendants, Condition.TrueCondition);
+                foreach (AutomationElement el in all)
+                {
+                    string ct = "";
+                    string name = "";
+                    string text = "?";
+                    try { ct = el.Current.ControlType.ProgrammaticName; } catch { }
+                    try
+                    {
+                        name = (el.Current.Name ?? "").Replace("\r", "\\r").Replace("\n", "\\n");
+                        if (name.Length > 80)
+                            name = name.Substring(0, 80) + "...";
+                    }
+                    catch { }
+                    object textPattern;
+                    try { text = el.TryGetCurrentPattern(TextPattern.Pattern, out textPattern) ? "text" : "-"; } catch { }
+                    sb.Append("\n  [" + ct + "] text=" + text + " name='" + name + "'");
+                }
+                TestLog.Detail(sb.ToString());
+            }
+            catch (Exception ex)
+            {
+                TestLog.Detail("DumpAutomationTree failed: " + ex.Message);
+            }
+        }
+
         public Process FindCliProcess()
         {
             foreach (Process p in Process.GetProcessesByName("SimpleLLMChatCLI"))
@@ -182,13 +254,77 @@ namespace SimpleLLMChatGUI.Tests
         /// <summary>Invokes a button in the main window by automation id.</summary>
         public void ClickMainButton(string automationId)
         {
-            AutomationElement el = FindById(automationId);
-            if (el == null)
+            ClickMainButton(automationId, 0);
+        }
+
+        /// <summary>Invokes the n-th button in the main window by automation id (document order).</summary>
+        public void ClickMainButton(string automationId, int index)
+        {
+            if (_window == null)
                 throw new TestFailureException("Main-window button not found: " + automationId);
+
+            AutomationElementCollection els = _window.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.AutomationIdProperty, automationId));
+            if (index < 0 || index >= els.Count)
+                throw new TestFailureException(
+                    "Main-window button not found: " + automationId + " (index " + index + " of " + els.Count + ")");
+
+            AutomationElement el = els[index];
             InvokePattern invoke = el.GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
             if (invoke == null)
                 throw new TestFailureException(automationId + " does not support InvokePattern");
             invoke.Invoke();
+        }
+
+        /// <summary>Clipboard APIs require an STA thread; the test host is MTA.</summary>
+        private static void RunOnStaThread(Action action)
+        {
+            Exception error = null;
+            var thread = new Thread(() =>
+            {
+                try { action(); }
+                catch (Exception ex) { error = ex; }
+            });
+            thread.SetApartmentState(ApartmentState.STA);
+            thread.Start();
+            thread.Join();
+            if (error != null)
+                throw new TestFailureException("STA clipboard access failed: " + error.Message);
+        }
+
+        public void ClearClipboard()
+        {
+            RunOnStaThread(() => { System.Windows.Clipboard.SetText(string.Empty); });
+        }
+
+        /// <summary>Returns the current clipboard text (null if absent).</summary>
+        private string ReadClipboardOnce()
+        {
+            string text = null;
+            RunOnStaThread(() =>
+            {
+                if (System.Windows.Clipboard.ContainsText())
+                    text = System.Windows.Clipboard.GetText();
+            });
+            return text;
+        }
+
+        /// <summary>
+        /// Polls until the clipboard text contains the expected part (the GUI
+        /// may apply the click asynchronously); returns the matching text.
+        /// </summary>
+        public string ReadClipboardContaining(string expected, int timeoutMs)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            string last = null;
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                last = ReadClipboardOnce();
+                if (last != null && last.Contains(expected))
+                    return last;
+                Thread.Sleep(100);
+            }
+            return last ?? string.Empty;
         }
 
         /// <summary>

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
@@ -32,6 +33,14 @@ namespace SimpleLLMChatGUI
         private static readonly Regex BareUrlPattern = new Regex(@"https?://[^\s<>""'()\[\]{}]+(?<![.,;:!?])", RegexOptions.Compiled);
         private static readonly Regex HorizontalRulePattern = new Regex(@"^(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$", RegexOptions.Compiled);
         private static readonly Regex BacktickFencePattern = new Regex(@"^([^`]*:\s*)?(`{3,})([^`]*)$", RegexOptions.Compiled);
+        // One markdown table separator cell: dashes with optional alignment colons (---, :---, ---:, :---:).
+        private static readonly Regex TableSeparatorCellPattern = new Regex(@"^:?-+:?$", RegexOptions.Compiled);
+        // Unordered list item: "- item", "* item", "+ item".
+        private static readonly Regex UnorderedListItemPattern = new Regex(@"^[-*+]\s+(\S.*)$", RegexOptions.Compiled);
+        // Ordered list item: "1. item", "2) item".
+        private static readonly Regex OrderedListItemPattern = new Regex(@"^(\d{1,9})[.)]\s+(\S.*)$", RegexOptions.Compiled);
+        // Blockquote line: a leading ">" marker followed by the quoted text.
+        private static readonly Regex BlockquotePattern = new Regex(@"^>\s?(.+)$", RegexOptions.Compiled);
 
         /// <summary>
         /// H1–H6 size relative to the document base font size.
@@ -54,6 +63,8 @@ namespace SimpleLLMChatGUI
                 startBlockIndex = blocks.Count;
 
             int activeBacktickFenceLength = 0;
+            int activeCodeBlockStart = -1;
+            string activeCodeLanguage = null;
 
             for (int i = startBlockIndex; i < blocks.Count; i++)
             {
@@ -64,12 +75,14 @@ namespace SimpleLLMChatGUI
                 string paragraphText = new TextRange(paragraph.ContentStart, paragraph.ContentEnd).Text;
                 string trimmedText = paragraphText.Trim();
 
-                if (TryParseBacktickFence(trimmedText, out int fenceLength, out bool hasInfoString))
+                if (TryParseBacktickFence(trimmedText, out int fenceLength, out bool hasInfoString, out string infoString))
                 {
                     if (activeBacktickFenceLength == 0)
                     {
                         // Opening fence can include an optional language/info string.
                         activeBacktickFenceLength = fenceLength;
+                        activeCodeBlockStart = i;
+                        activeCodeLanguage = infoString;
                         int backtickIdx = paragraphText.IndexOf('`');
                         string prefix = backtickIdx > 0 ? paragraphText.Substring(0, backtickIdx).TrimEnd() : null;
                         paragraph.Inlines.Clear();
@@ -81,8 +94,39 @@ namespace SimpleLLMChatGUI
                     // Closing fence must be backticks only and at least the opening fence length.
                     if (!hasInfoString && fenceLength >= activeBacktickFenceLength)
                     {
+                        int start = activeCodeBlockStart;
+                        string language = activeCodeLanguage;
                         activeBacktickFenceLength = 0;
-                        paragraph.Inlines.Clear();
+                        activeCodeBlockStart = -1;
+                        activeCodeLanguage = null;
+
+                        // Fall back to plain fence removal if a non-paragraph block
+                        // (e.g. a thinking/tool expander) ended up inside the fence.
+                        bool plain = start >= 0;
+                        for (int k = start + 1; plain && k < i; k++)
+                            plain = blocks[k] is Paragraph;
+
+                        if (!plain)
+                        {
+                            paragraph.Inlines.Clear();
+                            continue;
+                        }
+
+                        // Collect the code lines between the fences, keeping indentation.
+                        var codeLines = new List<string>();
+                        for (int k = start + 1; k < i; k++)
+                        {
+                            Paragraph codeParagraph = blocks[k] as Paragraph;
+                            string line = new TextRange(codeParagraph.ContentStart, codeParagraph.ContentEnd).Text;
+                            codeLines.Add(line.TrimEnd('\r', '\n'));
+                        }
+
+                        // Keep a non-empty prefix paragraph (text before the opening fence).
+                        int rangeStart = !string.IsNullOrEmpty(ParagraphText(blocks[start] as Paragraph)) ? start + 1 : start;
+
+                        double baseFontSize = document.FontSize > 0 ? document.FontSize : FontHandler.GetFontSize();
+                        Block container = BuildCodeBlockContainer(language, codeLines, baseFontSize);
+                        blocks = ReplaceBlockRange(document, blocks, rangeStart, i, container);
                         continue;
                     }
                 }
@@ -96,9 +140,30 @@ namespace SimpleLLMChatGUI
                     continue;
                 }
 
+                // Markdown pipe tables: a row paragraph followed by a separator
+                // paragraph (plus any data rows) becomes a WPF Table block.
+                if (TryConvertPipeTable(document, i, ref blocks))
+                    continue;
+
                 // Process horizontal rules as paragraph-level separators
                 if (ProcessHorizontalRule(paragraph, trimmedText))
                     continue;
+
+                // Markdown lists: consecutive list-item paragraphs of one kind become
+                // a bullet/numbered block.
+                if (TryConvertList(document, i, ref blocks))
+                    continue;
+
+                // Markdown blockquote: a leading "> " marker becomes a left bar with padding.
+                string quoteText;
+                if (TryStripBlockquoteMarker(trimmedText, out quoteText))
+                {
+                    paragraph.Inlines.Clear();
+                    paragraph.Inlines.Add(new Run(quoteText));
+                    paragraph.Padding = new Thickness(10, 0, 0, 0);
+                    paragraph.BorderThickness = new Thickness(3, 0, 0, 0);
+                    paragraph.SetResourceReference(Border.BorderBrushProperty, "RoleLabelBrush");
+                }
 
                 // Streaming AppendText leaves many Runs per line; merge before regex matching.
                 ConsolidateRuns(paragraph);
@@ -107,35 +172,7 @@ namespace SimpleLLMChatGUI
                 // Process headers first (paragraph-level formatting)
                 ProcessHeaders(paragraph, trimmedText, document);
 
-                // Process inline code blocks first to split them out
-                ReplaceInRuns(paragraph, InlineCodePattern, match =>
-                {
-                    var codeRun = new Run(match.Groups[1].Value);
-                    var codeSpan = new Span(codeRun);
-                    codeSpan.SetResourceReference(TextElement.BackgroundProperty, "CodeBlockBackgroundColorBrush");
-                    codeSpan.SetResourceReference(TextElement.FontFamilyProperty, FontHandler.CodeBlockFontFamilyKey);
-                    codeRun.ClearValue(TextElement.FontFamilyProperty);
-                    return codeSpan;
-                });
-
-                // Emphasized links before plain links (e.g. **[text](url)** / ***[text](url)***).
-                ReplaceInRuns(paragraph, BoldItalicLinkPattern, match =>
-                    (Inline)CreateHyperlink(match.Groups[2].Value, match.Groups[3].Value.Trim(), FontWeights.Bold, FontStyles.Italic)
-                    ?? new Run(match.Value));
-                ReplaceInRuns(paragraph, BoldLinkPattern, match =>
-                    (Inline)CreateHyperlink(BoldLinkText(match), BoldLinkUrl(match), FontWeights.Bold)
-                    ?? new Run(match.Value));
-                // Plain links; unwrap [**text**](url) / [***text***](url) into emphasized hyperlinks.
-                ReplaceInRuns(paragraph, LinkPattern, match =>
-                    (Inline)CreateLinkInline(match.Groups[1].Value, match.Groups[2].Value.Trim()) ?? new Run(match.Value));
-                ReplaceInRuns(paragraph, BareUrlPattern, match =>
-                    (Inline)CreateHyperlink(match.Value, match.Value) ?? new Run(match.Value));
-
-                // Process formatting in order: bold italic, bold, italic, strikethrough
-                ReplaceInRuns(paragraph, BoldItalicPattern, match => new Run(match.Groups[2].Value) { FontWeight = FontWeights.Bold, FontStyle = FontStyles.Italic });
-                ReplaceInRuns(paragraph, BoldPattern, match => new Run(FirstCapturedGroup(match)) { FontWeight = FontWeights.Bold });
-                ReplaceInRuns(paragraph, ItalicPattern, match => new Run(FirstCapturedGroup(match)) { FontStyle = FontStyles.Italic });
-                ReplaceInRuns(paragraph, StrikethroughPattern, match => new Run(match.Groups[1].Value) { TextDecorations = TextDecorations.Strikethrough });
+                ApplyInlineFormatting(paragraph.Inlines);
             }
 
             startBlockIndex = blocks.Count;
@@ -194,6 +231,520 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
+        /// Inline markdown for a paragraph's or text block's inlines: code, links,
+        /// bold/italic/strikethrough.
+        /// </summary>
+        private static void ApplyInlineFormatting(InlineCollection inlines)
+        {
+            // Process inline code blocks first to split them out
+            ReplaceInRuns(inlines, InlineCodePattern, CreateInlineCodeSpan);
+
+            // Emphasized links before plain links (e.g. **[text](url)** / ***[text](url)***).
+            ReplaceInRuns(inlines, BoldItalicLinkPattern, match =>
+                (Inline)CreateHyperlink(match.Groups[2].Value, match.Groups[3].Value.Trim(), FontWeights.Bold, FontStyles.Italic)
+                ?? new Run(match.Value));
+            ReplaceInRuns(inlines, BoldLinkPattern, match =>
+                (Inline)CreateHyperlink(BoldLinkText(match), BoldLinkUrl(match), FontWeights.Bold)
+                ?? new Run(match.Value));
+            // Plain links; unwrap [**text**](url) / [***text***](url) into emphasized hyperlinks.
+            ReplaceInRuns(inlines, LinkPattern, match =>
+                (Inline)CreateLinkInline(match.Groups[1].Value, match.Groups[2].Value.Trim()) ?? new Run(match.Value));
+            ReplaceInRuns(inlines, BareUrlPattern, match =>
+                (Inline)CreateHyperlink(match.Value, match.Value) ?? new Run(match.Value));
+
+            // Process formatting in order: bold italic, bold, italic, strikethrough
+            ReplaceInRuns(inlines, BoldItalicPattern, match => new Run(match.Groups[2].Value) { FontWeight = FontWeights.Bold, FontStyle = FontStyles.Italic });
+            ReplaceInRuns(inlines, BoldPattern, match => new Run(FirstCapturedGroup(match)) { FontWeight = FontWeights.Bold });
+            ReplaceInRuns(inlines, ItalicPattern, match => new Run(FirstCapturedGroup(match)) { FontStyle = FontStyles.Italic });
+            ReplaceInRuns(inlines, StrikethroughPattern, match => new Run(match.Groups[1].Value) { TextDecorations = TextDecorations.Strikethrough });
+        }
+
+        private static Inline CreateInlineCodeSpan(Match match)
+        {
+            var codeRun = new Run(match.Groups[1].Value);
+            var codeSpan = new Span(codeRun);
+            codeSpan.SetResourceReference(TextElement.BackgroundProperty, "CodeBlockBackgroundColorBrush");
+            codeSpan.SetResourceReference(TextElement.FontFamilyProperty, FontHandler.CodeBlockFontFamilyKey);
+            codeRun.ClearValue(TextElement.FontFamilyProperty);
+            return codeSpan;
+        }
+
+        /// <summary>
+        /// If block <paramref name="i"/> begins a markdown pipe table (header row,
+        /// separator row, then data rows), replaces those paragraphs with a table
+        /// block and refreshes <paramref name="blocks"/>. The caller's
+        /// <c>continue</c> then resumes at the first block after the table. The
+        /// table is a <see cref="System.Windows.Controls.Grid"/> of bordered cells
+        /// wrapped in a <see cref="BlockUIContainer"/> because the .NET 4.0 Client
+        /// Profile does not expose the WPF <c>System.Windows.Documents</c> table
+        /// types (<c>Grid</c>, <c>Row</c>, <c>Cell</c>).
+        /// </summary>
+        private static bool TryConvertPipeTable(FlowDocument document, int i, ref List<Block> blocks)
+        {
+            Paragraph headerParagraph = blocks[i] as Paragraph;
+            if (headerParagraph == null || i + 1 >= blocks.Count)
+                return false;
+
+            string headerText = ParagraphText(headerParagraph);
+            List<string> headerCells;
+            if (!TryParseTableRow(headerText, out headerCells))
+                return false;
+
+            Paragraph separatorParagraph = blocks[i + 1] as Paragraph;
+            if (separatorParagraph == null)
+                return false;
+
+            List<TextAlignment> alignments;
+            if (!TryParseTableSeparator(ParagraphText(separatorParagraph), out alignments))
+                return false;
+
+            int lastRow = i + 1;
+            while (lastRow + 1 < blocks.Count && IsTableDataRow(ParagraphText(blocks[lastRow + 1] as Paragraph)))
+                lastRow++;
+
+            double baseFontSize = document.FontSize > 0 ? document.FontSize : FontHandler.GetFontSize();
+            Block container = BuildTableContainer(headerCells, alignments, blocks, i + 2, lastRow, baseFontSize);
+
+            blocks = ReplaceBlockRange(document, blocks, i, lastRow, container);
+            return true;
+        }
+
+        /// <summary>
+        /// If block <paramref name="i"/> begins a markdown list (consecutive items of
+        /// one kind), replaces those paragraphs with a bullet/numbered block wrapped
+        /// in a <see cref="BlockUIContainer"/>. The caller's <c>continue</c> then
+        /// resumes at the first block after the list.
+        /// </summary>
+        private static bool TryConvertList(FlowDocument document, int i, ref List<Block> blocks)
+        {
+            bool ordered;
+            string marker;
+            string itemText;
+            if (!TryParseListItem(ParagraphText(blocks[i] as Paragraph), out ordered, out marker, out itemText))
+                return false;
+
+            int lastItem = i;
+            while (lastItem + 1 < blocks.Count)
+            {
+                bool nextOrdered;
+                string nextMarker;
+                string nextText;
+                if (!TryParseListItem(ParagraphText(blocks[lastItem + 1] as Paragraph), out nextOrdered, out nextMarker, out nextText))
+                    break;
+                if (nextOrdered != ordered)
+                    break;
+                lastItem++;
+            }
+
+            double baseFontSize = document.FontSize > 0 ? document.FontSize : FontHandler.GetFontSize();
+            Block container = BuildListContainer(blocks, i, lastItem, baseFontSize);
+
+            blocks = ReplaceBlockRange(document, blocks, i, lastItem, container);
+            return true;
+        }
+
+        /// <summary>
+        /// Builds a table as a star-sized <see cref="System.Windows.Controls.Grid"/>
+        /// of bordered cell <see cref="Border"/>s, wrapped in a
+        /// <see cref="BlockUIContainer"/>. Columns are weighted by each column's
+        /// widest cell so the table spans the text width. The outer frame supplies
+        /// the outer border; each cell supplies only its right/bottom border so
+        /// inner lines are 1px.
+        /// </summary>
+        private static Block BuildTableContainer(List<string> headerCells, List<TextAlignment> alignments,
+            List<Block> blocks, int firstDataRow, int lastRow, double baseFontSize)
+        {
+            int columnCount = headerCells.Count;
+            double[] columnWeights = new double[columnCount];
+            for (int c = 0; c < columnCount; c++)
+                columnWeights[c] = ColumnWeight(headerCells[c]);
+
+            for (int i = firstDataRow; i <= lastRow; i++)
+            {
+                List<string> cells = SplitTableCells(StripOuterPipes(ParagraphText(blocks[i] as Paragraph) ?? ""));
+                for (int c = 0; c < columnCount && c < cells.Count; c++)
+                {
+                    double weight = ColumnWeight(cells[c]);
+                    if (weight > columnWeights[c])
+                        columnWeights[c] = weight;
+                }
+            }
+
+            int rowCount = (lastRow - firstDataRow + 1) + 1;
+
+            var grid = new System.Windows.Controls.Grid();
+            for (int c = 0; c < columnCount; c++)
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(columnWeights[c], GridUnitType.Star) });
+            for (int r = 0; r < rowCount; r++)
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            for (int c = 0; c < columnCount; c++)
+                grid.Children.Add(CreateTableCell(headerCells[c], CellAlignment(alignments, c), true,
+                    baseFontSize, c, columnCount, 0, rowCount));
+
+            for (int i = firstDataRow; i <= lastRow; i++)
+            {
+                int r = i - firstDataRow + 1;
+                List<string> cells = SplitTableCells(StripOuterPipes(ParagraphText(blocks[i] as Paragraph) ?? ""));
+                for (int c = 0; c < columnCount; c++)
+                    grid.Children.Add(CreateTableCell(c < cells.Count ? cells[c] : string.Empty, CellAlignment(alignments, c), false,
+                        baseFontSize, c, columnCount, r, rowCount));
+            }
+
+            var frame = new Border
+            {
+                BorderThickness = new Thickness(1),
+                Child = grid
+            };
+            frame.SetResourceReference(Border.BorderBrushProperty, "TableBorderBrush");
+
+            return new BlockUIContainer(frame)
+            {
+                Margin = new Thickness(0, 4, 0, 4)
+            };
+        }
+
+        private static Border CreateTableCell(string text, TextAlignment alignment, bool isHeader,
+            double baseFontSize, int column, int columnCount, int row, int rowCount)
+        {
+            var cellBorder = new Border
+            {
+                Padding = new Thickness(6, 3, 6, 3),
+                BorderThickness = new Thickness(0, 0, column == columnCount - 1 ? 0 : 1, row == rowCount - 1 ? 0 : 1)
+            };
+            cellBorder.SetResourceReference(Border.BorderBrushProperty, "TableBorderBrush");
+            if (isHeader)
+                cellBorder.SetResourceReference(Border.BackgroundProperty, "TableHeaderBackgroundBrush");
+
+            System.Windows.Controls.Grid.SetColumn(cellBorder, column);
+            System.Windows.Controls.Grid.SetRow(cellBorder, row);
+
+            var textBlock = new TextBlock
+            {
+                TextAlignment = alignment,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = baseFontSize,
+                LineHeight = ChatTurn.LineHeightMultiplier
+            };
+            textBlock.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+            if (isHeader)
+                textBlock.FontWeight = FontWeights.Bold;
+
+            textBlock.Inlines.Add(new Run(text));
+            ApplyInlineFormatting(textBlock.Inlines);
+
+            cellBorder.Child = textBlock;
+            return cellBorder;
+        }
+
+        private static TextAlignment CellAlignment(List<TextAlignment> alignments, int column)
+        {
+            return column < alignments.Count ? alignments[column] : TextAlignment.Left;
+        }
+
+        private static double ColumnWeight(string text)
+        {
+            int length = text == null ? 0 : text.Length;
+            if (length < 3)
+                return 3;
+            return length > 25 ? 25 : length;
+        }
+
+        /// <summary>
+        /// Builds a list as a vertical stack of two-column rows (marker, then
+        /// wrapping text), wrapped in a <see cref="BlockUIContainer"/> so wrapped
+        /// lines hang under the text instead of the marker.
+        /// </summary>
+        private static Block BuildListContainer(List<Block> blocks, int firstItem, int lastItem, double baseFontSize)
+        {
+            var stack = new StackPanel { Orientation = Orientation.Vertical };
+
+            for (int k = firstItem; k <= lastItem; k++)
+            {
+                bool itemOrdered;
+                string marker;
+                string text;
+                TryParseListItem(ParagraphText(blocks[k] as Paragraph), out itemOrdered, out marker, out text);
+
+                var row = new Grid();
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+                var markerBlock = CreateListTextBlock(baseFontSize, new Thickness(0, 1, 8, 1));
+                markerBlock.Inlines.Add(new Run(marker));
+                Grid.SetColumn(markerBlock, 0);
+                row.Children.Add(markerBlock);
+
+                var textBlock = CreateListTextBlock(baseFontSize, new Thickness(0, 1, 0, 1));
+                textBlock.Inlines.Add(new Run(text));
+                ApplyInlineFormatting(textBlock.Inlines);
+                Grid.SetColumn(textBlock, 1);
+                row.Children.Add(textBlock);
+
+                stack.Children.Add(row);
+            }
+
+            return new BlockUIContainer(stack)
+            {
+                Margin = new Thickness(0, 4, 0, 4)
+            };
+        }
+
+        /// <summary>
+        /// Builds a fenced code block: a header row (language label + Copy button)
+        /// over a monospace code area, wrapped in a
+        /// <see cref="BlockUIContainer"/>.
+        /// </summary>
+        private static Block BuildCodeBlockContainer(string language, List<string> codeLines, double baseFontSize)
+        {
+            string codeText = string.Join("\n", codeLines);
+
+            var root = new StackPanel { Orientation = Orientation.Vertical };
+
+            var label = new TextBlock
+            {
+                Text = string.IsNullOrEmpty(language) ? "code" : language,
+                FontSize = baseFontSize,
+                FontWeight = FontWeights.Bold,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            label.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+            var labelArea = new Border
+            {
+                Padding = new Thickness(8, 3, 8, 3),
+                Child = label,
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            labelArea.SetResourceReference(Border.BackgroundProperty, "CodeBlockHeaderBrush");
+
+            var copyButton = new Button
+            {
+                Content = "Copy",
+                MinWidth = 55,
+                MinHeight = 22,
+                Margin = new Thickness(6, 2, 2, 2),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            AutomationProperties.SetAutomationId(copyButton, "codeCopyButton");
+            copyButton.Click += (s, e) =>
+            {
+                try { Clipboard.SetText(codeText); } catch { }
+            };
+
+            var headerRow = new StackPanel { Orientation = Orientation.Horizontal };
+            headerRow.Children.Add(labelArea);
+            headerRow.Children.Add(copyButton);
+
+            var code = new TextBlock
+            {
+                Text = codeText,
+                FontSize = baseFontSize,
+                LineHeight = 1.3,
+                TextWrapping = TextWrapping.Wrap
+            };
+            code.SetResourceReference(TextElement.FontFamilyProperty, FontHandler.CodeBlockFontFamilyKey);
+            code.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+            var codeArea = new Border { Padding = new Thickness(8, 6, 8, 6), Child = code };
+            codeArea.SetResourceReference(Border.BackgroundProperty, "CodeBlockBackgroundColorBrush");
+
+            root.Children.Add(headerRow);
+            root.Children.Add(codeArea);
+
+            return new BlockUIContainer(root)
+            {
+                Margin = new Thickness(0, 4, 0, 4)
+            };
+        }
+
+        private static TextBlock CreateListTextBlock(double baseFontSize, Thickness margin)
+        {
+            var textBlock = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = baseFontSize,
+                LineHeight = ChatTurn.LineHeightMultiplier,
+                Margin = margin
+            };
+            textBlock.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+            return textBlock;
+        }
+
+        /// <summary>
+        /// A list item: <c>-</c>/<c>*</c>/<c>+</c> text (unordered) or
+        /// <c>1.</c>/<c>1)</c> text (ordered). <paramref name="marker"/> is the
+        /// displayed bullet or the literal item number.
+        /// </summary>
+        private static bool TryParseListItem(string trimmedText, out bool ordered, out string marker, out string text)
+        {
+            ordered = false;
+            marker = null;
+            text = null;
+            if (string.IsNullOrEmpty(trimmedText))
+                return false;
+
+            Match orderedMatch = OrderedListItemPattern.Match(trimmedText);
+            if (orderedMatch.Success)
+            {
+                ordered = true;
+                marker = orderedMatch.Groups[1].Value + ".";
+                text = orderedMatch.Groups[2].Value;
+                return true;
+            }
+
+            Match unorderedMatch = UnorderedListItemPattern.Match(trimmedText);
+            if (unorderedMatch.Success)
+            {
+                ordered = false;
+                marker = "\u2022";
+                text = unorderedMatch.Groups[1].Value;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// A blockquote line: a leading <c>></c> marker followed by the quoted text.
+        /// </summary>
+        private static bool TryStripBlockquoteMarker(string trimmedText, out string text)
+        {
+            text = null;
+            Match match = BlockquotePattern.Match(trimmedText);
+            if (!match.Success)
+                return false;
+
+            text = match.Groups[1].Value;
+            return true;
+        }
+
+        /// <summary>
+        /// Removes blocks first..last, appends <paramref name="block"/>, then
+        /// re-appends the trailing blocks (the Client Profile
+        /// <see cref="BlockCollection"/> exposes no InsertAt). Returns the
+        /// refreshed block list.
+        /// </summary>
+        private static List<Block> ReplaceBlockRange(FlowDocument document, List<Block> blocks, int first, int last, Block block)
+        {
+            List<Block> tail = new List<Block>();
+            for (int j = last + 1; j < blocks.Count; j++)
+                tail.Add(blocks[j]);
+
+            for (int j = first; j <= last; j++)
+                document.Blocks.Remove(blocks[j]);
+
+            document.Blocks.Add(block);
+            foreach (Block tailBlock in tail)
+                document.Blocks.Add(tailBlock);
+
+            return document.Blocks.ToList();
+        }
+
+        /// <summary>
+        /// A table row: at least two pipe-separated cells, at least one non-empty.
+        /// </summary>
+        private static bool TryParseTableRow(string trimmedText, out List<string> cells)
+        {
+            cells = null;
+            if (string.IsNullOrEmpty(trimmedText) || trimmedText.IndexOf('|') < 0)
+                return false;
+
+            cells = SplitTableCells(StripOuterPipes(trimmedText));
+            if (cells.Count < 2)
+                return false;
+            if (!cells.Any(cell => !string.IsNullOrWhiteSpace(cell)))
+                return false;
+            return true;
+        }
+
+        /// <summary>
+        /// A separator row: every cell is dashes with optional alignment colons
+        /// (<c>:---</c> left, <c>---:</c> right, <c>:---:</c> center).
+        /// </summary>
+        private static bool TryParseTableSeparator(string trimmedText, out List<TextAlignment> alignments)
+        {
+            alignments = null;
+            if (string.IsNullOrEmpty(trimmedText) || trimmedText.IndexOf('|') < 0)
+                return false;
+
+            List<string> cells = SplitTableCells(StripOuterPipes(trimmedText));
+            if (cells.Count == 0)
+                return false;
+
+            alignments = new List<TextAlignment>(cells.Count);
+            foreach (string cell in cells)
+            {
+                if (!TableSeparatorCellPattern.IsMatch(cell))
+                    return false;
+
+                bool leftColon = cell[0] == ':';
+                bool rightColon = cell.Length > 1 && cell[cell.Length - 1] == ':';
+                alignments.Add(leftColon && rightColon ? TextAlignment.Center
+                    : rightColon ? TextAlignment.Right
+                    : TextAlignment.Left);
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// A line that continues an open table: contains a pipe and is not a code fence.
+        /// </summary>
+        private static bool IsTableDataRow(string trimmedText)
+        {
+            if (string.IsNullOrEmpty(trimmedText) || trimmedText.IndexOf('|') < 0)
+                return false;
+
+            int fenceLength;
+            bool hasInfoString;
+            string infoString;
+            return !TryParseBacktickFence(trimmedText, out fenceLength, out hasInfoString, out infoString);
+        }
+
+        private static string ParagraphText(Paragraph paragraph)
+        {
+            if (paragraph == null)
+                return null;
+            return new TextRange(paragraph.ContentStart, paragraph.ContentEnd).Text.Trim();
+        }
+
+        private static string StripOuterPipes(string text)
+        {
+            if (text.Length > 0 && text[0] == '|')
+                text = text.Substring(1);
+            if (text.Length > 0 && text[text.Length - 1] == '|')
+                text = text.Substring(0, text.Length - 1);
+            return text;
+        }
+
+        /// <summary>
+        /// Splits a table row body on unescaped pipes; <c>\|</c> stays in the cell.
+        /// </summary>
+        private static List<string> SplitTableCells(string text)
+        {
+            var cells = new List<string>();
+            var sb = new System.Text.StringBuilder();
+            for (int k = 0; k < text.Length; k++)
+            {
+                char c = text[k];
+                if (c == '\\' && k + 1 < text.Length && text[k + 1] == '|')
+                {
+                    sb.Append('|');
+                    k++;
+                }
+                else if (c == '|')
+                {
+                    cells.Add(sb.ToString().Trim());
+                    sb.Length = 0;
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
+            cells.Add(sb.ToString().Trim());
+            return cells;
+        }
+
+        /// <summary>
         /// Recomputes markdown header font sizes from the document base size.
         /// Needed because headers store an absolute <see cref="TextElement.FontSize"/> that
         /// does not inherit when <see cref="FlowDocument.FontSize"/> changes.
@@ -217,18 +768,18 @@ namespace SimpleLLMChatGUI
             }
         }
 
-        private static void ReplaceInRuns(Paragraph paragraph, Regex pattern, Func<Match, Inline> createInline)
+        private static void ReplaceInRuns(InlineCollection inlines, Regex pattern, Func<Match, Inline> createInline)
         {
-            foreach (var run in paragraph.Inlines.OfType<Run>().ToList())
+            foreach (var run in inlines.OfType<Run>().ToList())
             {
-                if (!pattern.IsMatch(run.Text) || !(run.Parent is Paragraph parent))
+                if (!pattern.IsMatch(run.Text))
                     continue;
 
                 var newInlines = BuildInlines(run.Text, pattern.Matches(run.Text), createInline);
 
                 foreach (var inline in newInlines)
-                    parent.Inlines.InsertBefore(run, inline);
-                parent.Inlines.Remove(run);
+                    inlines.InsertBefore(run, inline);
+                inlines.Remove(run);
             }
         }
 
@@ -344,17 +895,19 @@ namespace SimpleLLMChatGUI
             return true;
         }
 
-        private static bool TryParseBacktickFence(string trimmedText, out int fenceLength, out bool hasInfoString)
+        private static bool TryParseBacktickFence(string trimmedText, out int fenceLength, out bool hasInfoString, out string infoString)
         {
             fenceLength = 0;
             hasInfoString = false;
+            infoString = null;
 
             Match match = BacktickFencePattern.Match(trimmedText);
             if (!match.Success)
                 return false;
 
             fenceLength = match.Groups[2].Value.Length;
-            hasInfoString = !string.IsNullOrWhiteSpace(match.Groups[3].Value);
+            infoString = match.Groups[3].Value.Trim();
+            hasInfoString = !string.IsNullOrEmpty(infoString);
             return true;
         }
 

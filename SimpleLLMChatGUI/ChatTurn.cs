@@ -379,17 +379,55 @@ namespace SimpleLLMChatGUI
                     continue;
 
                 Expander expander = container.Child as Expander;
-                if (expander == null)
+                if (expander != null)
+                {
+                    TextBlock body = expander.Content as TextBlock;
+                    if (body != null)
+                        body.FontSize = fontSize;
+
+                    TextBlock header = expander.Header as TextBlock;
+                    if (header != null)
+                        header.FontSize = fontSize;
                     continue;
+                }
 
-                TextBlock body = expander.Content as TextBlock;
-                if (body != null)
-                    body.FontSize = fontSize;
-
-                TextBlock header = expander.Header as TextBlock;
-                if (header != null)
-                    header.FontSize = fontSize;
+                // Markdown tables and lists: rescale their hosted TextBlocks.
+                ApplyFontSizeToTree(container.Child as FrameworkElement, fontSize);
             }
+        }
+
+        /// <summary>
+        /// Rescales every TextBlock under <paramref name="element"/> (tables and
+        /// lists rendered into <see cref="BlockUIContainer"/>s). Walks the logical
+        /// child/children chain so it works before the element is connected.
+        /// </summary>
+        private static void ApplyFontSizeToTree(FrameworkElement element, double fontSize)
+        {
+            if (element == null)
+                return;
+
+            TextBlock textBlock = element as TextBlock;
+            if (textBlock != null)
+            {
+                textBlock.FontSize = fontSize;
+                return;
+            }
+
+            Panel panel = element as Panel;
+            if (panel != null)
+            {
+                for (int i = 0; i < panel.Children.Count; i++)
+                {
+                    FrameworkElement child = panel.Children[i] as FrameworkElement;
+                    if (child != null)
+                        ApplyFontSizeToTree(child, fontSize);
+                }
+                return;
+            }
+
+            Decorator decorator = element as Decorator;
+            if (decorator != null)
+                ApplyFontSizeToTree(decorator.Child as FrameworkElement, fontSize);
         }
 
         private void AppendPlain(string text)

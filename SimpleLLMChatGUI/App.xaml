@@ -67,7 +67,15 @@
 
         <!-- Dynamic brush for role labels and timestamps -->
         <SolidColorBrush x:Key="RoleLabelBrush"
-                           Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}"/>
+                            Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}"/>
+
+        <!-- Dynamic brush for markdown table grid lines -->
+        <SolidColorBrush x:Key="TableBorderBrush"
+                            Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}"/>
+
+        <!-- Dynamic brush for markdown table header row background -->
+        <SolidColorBrush x:Key="TableHeaderBackgroundBrush"
+                            Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}"/>
 
         <!-- ===================== -->
         <!-- FLAT BUTTON TEMPLATES -->

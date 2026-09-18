@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -33,6 +34,7 @@ namespace SimpleLLMChatGUI
         private ScrollViewer _scrollViewer;
         private RichTextBox _editor;
         private TextBlock _roleHeader;
+        private Button _copyButton;
         private DockPanel _contentRoot;
         private ListBoxItem _listBoxItem;
         private bool _updating;
@@ -178,9 +180,32 @@ namespace SimpleLLMChatGUI
             _roleHeader.SetResourceReference(TextBlock.ForegroundProperty, "RoleLabelBrush");
             _roleHeader.FontSize = FontHandler.GetFontSize() * RoleLabelScale;
 
+            _copyButton = new Button
+            {
+                Content = "Copy",
+                MinWidth = 55,
+                MinHeight = 22,
+                Margin = new Thickness(8, 0, 0, 2),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            AutomationProperties.SetAutomationId(_copyButton, "copyButton");
+            ChatTurn turn = Turn;
+            _copyButton.Click += (s, e) =>
+            {
+                try { Clipboard.SetText(turn.SourceText); } catch { }
+            };
+
+            var headerRow = new Grid();
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            Grid.SetColumn(_roleHeader, 0);
+            headerRow.Children.Add(_roleHeader);
+            Grid.SetColumn(_copyButton, 1);
+            headerRow.Children.Add(_copyButton);
+
             _contentRoot = new DockPanel { LastChildFill = true };
-            DockPanel.SetDock(_roleHeader, Dock.Top);
-            _contentRoot.Children.Add(_roleHeader);
+            DockPanel.SetDock(headerRow, Dock.Top);
+            _contentRoot.Children.Add(headerRow);
             _contentRoot.Children.Add(_editor);
 
             if (Turn.Role == ChatTurnRole.User)
@@ -244,6 +269,7 @@ namespace SimpleLLMChatGUI
             }
             _contentRoot = null;
             _roleHeader = null;
+            _copyButton = null;
             Child = null;
             if (turn != null) turn.ReleaseDocument();
         }

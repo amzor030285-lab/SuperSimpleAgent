@@ -137,6 +137,26 @@ namespace SimpleLLMChatGUI
                     DefaultSystemColor = SystemColors.ControlTextColor,
                     DefaultSystemBrush = SystemColors.ControlTextBrush
                 }
+            },
+            {
+                "tablebordercolor",
+                new ColorConfig
+                {
+                    Key = "tablebordercolor",
+                    ResourceKey = "TableBorderBrush",
+                    DefaultSystemColor = SystemColors.ControlDarkColor,
+                    DefaultSystemBrush = SystemColors.ControlDarkBrush
+                }
+            },
+            {
+                "tableheaderbackgroundcolor",
+                new ColorConfig
+                {
+                    Key = "tableheaderbackgroundcolor",
+                    ResourceKey = "TableHeaderBackgroundBrush",
+                    DefaultSystemColor = SystemColors.ControlColor,
+                    DefaultSystemBrush = SystemColors.ControlBrush
+                }
             }
         };
 
@@ -246,7 +266,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0xEA, 0xEA, 0xEA) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0xEA, 0xEF, 0xF5) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x09, 0x69, 0xDA) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x5F, 0x5F, 0x5F) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x5F, 0x5F, 0x5F) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0xAD, 0xAD, 0xAD) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0xEA, 0xEA, 0xEA) }
                 }
             },
             {
@@ -264,7 +286,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x3A, 0x3A, 0x3A) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x38, 0x38, 0x38) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x58, 0xA6, 0xFF) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0xB4, 0xB4, 0xB4) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0xB4, 0xB4, 0xB4) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x5A, 0x5A, 0x5A) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x3A, 0x3A, 0x3A) }
                 }
             },
             {
@@ -282,7 +306,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x2A, 0x26, 0x20) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x3A, 0x35, 0x2E) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0xD9, 0x77, 0x57) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0xB1, 0xAD, 0xA1) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0xB1, 0xAD, 0xA1) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x3A, 0x35, 0x2E) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x3A, 0x35, 0x2E) }
                 }
             },
             {
@@ -300,7 +326,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x21, 0x26, 0x2D) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x1C, 0x21, 0x28) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x58, 0xA6, 0xFF) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x8B, 0x94, 0x9E) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x8B, 0x94, 0x9E) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x30, 0x36, 0x3D) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x1C, 0x21, 0x28) }
                 }
             },
             {
@@ -318,7 +346,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x2D, 0x33, 0x3B) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x3D, 0x43, 0x4C) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x7E, 0x8B, 0x99) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x76, 0x83, 0x90) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x76, 0x83, 0x90) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x3D, 0x43, 0x4C) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x3D, 0x43, 0x4C) }
                 }
             },
             {
@@ -336,7 +366,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x34, 0x37, 0x46) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x44, 0x47, 0x5A) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x8B, 0xE9, 0xFD) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x62, 0x72, 0xA4) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x62, 0x72, 0xA4) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x44, 0x47, 0x5A) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x44, 0x47, 0x5A) }
                 }
             },
             {
@@ -354,7 +386,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x45, 0x47, 0x5A) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x58, 0x5B, 0x70) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x89, 0xB4, 0xFA) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0xA6, 0xAD, 0xC8) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0xA6, 0xAD, 0xC8) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x58, 0x5B, 0x70) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x58, 0x5B, 0x70) }
                 }
             },
             {
@@ -372,7 +406,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x21, 0x25, 0x2B) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x3E, 0x44, 0x51) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x61, 0xAF, 0xEF) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x9D, 0xA3, 0xB0) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x9D, 0xA3, 0xB0) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x3E, 0x44, 0x51) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x3E, 0x44, 0x51) }
                 }
             },
             {
@@ -390,7 +426,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x07, 0x36, 0x42) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x26, 0x8B, 0xD2) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x93, 0xA1, 0xA1) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x93, 0xA1, 0xA1) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) }
                 }
             },
             {
@@ -408,7 +446,9 @@ namespace SimpleLLMChatGUI
                     { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0xEA, 0xEA, 0xEA) },
                     { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0xEA, 0xEF, 0xF5) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x09, 0x69, 0xDA) },
-                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x65, 0x6D, 0x76) }
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x65, 0x6D, 0x76) },
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0xD0, 0xD6, 0xDD) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0xEA, 0xEA, 0xEA) }
                 }
             }
         };
