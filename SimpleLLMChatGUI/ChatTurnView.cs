@@ -26,15 +26,26 @@ namespace SimpleLLMChatGUI
         private static readonly DependencyProperty CorrectionQueuedProperty = DependencyProperty.RegisterAttached(
             "CorrectionQueued", typeof(bool), typeof(ChatTurnView), new PropertyMetadata(false));
 
+        private const double UserBubbleCornerRadius = 8;
+        private const double UserBubbleMaxWidthFraction = 0.8;
+        private const double RoleLabelScale = 0.86;
+
         private ScrollViewer _scrollViewer;
         private RichTextBox _editor;
+        private TextBlock _roleHeader;
+        private DockPanel _contentRoot;
+        private ListBoxItem _listBoxItem;
         private bool _updating;
 
         public ChatTurnView()
         {
             Loaded += OnLoaded;
             Unloaded += OnUnloaded;
-            SizeChanged += delegate { UpdateVisibility(); };
+            SizeChanged += delegate
+            {
+                UpdateVisibility();
+                UpdateUserBubbleMaxWidth();
+            };
         }
 
         private static void OnTurnChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
@@ -53,6 +64,14 @@ namespace SimpleLLMChatGUI
                 parent = VisualTreeHelper.GetParent(parent);
             _scrollViewer = parent as ScrollViewer;
             if (_scrollViewer != null) _scrollViewer.ScrollChanged += OnScrollChanged;
+
+            parent = VisualTreeHelper.GetParent(this);
+            while (parent != null && !(parent is ListBoxItem))
+                parent = VisualTreeHelper.GetParent(parent);
+            _listBoxItem = parent as ListBoxItem;
+            if (_listBoxItem != null)
+                _listBoxItem.SizeChanged += OnListItemSizeChanged;
+
             ShowDocument();
         }
 
@@ -60,7 +79,17 @@ namespace SimpleLLMChatGUI
         {
             if (_scrollViewer != null) _scrollViewer.ScrollChanged -= OnScrollChanged;
             _scrollViewer = null;
+            if (_listBoxItem != null)
+            {
+                _listBoxItem.SizeChanged -= OnListItemSizeChanged;
+                _listBoxItem = null;
+            }
             Detach(Turn);
+        }
+
+        private void OnListItemSizeChanged(object sender, SizeChangedEventArgs args)
+        {
+            UpdateUserBubbleMaxWidth();
         }
 
         private void OnScrollChanged(object sender, ScrollChangedEventArgs args)
@@ -91,6 +120,29 @@ namespace SimpleLLMChatGUI
             finally { _updating = false; }
         }
 
+        /// <summary>
+        /// Constrains user bubbles to 80% of the row width so they read as bubbles,
+        /// while assistant turns keep the full document width.
+        /// </summary>
+        private void UpdateUserBubbleMaxWidth()
+        {
+            if (Turn == null || Turn.Role != ChatTurnRole.User || _listBoxItem == null)
+                return;
+
+            double width = _listBoxItem.ActualWidth;
+            if (width > 0)
+                MaxWidth = width * UserBubbleMaxWidthFraction;
+        }
+
+        /// <summary>
+        /// Rescales the role header label when the chat font size changes.
+        /// </summary>
+        public void ApplyFontSize(double fontSize)
+        {
+            if (_roleHeader != null)
+                _roleHeader.FontSize = fontSize * RoleLabelScale;
+        }
+
         private void ShowDocument()
         {
             if (_editor != null || Turn == null) return;
@@ -114,15 +166,58 @@ namespace SimpleLLMChatGUI
             paragraph.Setters.Add(new Setter(Block.PaddingProperty, new Thickness(0)));
             _editor.Resources.Add(typeof(Paragraph), paragraph);
             _editor.Document = Turn.Document;
+
+            _roleHeader = new TextBlock
+            {
+                Text = BuildRoleHeaderText(),
+                Margin = new Thickness(0, 0, 0, 2),
+                HorizontalAlignment = Turn.Role == ChatTurnRole.User
+                    ? HorizontalAlignment.Right
+                    : HorizontalAlignment.Left
+            };
+            _roleHeader.SetResourceReference(TextBlock.ForegroundProperty, "RoleLabelBrush");
+            _roleHeader.FontSize = FontHandler.GetFontSize() * RoleLabelScale;
+
+            _contentRoot = new DockPanel { LastChildFill = true };
+            DockPanel.SetDock(_roleHeader, Dock.Top);
+            _contentRoot.Children.Add(_roleHeader);
+            _contentRoot.Children.Add(_editor);
+
+            if (Turn.Role == ChatTurnRole.User)
+            {
+                CornerRadius = new CornerRadius(UserBubbleCornerRadius);
+                Padding = new Thickness(10, 8, 10, 8);
+                HorizontalAlignment = HorizontalAlignment.Right;
+                SetResourceReference(BackgroundProperty, "UserBubbleBackgroundBrush");
+                UpdateUserBubbleMaxWidth();
+            }
+            else
+            {
+                ClearValue(BackgroundProperty);
+                ClearValue(CornerRadiusProperty);
+                Padding = new Thickness(0);
+                HorizontalAlignment = HorizontalAlignment.Stretch;
+                // .NET 4 does not accept NaN for MaxWidth; clear the value instead.
+                ClearValue(MaxWidthProperty);
+            }
+
             Height = double.NaN;
-            Child = _editor;
+            Child = _contentRoot;
             if (aboveViewport && ActualWidth > 0)
             {
                 // Formatting or a font/width change may alter an archived row's height.
                 // Correct for rows above the reader, keeping the visible content anchored.
-                _editor.Measure(new Size(ActualWidth, double.PositiveInfinity));
-                QueueScrollCorrection(_scrollViewer, _editor.DesiredSize.Height - previousHeight);
+                _contentRoot.Measure(new Size(ActualWidth, double.PositiveInfinity));
+                QueueScrollCorrection(_scrollViewer, _contentRoot.DesiredSize.Height - previousHeight);
             }
+        }
+
+        private string BuildRoleHeaderText()
+        {
+            string label = Turn.RoleLabel;
+            if (string.IsNullOrEmpty(label))
+                label = Turn.Role == ChatTurnRole.User ? "You" : AppConstants.DefaultAssistantName;
+            return label + " · " + Turn.Created.ToString("HH:mm");
         }
 
         private static void QueueScrollCorrection(ScrollViewer scroll, double delta)
@@ -145,9 +240,11 @@ namespace SimpleLLMChatGUI
             if (_editor != null)
             {
                 _editor.Document = new FlowDocument();
-                Child = null;
                 _editor = null;
             }
+            _contentRoot = null;
+            _roleHeader = null;
+            Child = null;
             if (turn != null) turn.ReleaseDocument();
         }
     }

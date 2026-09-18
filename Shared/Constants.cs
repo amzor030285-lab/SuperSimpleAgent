@@ -3,7 +3,7 @@
 /// </summary>
 public static class AppConstants
 {
-    public const int DefaultChatFontSize = 12;
+    public const int DefaultChatFontSize = 14;
     public const string DefaultAssistantName = "LLM";
 
     /// <summary>Default comma-separated knowledge-file extensions when ragAllowedExtensions is unset.</summary>

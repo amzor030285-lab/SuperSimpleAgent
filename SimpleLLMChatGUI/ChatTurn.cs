@@ -8,10 +8,30 @@ using System.Windows.Threading;
 namespace SimpleLLMChatGUI
 {
     /// <summary>
+    /// Who produced a chat turn.
+    /// </summary>
+    public enum ChatTurnRole
+    {
+        User,
+        Assistant
+    }
+
+    /// <summary>
     /// A text-backed chat turn with a releasable rendered document.
     /// </summary>
     public class ChatTurn
     {
+        public ChatTurnRole Role { get; set; }
+        /// <summary>Display name for the role header (e.g. "You" or the model name).</summary>
+        public string RoleLabel { get; set; }
+        /// <summary>Local time the turn was created; shown in the role header.</summary>
+        public DateTime Created { get; set; }
+
+        /// <summary>
+        /// Line height as a multiple of the base font size (1.5 = comfortable chat spacing).
+        /// </summary>
+        public const double LineHeightMultiplier = 1.5;
+
         /// <summary>
         /// Classic +/- expander style provided by <c>MainWindow</c>.
         /// </summary>
@@ -79,7 +99,11 @@ namespace SimpleLLMChatGUI
             {
                 if (_document == null)
                 {
-                    _document = new FlowDocument { PagePadding = new Thickness(0) };
+                    _document = new FlowDocument
+                    {
+                        PagePadding = new Thickness(0),
+                        LineHeight = LineHeightMultiplier
+                    };
                     _hasContent = false;
                     MarkdownProcessedBlockCount = 0;
                     _restoring = true;
@@ -173,9 +197,12 @@ namespace SimpleLLMChatGUI
 
         public ChatTurn()
         {
+            Role = ChatTurnRole.Assistant;
+            Created = DateTime.Now;
             _document = new FlowDocument
             {
-                PagePadding = new Thickness(0)
+                PagePadding = new Thickness(0),
+                LineHeight = LineHeightMultiplier
             };
         }
 
@@ -343,6 +370,7 @@ namespace SimpleLLMChatGUI
             _fontSize = fontSize;
             if (_document == null) return;
             Document.FontSize = fontSize;
+            Document.LineHeight = LineHeightMultiplier;
             MarkdownHandler.ApplyHeaderFontSizes(Document, fontSize);
             foreach (Block block in Document.Blocks)
             {

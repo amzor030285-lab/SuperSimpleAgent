@@ -28,7 +28,7 @@ namespace SimpleLLMChatGUI
 
             Application.Current.Resources[CodeBlockFontFamilyKey] =
                 TryGetFontFamily(App.Config.GetConfigValue("codeblockfontfamily"))
-                ?? new FontFamily("Courier New");
+                ?? new FontFamily("Consolas");
         }
 
         public static int GetFontSize()

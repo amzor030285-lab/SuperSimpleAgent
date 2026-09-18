@@ -19,6 +19,7 @@ namespace SimpleLLMChatGUI
         private ContextMenu reasoningEffortMenu;
         private bool _isGenerating;
         private DateTime _generationStartTime = DateTime.MinValue;
+        private bool _startupPromptConsumed;
         private readonly ObservableCollection<ChatTurn> _chatTurns = new ObservableCollection<ChatTurn>();
         private ChatTurn _streamingTurn;
 
@@ -168,6 +169,8 @@ namespace SimpleLLMChatGUI
             stopToolButton.IsEnabled = false;
 
             processHandler = new ProcessHandler();
+            processHandler.SetAssistantName(GetAssistantName());
+            _startupPromptConsumed = false;
 
             processHandler.OutputReceived += OnOutputReceived;
             processHandler.ErrorOccurred += OnErrorOccurred;
@@ -230,7 +233,10 @@ namespace SimpleLLMChatGUI
             while (!string.IsNullOrEmpty(remaining))
             {
                 if (_streamingTurn == null)
+                {
                     _streamingTurn = AddTurn();
+                    _streamingTurn.RoleLabel = GetAssistantDisplayName();
+                }
 
                 string leftover = _streamingTurn.AppendText(remaining);
                 if (leftover == null)
@@ -291,6 +297,14 @@ namespace SimpleLLMChatGUI
         {
             Dispatcher.BeginInvoke((Action)(() =>
             {
+                // The CLI emits its initial "You:" prompt right after start; that
+                // first completion signal is not a real generation finish and must
+                // not flip the button back to Send if a send was just issued.
+                if (!_startupPromptConsumed)
+                {
+                    _startupPromptConsumed = true;
+                    return;
+                }
                 EndStreamingTurn();
                 if (IsMarkdownParsingEnabled())
                     ApplyMarkdown();
@@ -326,6 +340,51 @@ namespace SimpleLLMChatGUI
             FontHandler.ApplyFontSizeToControl(chatInput, fontSize);
             foreach (ChatTurn turn in _chatTurns)
                 turn.ApplyFontSize(fontSize);
+            for (int i = 0; i < chatList.Items.Count; i++)
+            {
+                DependencyObject container = chatList.ItemContainerGenerator.ContainerFromIndex(i);
+                if (container == null)
+                    continue;
+                ChatTurnView view = FindVisualChild(container);
+                if (view != null)
+                    view.ApplyFontSize(fontSize);
+            }
+        }
+
+        private static ChatTurnView FindVisualChild(DependencyObject root)
+        {
+            ChatTurnView view = root as ChatTurnView;
+            if (view != null)
+                return view;
+
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                ChatTurnView found = FindVisualChild(VisualTreeHelper.GetChild(root, i));
+                if (found != null)
+                    return found;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// The assistant name the CLI prefixes its output with ("LLM" by default).
+        /// </summary>
+        private string GetAssistantName()
+        {
+            string assistantName = App.Config.GetConfigValue("assistantname");
+            return string.IsNullOrWhiteSpace(assistantName)
+                ? AppConstants.DefaultAssistantName
+                : assistantName;
+        }
+
+        /// <summary>
+        /// Display name for assistant turns: the configured model, falling back
+        /// to the assistant name.
+        /// </summary>
+        private string GetAssistantDisplayName()
+        {
+            string model = App.Config.GetConfigValue("model");
+            return string.IsNullOrWhiteSpace(model) ? GetAssistantName() : model;
         }
 
         private ChatTurn AddTurn()
@@ -528,13 +587,12 @@ namespace SimpleLLMChatGUI
             string userInput = chatInput.Text;
 
             ChatTurn userTurn = AddTurn();
-            userTurn.AppendText("You: " + userInput);
-            if (IsMarkdownParsingEnabled())
-            {
-                userTurn.ProcessMarkdown();
-            }
+            userTurn.Role = ChatTurnRole.User;
+            userTurn.RoleLabel = "You";
+            userTurn.AppendText(userInput);
             userTurn.Complete();
             _streamingTurn = AddTurn();
+            _streamingTurn.RoleLabel = GetAssistantDisplayName();
             ScrollChatToEnd();
 
             // Switch the send button into a Stop button while the model generates.
@@ -717,11 +775,19 @@ namespace SimpleLLMChatGUI
             {
                 ChatTurn turn = AddTurn();
                 if (string.Equals(msg.Role, "user", StringComparison.OrdinalIgnoreCase))
-                    turn.AppendText("You: " + msg.Content);
+                {
+                    // User messages stay plain text; the role header carries the name.
+                    turn.Role = ChatTurnRole.User;
+                    turn.RoleLabel = "You";
+                    turn.AppendText(msg.Content);
+                }
                 else
-                    turn.AppendText("Assistant: " + msg.Content);
-                if (IsMarkdownParsingEnabled())
-                    turn.ProcessMarkdown();
+                {
+                    turn.RoleLabel = GetAssistantDisplayName();
+                    turn.AppendText(msg.Content);
+                    if (IsMarkdownParsingEnabled())
+                        turn.ProcessMarkdown();
+                }
                 turn.Complete();
             }
         }
@@ -777,6 +843,8 @@ namespace SimpleLLMChatGUI
                 FontHandler.ApplyCodeBlockFontFamily();
                 LoadAndApplyFontSize();
                 LoadAndApplyColors();
+                if (processHandler != null)
+                    processHandler.SetAssistantName(GetAssistantName());
                 if (tokenTracker != null)
                     tokenTracker.Refresh();
 

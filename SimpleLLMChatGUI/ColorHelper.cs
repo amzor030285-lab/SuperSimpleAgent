@@ -97,6 +97,46 @@ namespace SimpleLLMChatGUI
                     DefaultSystemColor = SystemColors.ControlColor,
                     DefaultSystemBrush = SystemColors.ControlBrush
                 }
+            },
+            {
+                "userbubblebackgroundcolor",
+                new ColorConfig
+                {
+                    Key = "userbubblebackgroundcolor",
+                    ResourceKey = "UserBubbleBackgroundBrush",
+                    DefaultSystemColor = SystemColors.ControlColor,
+                    DefaultSystemBrush = SystemColors.ControlBrush
+                }
+            },
+            {
+                "codeblockheadercolor",
+                new ColorConfig
+                {
+                    Key = "codeblockheadercolor",
+                    ResourceKey = "CodeBlockHeaderBrush",
+                    DefaultSystemColor = SystemColors.ControlColor,
+                    DefaultSystemBrush = SystemColors.ControlBrush
+                }
+            },
+            {
+                "linkcolor",
+                new ColorConfig
+                {
+                    Key = "linkcolor",
+                    ResourceKey = "LinkBrush",
+                    DefaultSystemColor = SystemColors.HotTrackColor,
+                    DefaultSystemBrush = SystemColors.HotTrackBrush
+                }
+            },
+            {
+                "rolelabelcolor",
+                new ColorConfig
+                {
+                    Key = "rolelabelcolor",
+                    ResourceKey = "RoleLabelBrush",
+                    DefaultSystemColor = SystemColors.ControlTextColor,
+                    DefaultSystemBrush = SystemColors.ControlTextBrush
+                }
             }
         };
 
@@ -202,7 +242,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0x1A, 0x1A, 0x1A) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0x1A, 0x1A, 0x1A) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0xE1, 0xE1, 0xE1) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0xAD, 0xAD, 0xAD) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0xAD, 0xAD, 0xAD) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0xEA, 0xEA, 0xEA) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0xEA, 0xEF, 0xF5) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0x09, 0x69, 0xDA) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x5F, 0x5F, 0x5F) }
                 }
             },
             {
@@ -216,7 +260,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0xE8, 0xE8, 0xE8) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0xE8, 0xE8, 0xE8) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x3A, 0x3A, 0x3A) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x5A, 0x5A, 0x5A) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x5A, 0x5A, 0x5A) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x3A, 0x3A, 0x3A) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x38, 0x38, 0x38) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0x58, 0xA6, 0xFF) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0xB4, 0xB4, 0xB4) }
                 }
             },
             {
@@ -230,7 +278,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0xB1, 0xAD, 0xA1) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x2A, 0x26, 0x20) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x3A, 0x35, 0x2E) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x3A, 0x35, 0x2E) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x2A, 0x26, 0x20) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x3A, 0x35, 0x2E) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0xD9, 0x77, 0x57) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0xB1, 0xAD, 0xA1) }
                 }
             },
             {
@@ -244,7 +296,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0xE6, 0xED, 0xF3) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0x8B, 0x94, 0x9E) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x21, 0x26, 0x2D) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x30, 0x36, 0x3D) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x30, 0x36, 0x3D) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x21, 0x26, 0x2D) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x1C, 0x21, 0x28) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0x58, 0xA6, 0xFF) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x8B, 0x94, 0x9E) }
                 }
             },
             {
@@ -258,7 +314,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0xAD, 0xBA, 0xC7) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0x76, 0x83, 0x90) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x2D, 0x33, 0x3B) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x3D, 0x43, 0x4C) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x3D, 0x43, 0x4C) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x2D, 0x33, 0x3B) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x3D, 0x43, 0x4C) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0x7E, 0x8B, 0x99) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x76, 0x83, 0x90) }
                 }
             },
             {
@@ -272,7 +332,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0xF8, 0xF8, 0xF2) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0xF8, 0xF8, 0xF2) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x34, 0x37, 0x46) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x44, 0x47, 0x5A) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x44, 0x47, 0x5A) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x34, 0x37, 0x46) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x44, 0x47, 0x5A) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0x8B, 0xE9, 0xFD) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x62, 0x72, 0xA4) }
                 }
             },
             {
@@ -286,7 +350,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0xCD, 0xD6, 0xF4) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0xA6, 0xAD, 0xC8) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x45, 0x47, 0x5A) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x58, 0x5B, 0x70) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x58, 0x5B, 0x70) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x45, 0x47, 0x5A) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x58, 0x5B, 0x70) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0x89, 0xB4, 0xFA) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0xA6, 0xAD, 0xC8) }
                 }
             },
             {
@@ -300,7 +368,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0xAB, 0xB2, 0xBF) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0x9D, 0xA3, 0xB0) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x21, 0x25, 0x2B) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x3E, 0x44, 0x51) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x3E, 0x44, 0x51) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x21, 0x25, 0x2B) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x3E, 0x44, 0x51) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0x61, 0xAF, 0xEF) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x9D, 0xA3, 0xB0) }
                 }
             },
             {
@@ -314,7 +386,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0x83, 0x94, 0x96) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0x93, 0xA1, 0xA1) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x07, 0x36, 0x42) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x07, 0x36, 0x42) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0x26, 0x8B, 0xD2) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x93, 0xA1, 0xA1) }
                 }
             },
             {
@@ -328,7 +404,11 @@ namespace SimpleLLMChatGUI
                     { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0x1F, 0x23, 0x28) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0x65, 0x6D, 0x76) },
                     { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0xF6, 0xF8, 0xFA) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0xD0, 0xD6, 0xDD) }
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0xD0, 0xD6, 0xDD) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0xEA, 0xEA, 0xEA) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0xEA, 0xEF, 0xF5) },
+                    { "LinkBrush", Color.FromArgb(0xFF, 0x09, 0x69, 0xDA) },
+                    { "RoleLabelBrush", Color.FromArgb(0xFF, 0x65, 0x6D, 0x76) }
                 }
             }
         };

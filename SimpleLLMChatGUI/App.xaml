@@ -51,7 +51,23 @@
 
         <!-- Dynamic brush for button border color -->
         <SolidColorBrush x:Key="ButtonBorderBrush"
-                          Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}"/>
+                           Color="{DynamicResource {x:Static SystemColors.ControlDarkColorKey}}"/>
+
+        <!-- Dynamic brush for the user message bubble background -->
+        <SolidColorBrush x:Key="UserBubbleBackgroundBrush"
+                           Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}"/>
+
+        <!-- Dynamic brush for code block header (language bar) background -->
+        <SolidColorBrush x:Key="CodeBlockHeaderBrush"
+                           Color="{DynamicResource {x:Static SystemColors.ControlColorKey}}"/>
+
+        <!-- Dynamic brush for hyperlink text -->
+        <SolidColorBrush x:Key="LinkBrush"
+                           Color="{DynamicResource {x:Static SystemColors.HotTrackColorKey}}"/>
+
+        <!-- Dynamic brush for role labels and timestamps -->
+        <SolidColorBrush x:Key="RoleLabelBrush"
+                           Color="{DynamicResource {x:Static SystemColors.GrayTextColorKey}}"/>
 
         <!-- ===================== -->
         <!-- FLAT BUTTON TEMPLATES -->

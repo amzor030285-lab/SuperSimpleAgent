@@ -36,7 +36,7 @@ namespace SimpleLLMChatGUI
         /// <summary>
         /// H1–H6 size relative to the document base font size.
         /// </summary>
-        private static readonly double[] HeaderMultipliers = { 2.0, 1.667, 1.5, 1.333, 1.167, 1.0 };
+        private static readonly double[] HeaderMultipliers = { 1.3, 1.2, 1.1, 1.0, 1.0, 1.0 };
 
         /// <summary>
         /// Renders markdown in blocks at or after <paramref name="startBlockIndex"/>, then

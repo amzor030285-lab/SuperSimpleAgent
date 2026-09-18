@@ -11,6 +11,7 @@ namespace SimpleLLMChatGUI
         private Process llmProcess;
         private bool disposed;
         private StringBuilder textBuffer = new StringBuilder(); // Buffer for incomplete text
+        private Regex _promptLinePattern = BuildPromptLinePattern(AppConstants.DefaultAssistantName);
 
         public event Action<string> OutputReceived;
         public event Action<string> ErrorOccurred;
@@ -31,6 +32,25 @@ namespace SimpleLLMChatGUI
 
         public ProcessHandler()
         {
+        }
+
+        /// <summary>
+        /// Sets the assistant name whose "<name>:" output line is filtered from
+        /// the streamed text (the GUI shows a role header instead).
+        /// </summary>
+        public void SetAssistantName(string name)
+        {
+            _promptLinePattern = BuildPromptLinePattern(
+                string.IsNullOrWhiteSpace(name) ? AppConstants.DefaultAssistantName : name);
+        }
+
+        private static Regex BuildPromptLinePattern(string assistantName)
+        {
+            // Whole lines (or line starts) that are the CLI's own prompts:
+            // "You: " before reading input and "<assistant>:" at the response start.
+            return new Regex(
+                @"(^|\r?\n)[ \t]*(?:You|" + Regex.Escape(assistantName) + @"):[ \t]*",
+                RegexOptions.Multiline);
         }
 
         public bool StartProcess(string executablePath)
@@ -465,12 +485,10 @@ if (bytesRead > 0)
         {
             if (!string.IsNullOrEmpty(text))
             {
-                // Remove any "You:" prompts from the middle of the text
-                string filteredText = Regex.Replace(
+                // Remove the CLI's own prompt lines ("You:" / "<assistant>:")
+                string filteredText = _promptLinePattern.Replace(
                     text,
-                    @"(^|\r?\n)[ \t]*You:[ \t]*",
-                    match => match.Groups[1].Value, // Keep just the newline part
-                    RegexOptions.Multiline
+                    match => match.Groups[1].Value // Keep just the newline part
                 );
 
                 // Normalize line endings for Windows display
