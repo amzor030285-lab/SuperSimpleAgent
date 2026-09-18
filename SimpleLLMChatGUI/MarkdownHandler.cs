@@ -553,7 +553,8 @@ namespace SimpleLLMChatGUI
                 MinWidth = 55,
                 MinHeight = 22,
                 Margin = new Thickness(6, 2, 2, 2),
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                Focusable = false
             };
             AutomationProperties.SetAutomationId(copyButton, "codeCopyButton");
             var copyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };

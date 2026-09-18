@@ -22,6 +22,7 @@ namespace SimpleLLMChatGUI
         private bool _startupPromptConsumed;
         private readonly ObservableCollection<ChatTurn> _chatTurns = new ObservableCollection<ChatTurn>();
         private ChatTurn _streamingTurn;
+        private ChatListBox chatList;
 
         private const double ChatTurnGapMin = 8;
         private const double ChatTurnGapMax = 24;
@@ -77,6 +78,11 @@ namespace SimpleLLMChatGUI
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            // The list is a ChatListBox (no click-selection containers); the XAML
+            // element is unnamed, so resolve it from the visual tree.
+            chatList = FindChatListBox(this);
+            chatList.SizeChanged += new SizeChangedEventHandler(chatList_SizeChanged);
+
             chatList.ItemsSource = _chatTurns;
             ChatTurn.ThinkingExpanderStyle = TryFindResource("ThinkingExpanderStyle") as Style;
 
@@ -439,6 +445,20 @@ namespace SimpleLLMChatGUI
 
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
                 ClearChatSelection(VisualTreeHelper.GetChild(root, i));
+        }
+
+        private static ChatListBox FindChatListBox(DependencyObject root)
+        {
+            if (root is ChatListBox chatListBox)
+                return chatListBox;
+
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                ChatListBox child = FindChatListBox(VisualTreeHelper.GetChild(root, i));
+                if (child != null)
+                    return child;
+            }
+            return null;
         }
 
         private static ScrollViewer FindScrollViewer(DependencyObject root)

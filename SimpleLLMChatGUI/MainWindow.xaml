@@ -161,22 +161,22 @@
             </StackPanel>
         </Grid>
 
-        <!-- Chat history: one ListBox item per turn -->
-        <ListBox Name="chatList"
-                 AutomationProperties.AutomationId="chatList"
-                 Grid.Row="1"
-                 Margin="0,0,0,5"
+        <!-- Chat history: one turn per item; clicking an item never selects it,
+             so buttons inside a turn do not trigger the auto scroll-into-view -->
+        <local:ChatListBox
+                  AutomationProperties.AutomationId="chatList"
+                  Grid.Row="1"
+                  Margin="0,0,0,5"
                  Padding="4"
                  BorderThickness="1"
                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                  ScrollViewer.VerticalScrollBarVisibility="Auto"
                  ScrollViewer.CanContentScroll="False"
                  HorizontalContentAlignment="Stretch"
-                 Background="{DynamicResource ChatBackgroundColorBrush}"
-                 Foreground="{DynamicResource ChatTextColorBrush}"
-                 SizeChanged="chatList_SizeChanged">
-            <ListBox.ItemContainerStyle>
-                <Style TargetType="ListBoxItem">
+                  Background="{DynamicResource ChatBackgroundColorBrush}"
+                  Foreground="{DynamicResource ChatTextColorBrush}">
+            <local:ChatListBox.ItemContainerStyle>
+                <Style TargetType="{x:Type local:ChatListBoxItem}">
                     <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                     <Setter Property="Padding" Value="0"/>
                     <Setter Property="Margin"
@@ -185,7 +185,7 @@
                     <Setter Property="Background" Value="Transparent"/>
                     <Setter Property="Template">
                         <Setter.Value>
-                            <ControlTemplate TargetType="ListBoxItem">
+                            <ControlTemplate TargetType="{x:Type local:ChatListBoxItem}">
                                 <Border Background="{TemplateBinding Background}"
                                         Padding="{TemplateBinding Padding}">
                                     <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
@@ -194,13 +194,13 @@
                         </Setter.Value>
                     </Setter>
                 </Style>
-            </ListBox.ItemContainerStyle>
-            <ListBox.ItemTemplate>
+            </local:ChatListBox.ItemContainerStyle>
+            <local:ChatListBox.ItemTemplate>
                 <DataTemplate DataType="{x:Type local:ChatTurn}">
                     <local:ChatTurnView Turn="{Binding}"/>
                 </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+            </local:ChatListBox.ItemTemplate>
+        </local:ChatListBox>
 
         <!-- Bottom bar: attach + input + stop tool + send -->
         <Grid Grid.Row="2" Margin="0,0,0,2">

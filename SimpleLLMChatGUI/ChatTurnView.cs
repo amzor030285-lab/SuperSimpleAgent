@@ -186,7 +186,8 @@ namespace SimpleLLMChatGUI
                 MinWidth = 55,
                 MinHeight = 22,
                 Margin = new Thickness(8, 0, 0, 2),
-                VerticalAlignment = VerticalAlignment.Center
+                VerticalAlignment = VerticalAlignment.Center,
+                Focusable = false
             };
             AutomationProperties.SetAutomationId(_copyButton, "copyButton");
             ChatTurn turn = Turn;
