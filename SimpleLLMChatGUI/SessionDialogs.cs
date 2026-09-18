@@ -117,8 +117,9 @@ namespace SimpleLLMChatGUI
 
             public override string ToString()
             {
-                DateTime local = Info.SavedAtUtc != DateTime.MinValue
-                    ? Info.SavedAtUtc.ToLocalTime()
+                DateTime savedUtc = SessionStore.EffectiveSavedAtUtc(Info);
+                DateTime local = savedUtc != DateTime.MinValue
+                    ? savedUtc.ToLocalTime()
                     : DateTime.MinValue;
                 string when = local != DateTime.MinValue ? local.ToString("yyyy-MM-dd HH:mm") : "unknown";
                 double kb = (double)Info.SizeBytes / 1024.0;
@@ -228,8 +229,9 @@ namespace SimpleLLMChatGUI
 
             public override string ToString()
             {
-                DateTime local = Info.SavedAtUtc != DateTime.MinValue
-                    ? Info.SavedAtUtc.ToLocalTime()
+                DateTime savedUtc = SessionStore.EffectiveSavedAtUtc(Info);
+                DateTime local = savedUtc != DateTime.MinValue
+                    ? savedUtc.ToLocalTime()
                     : DateTime.MinValue;
                 string when = local != DateTime.MinValue ? local.ToString("yyyy-MM-dd HH:mm") : "unknown";
                 double kb = (double)Info.SizeBytes / 1024.0;

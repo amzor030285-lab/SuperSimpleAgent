@@ -23,6 +23,7 @@ public static class SessionStore
         public string Name;          // file name without ".json"
         public string FullPath;
         public DateTime SavedAtUtc;
+        public DateTime LastSavedAtUtc;
         public int MessageCount;
         public long SizeBytes;
     }
@@ -57,6 +58,7 @@ public static class SessionStore
     {
         public int Version;
         public DateTime SavedAtUtc;
+        public DateTime LastSavedAtUtc;
         public List<T> Messages;
     }
 
@@ -68,10 +70,30 @@ public static class SessionStore
             Directory.CreateDirectory(dir);
             string safe = SanitizeName(name);
             fullPath = Path.Combine(dir, safe + ".json");
+
+            // Keep the file's leading SavedAtUtc stable across auto-saves so the
+            // header line does not churn on every write; LastSavedAtUtc tracks the
+            // most recent write for sorting and display.
+            DateTime savedAtUtc = DateTime.UtcNow;
+            try
+            {
+                if (File.Exists(fullPath))
+                {
+                    Envelope<T> previous = JsonConvert.DeserializeObject<Envelope<T>>(
+                        File.ReadAllText(fullPath, Encoding.UTF8));
+                    if (previous != null && previous.SavedAtUtc != DateTime.MinValue)
+                        savedAtUtc = previous.SavedAtUtc;
+                }
+            }
+            catch
+            {
+            }
+
             Envelope<T> envelope = new Envelope<T>
             {
                 Version = CurrentVersion,
-                SavedAtUtc = DateTime.UtcNow,
+                SavedAtUtc = savedAtUtc,
+                LastSavedAtUtc = DateTime.UtcNow,
                 Messages = messages ?? new List<T>()
             };
             File.WriteAllText(fullPath, JsonConvert.SerializeObject(envelope, Formatting.Indented), Encoding.UTF8);
@@ -135,6 +157,7 @@ public static class SessionStore
                 if (envelope != null)
                 {
                     info.SavedAtUtc = envelope.SavedAtUtc;
+                    info.LastSavedAtUtc = envelope.LastSavedAtUtc;
                     if (envelope.Messages != null)
                         info.MessageCount = envelope.Messages.Count;
                 }
@@ -144,8 +167,16 @@ public static class SessionStore
             result.Add(info);
         }
 
-        result.Sort((a, b) => b.SavedAtUtc.CompareTo(a.SavedAtUtc));
+        result.Sort((a, b) => EffectiveSavedAtUtc(b).CompareTo(EffectiveSavedAtUtc(a)));
         return result;
+    }
+
+    /// <summary>Most recent write time; falls back to the stable header time for old files.</summary>
+    public static DateTime EffectiveSavedAtUtc(SessionInfo info)
+    {
+        if (info == null)
+            return DateTime.MinValue;
+        return info.LastSavedAtUtc != DateTime.MinValue ? info.LastSavedAtUtc : info.SavedAtUtc;
     }
 
     public static bool Delete(string dir, string name)

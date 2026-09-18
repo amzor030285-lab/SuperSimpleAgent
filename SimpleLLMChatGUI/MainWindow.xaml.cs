@@ -235,7 +235,7 @@ namespace SimpleLLMChatGUI
                 if (_streamingTurn == null)
                 {
                     _streamingTurn = AddTurn();
-                    _streamingTurn.RoleLabel = GetAssistantDisplayName();
+                    _streamingTurn.RoleLabel = GetAssistantName();
                 }
 
                 string leftover = _streamingTurn.AppendText(remaining);
@@ -375,16 +375,6 @@ namespace SimpleLLMChatGUI
             return string.IsNullOrWhiteSpace(assistantName)
                 ? AppConstants.DefaultAssistantName
                 : assistantName;
-        }
-
-        /// <summary>
-        /// Display name for assistant turns: the configured model, falling back
-        /// to the assistant name.
-        /// </summary>
-        private string GetAssistantDisplayName()
-        {
-            string model = App.Config.GetConfigValue("model");
-            return string.IsNullOrWhiteSpace(model) ? GetAssistantName() : model;
         }
 
         private ChatTurn AddTurn()
@@ -592,7 +582,7 @@ namespace SimpleLLMChatGUI
             userTurn.AppendText(userInput);
             userTurn.Complete();
             _streamingTurn = AddTurn();
-            _streamingTurn.RoleLabel = GetAssistantDisplayName();
+            _streamingTurn.RoleLabel = GetAssistantName();
             ScrollChatToEnd();
 
             // Switch the send button into a Stop button while the model generates.
@@ -783,7 +773,7 @@ namespace SimpleLLMChatGUI
                 }
                 else
                 {
-                    turn.RoleLabel = GetAssistantDisplayName();
+                    turn.RoleLabel = GetAssistantName();
                     turn.AppendText(msg.Content);
                     if (IsMarkdownParsingEnabled())
                         turn.ProcessMarkdown();

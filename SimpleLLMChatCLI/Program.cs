@@ -112,8 +112,9 @@ namespace SimpleLLMChatCLI
 
             foreach (SessionStore.SessionInfo info in sessions)
             {
-                DateTime local = info.SavedAtUtc != DateTime.MinValue
-                    ? info.SavedAtUtc.ToLocalTime()
+                DateTime savedUtc = SessionStore.EffectiveSavedAtUtc(info);
+                DateTime local = savedUtc != DateTime.MinValue
+                    ? savedUtc.ToLocalTime()
                     : DateTime.MinValue;
                 string when = local != DateTime.MinValue
                     ? local.ToString("yyyy-MM-dd HH:mm")
