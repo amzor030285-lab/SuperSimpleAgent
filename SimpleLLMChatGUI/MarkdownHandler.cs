@@ -947,13 +947,75 @@ namespace SimpleLLMChatGUI
             hyperlink.MouseLeave += (s, _) => { timer.Stop(); tooltip.IsOpen = false; };
         }
 
+        private static Popup _copiedPopup;
+        private static DispatcherTimer _copiedPopupTimer;
+
         private static void OnHyperlinkClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
             if (sender is Hyperlink hyperlink && hyperlink.NavigateUri != null)
             {
-                Process.Start(new ProcessStartInfo(hyperlink.NavigateUri.AbsoluteUri) { UseShellExecute = true });
+                string url = hyperlink.NavigateUri.AbsoluteUri;
+                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
+                {
+                    // Ctrl+click opens the link in the default browser.
+                    Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+                }
+                else
+                {
+                    try { Clipboard.SetText(url); } catch { }
+                    ShowCopiedPopup();
+                }
                 e.Handled = true;
             }
+        }
+
+        /// <summary>
+        /// Shows a floating "Copied" badge near the mouse pointer after a URL is
+        /// copied; it stays ~1.2 s, then the next copy re-places it.
+        /// </summary>
+        private static void ShowCopiedPopup()
+        {
+            if (_copiedPopup == null)
+            {
+                var border = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromArgb(0xDD, 30, 30, 30)),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(8, 4, 8, 4)
+                };
+                border.Child = new TextBlock
+                {
+                    Text = "Copied",
+                    Foreground = Brushes.White,
+                    FontSize = 12,
+                    FontWeight = FontWeights.SemiBold
+                };
+                _copiedPopup = new Popup
+                {
+                    Child = border,
+                    Placement = PlacementMode.MousePoint,
+                    PlacementTarget = Application.Current != null ? Application.Current.MainWindow : null,
+                    StaysOpen = true,
+                    AllowsTransparency = true,
+                    HorizontalOffset = 12,
+                    VerticalOffset = 12
+                };
+            }
+
+            if (_copiedPopupTimer != null)
+            {
+                _copiedPopupTimer.Stop();
+                _copiedPopup.IsOpen = false;
+            }
+            _copiedPopup.IsOpen = true;
+            _copiedPopupTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
+            _copiedPopupTimer.Tick += (s, args) =>
+            {
+                if (_copiedPopup != null)
+                    _copiedPopup.IsOpen = false;
+                _copiedPopupTimer.Stop();
+            };
+            _copiedPopupTimer.Start();
         }
 
         private static bool ProcessHorizontalRule(Paragraph paragraph, string trimmedText)
