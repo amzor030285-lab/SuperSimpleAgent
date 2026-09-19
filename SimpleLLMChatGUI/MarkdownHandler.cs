@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows;
@@ -358,11 +359,13 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Builds a table as an auto-sized <see cref="System.Windows.Controls.Grid"/>
-        /// of bordered cell <see cref="Border"/>s, wrapped in a
-        /// <see cref="BlockUIContainer"/>. Columns size to their content (capped so
-        /// long text wraps instead of widening the table). The outer frame supplies
-        /// the outer border; each cell supplies only its right/bottom border so
+        /// Builds a table as a <see cref="System.Windows.Controls.Grid"/> of
+        /// bordered cell <see cref="Border"/>s, wrapped in a
+        /// <see cref="BlockUIContainer"/>. Columns are star-sized with weights
+        /// proportional to their content width, so the table always fills the
+        /// available (window-driven) width, wide text wraps, and the layout
+        /// re-scales live when the window resizes. The outer frame supplies the
+        /// outer border; each cell supplies only its right/bottom border so
         /// inner lines are 1px.
         /// </summary>
         private static Block BuildTableContainer(List<string> headerCells, List<TextAlignment> alignments,
@@ -371,9 +374,28 @@ namespace SimpleLLMChatGUI
             int columnCount = headerCells.Count;
             int rowCount = (lastRow - firstDataRow + 1) + 1;
 
+            var dataRows = new List<List<string>>();
+            for (int i = firstDataRow; i <= lastRow; i++)
+                dataRows.Add(SplitTableCells(StripOuterPipes(ParagraphText(blocks[i] as Paragraph) ?? "")));
+
+            // Column weights: widest cell per column (headers bold, inline
+            // bold/code measured in their rendered styles, +10% slack so the
+            // star-scaled column always fits its widest cell on one line).
+            var weights = new double[columnCount];
+            for (int c = 0; c < columnCount; c++)
+            {
+                double w = MeasureTextWidth(headerCells[c], baseFontSize, FontWeights.Bold, ChatFontFamily());
+                for (int r = 0; r < dataRows.Count; r++)
+                {
+                    List<string> cells = dataRows[r];
+                    w = Math.Max(w, MeasureCellWidth(c < cells.Count ? cells[c] : string.Empty, baseFontSize));
+                }
+                weights[c] = Math.Max(TableMinColumnWidth, w * 1.1 + TableCellPaddingWidth);
+            }
+
             var grid = new System.Windows.Controls.Grid();
             for (int c = 0; c < columnCount; c++)
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(weights[c], GridUnitType.Star) });
             for (int r = 0; r < rowCount; r++)
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
@@ -381,13 +403,12 @@ namespace SimpleLLMChatGUI
                 grid.Children.Add(CreateTableCell(headerCells[c], CellAlignment(alignments, c), true,
                     baseFontSize, c, columnCount, 0, rowCount));
 
-            for (int i = firstDataRow; i <= lastRow; i++)
+            for (int r = 0; r < dataRows.Count; r++)
             {
-                int r = i - firstDataRow + 1;
-                List<string> cells = SplitTableCells(StripOuterPipes(ParagraphText(blocks[i] as Paragraph) ?? ""));
+                List<string> cells = dataRows[r];
                 for (int c = 0; c < columnCount; c++)
                     grid.Children.Add(CreateTableCell(c < cells.Count ? cells[c] : string.Empty, CellAlignment(alignments, c), false,
-                        baseFontSize, c, columnCount, r, rowCount));
+                        baseFontSize, c, columnCount, r + 1, rowCount));
             }
 
             var frame = new Border
@@ -419,26 +440,12 @@ namespace SimpleLLMChatGUI
             System.Windows.Controls.Grid.SetRow(cellBorder, row);
 
             // Plain cells become a read-only TextBox so part of the cell can be
-            // selected and copied; cells with inline markdown stay formatted
-            // (hosted TextBlocks are not selectable in WPF).
+            // selected and copied; cells with inline markdown live in a read-only
+            // rich text host (formatted TextBlocks are not selectable in WPF).
             FrameworkElement content;
             if (HasInlineMarkdown(text))
             {
-                var textBlock = new TextBlock
-                {
-                    TextAlignment = alignment,
-                    TextWrapping = TextWrapping.Wrap,
-                    FontSize = baseFontSize,
-                    LineHeight = ChatTurn.LineHeightMultiplier,
-                    MaxWidth = TableCellMaxWidth
-                };
-                textBlock.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
-                if (isHeader)
-                    textBlock.FontWeight = FontWeights.Bold;
-
-                textBlock.Inlines.Add(new Run(text));
-                ApplyInlineFormatting(textBlock.Inlines);
-                content = textBlock;
+                content = CreateRichTextHost(text, baseFontSize, alignment, isHeader, new Thickness(0));
             }
             else
             {
@@ -454,8 +461,7 @@ namespace SimpleLLMChatGUI
                     FontSize = baseFontSize,
                     TextWrapping = TextWrapping.Wrap,
                     TextAlignment = alignment,
-                    VerticalContentAlignment = VerticalAlignment.Center,
-                    MaxWidth = TableCellMaxWidth
+                    VerticalContentAlignment = VerticalAlignment.Center
                 };
                 textBox.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
                 if (isHeader)
@@ -473,10 +479,66 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Maximum pixel width of a table column; longer text wraps instead of
-        /// stretching the table.
+        /// Floor pixel width of a table column so short cells (e.g. "ID", "1")
+        /// keep a usable share of the table width.
         /// </summary>
-        private const double TableCellMaxWidth = 300;
+        private const double TableMinColumnWidth = 40;
+
+        /// <summary>
+        /// Cell border padding (6px left + 6px right) added to measured content
+        /// widths when computing table column weights.
+        /// </summary>
+        private const double TableCellPaddingWidth = 12;
+
+        /// <summary>
+        /// Chat font family (user override or the system message font).
+        /// </summary>
+        private static FontFamily ChatFontFamily()
+        {
+            return FontHandler.TryGetFontFamily(App.Config.GetConfigValue("customfontfamily"))
+                ?? SystemFonts.MessageFontFamily;
+        }
+
+        /// <summary>
+        /// Monospace code font family (user override or Consolas).
+        /// </summary>
+        private static FontFamily CodeFontFamily()
+        {
+            return FontHandler.TryGetFontFamily(App.Config.GetConfigValue("codeblockfontfamily"))
+                ?? new FontFamily("Consolas");
+        }
+
+        /// <summary>
+        /// Single-line pixel width of <paramref name="text"/>. Used only for
+        /// relative table column weights, so an approximate measurement is fine.
+        /// </summary>
+        private static double MeasureTextWidth(string text, double fontSize, FontWeight weight, FontFamily family)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 0;
+
+            var typeface = new Typeface(family, FontStyles.Normal, weight, FontStretches.Normal);
+            var formatted = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
+                typeface, fontSize, Brushes.Black);
+            return Math.Max(formatted.Width, formatted.WidthIncludingTrailingWhitespace);
+        }
+
+        /// <summary>
+        /// Widest rendered width of a table cell: plain text in the chat font,
+        /// plus bold/code measured in their actual styles when present.
+        /// </summary>
+        private static double MeasureCellWidth(string text, double baseFontSize)
+        {
+            if (string.IsNullOrEmpty(text))
+                return 0;
+
+            double w = MeasureTextWidth(text, baseFontSize, FontWeights.Normal, ChatFontFamily());
+            if (text.IndexOf("**", StringComparison.Ordinal) >= 0)
+                w = Math.Max(w, MeasureTextWidth(text, baseFontSize, FontWeights.Bold, ChatFontFamily()));
+            if (text.IndexOf('`') >= 0)
+                w = Math.Max(w, MeasureTextWidth(text, baseFontSize, FontWeights.Normal, CodeFontFamily()));
+            return w;
+        }
 
         /// <summary>
         /// One parsed list item; <see cref="Children"/> holds the items indented
@@ -565,14 +627,13 @@ namespace SimpleLLMChatGUI
                 var content = new StackPanel { Orientation = Orientation.Vertical };
 
                 // Plain items become a read-only TextBox so part of the item can be
-                // selected and copied; items with inline markdown stay formatted
-                // (hosted TextBlocks are not selectable in WPF).
+                // selected and copied; items with inline markdown live in a
+                // read-only rich text host (formatted TextBlocks are not
+                // selectable in WPF).
                 if (HasInlineMarkdown(item.Text))
                 {
-                    var textBlock = CreateListTextBlock(baseFontSize, new Thickness(0, 1, 0, 1));
-                    textBlock.Inlines.Add(new Run(item.Text));
-                    ApplyInlineFormatting(textBlock.Inlines);
-                    content.Children.Add(textBlock);
+                    content.Children.Add(CreateRichTextHost(item.Text, baseFontSize,
+                        TextAlignment.Left, false, new Thickness(0, 1, 0, 1)));
                 }
                 else
                 {
@@ -717,9 +778,52 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
+        /// Formatted (inline markdown) text as a read-only selectable
+        /// <see cref="RichTextBox"/> host: WPF cannot select text inside a hosted
+        /// TextBlock, so formatted text lives in its own read-only rich control
+        /// (same metrics as the surrounding text).
+        /// </summary>
+        private static NoScrollRichTextBox CreateRichTextHost(string text, double baseFontSize,
+            TextAlignment alignment, bool bold, Thickness margin)
+        {
+            var host = new NoScrollRichTextBox
+            {
+                Margin = margin,
+                IsReadOnly = true,
+                IsReadOnlyCaretVisible = true,
+                IsTabStop = false,
+                AcceptsReturn = true,
+                Background = Brushes.Transparent,
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(0),
+                FontSize = baseFontSize,
+                VerticalContentAlignment = VerticalAlignment.Center
+            };
+            host.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+            if (bold)
+                host.FontWeight = FontWeights.Bold;
+
+            // Alignment lives on the paragraph: RichTextBox has no TextAlignment.
+            // No LineHeight override: keep the font's natural line height so
+            // rich and plain rows come out the same height.
+            var paragraph = new Paragraph
+            {
+                Margin = new Thickness(0),
+                TextAlignment = alignment
+            };
+            paragraph.Inlines.Add(new Run(text));
+            ApplyInlineFormatting(paragraph.Inlines);
+            // A fresh RichTextBox document already contains an empty paragraph;
+            // drop it or every rich cell gets one extra (empty) line.
+            host.Document.Blocks.Clear();
+            host.Document.Blocks.Add(paragraph);
+            return host;
+        }
+
+        /// <summary>
         /// True when the text contains inline markdown markers that
-        /// <see cref="ApplyInlineFormatting"/> would render, so the text must stay
-        /// in a formatted (non-selectable) TextBlock.
+        /// <see cref="ApplyInlineFormatting"/> would render, so the text must be
+        /// hosted in a formatted rich text host instead of a plain TextBox.
         /// </summary>
         private static bool HasInlineMarkdown(string text)
         {

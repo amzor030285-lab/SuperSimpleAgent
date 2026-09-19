@@ -149,6 +149,7 @@
     <Compile Include="ChatTurnView.cs" />
     <Compile Include="ChatListBox.cs" />
     <Compile Include="ChatMessageDocumentBehavior.cs" />
+    <Compile Include="NoScrollRichTextBox.cs" />
     <Compile Include="NoScrollTextBox.cs" />
     <Compile Include="MarkdownHandler.cs" />
     <Compile Include="ModelsClient.cs" />
