@@ -106,6 +106,8 @@ copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\SimpleLLMChatCLI.exe" "%TESTBUILD%\S
 
 copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\SimpleLLMChatCLI.Tests\" >nul
 
+call :CopyIfExists "%ROOT%deps\curl.exe" "%TESTBUILD%\SimpleLLMChatCLI.Tests\curl.exe"
+
 
 
 copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\SimpleLLMChatGUI.exe" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
