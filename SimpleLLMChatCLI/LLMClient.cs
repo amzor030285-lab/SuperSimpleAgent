@@ -539,6 +539,23 @@ public class LLMClient
     /// </summary>
     private void SummaryAndReplace(List<ChatMessage> conversation, bool outputOnly, string continueHint, bool printSummary)
     {
+        // opencode only ever compacts an overflowing context, so its head is always
+        // substantial. Our manual button can fire on a short conversation, in which
+        // case the whole chat fits in the recent-tail window and the head is empty -
+        // summarizing it would just produce a meaningless "(none)" recap. Skip the
+        // LLM call entirely and keep the conversation as-is (the free micro-compact
+        // already ran before this pass when relevant).
+        int split = FindRecentSplitIndex(conversation);
+        if (HeadCharacterCount(conversation, split) < MinSummaryHeadChars)
+        {
+            if (!outputOnly)
+                ChatOutput.WriteLine(printSummary
+                    ? "[Compaction: conversation fits in the keep window - nothing to summarize]"
+                    : "[Context usage high - nothing left to summarize]");
+            PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
+            return;
+        }
+
         if (!outputOnly)
         {
             ChatOutput.StartBlock();
@@ -1006,6 +1023,39 @@ public class LLMClient
 
     /// <summary>Summary output cap in tokens (opencode's SUMMARY_OUTPUT_TOKENS).</summary>
     private const int SummaryMaxTokens = 4096;
+
+    /// <summary>
+    /// Minimum character mass of the head (excluding the prior summary) worth an
+    /// LLM summarization call; below it the conversation is kept as-is.
+    /// </summary>
+    private const int MinSummaryHeadChars = 1000;
+
+    /// <summary>
+    /// Character mass of the messages the summarizer would actually receive: the
+    /// head minus the floating summary (passed separately as prior-summary),
+    /// counting content and tool-call name/arguments.
+    /// </summary>
+    private static int HeadCharacterCount(List<ChatMessage> conversation, int split)
+    {
+        int count = 0;
+        for (int i = 0; i < split; i++)
+        {
+            ChatMessage m = conversation[i];
+            if (m.Content != null
+                && m.Content.StartsWith(SessionStore.SummaryMarker, StringComparison.Ordinal))
+                continue;
+            count += (m.Content != null ? m.Content.Length : 0);
+            if (m.ToolCalls != null)
+            {
+                for (int j = 0; j < m.ToolCalls.Count; j++)
+                {
+                    count += (m.ToolCalls[j].Name != null ? m.ToolCalls[j].Name.Length : 0)
+                         + (m.ToolCalls[j].Arguments != null ? m.ToolCalls[j].Arguments.Length : 0);
+                }
+            }
+        }
+        return count;
+    }
 
     /// <summary>
     /// Index where the recent tail starts: the newest messages totalling up to

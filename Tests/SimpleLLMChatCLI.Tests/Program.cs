@@ -545,11 +545,41 @@ namespace SimpleLLMChatCLI.Tests
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
                 using (TempWorkspace ws = PackageCliWorkspace())
                 {
-                    // One tool round (run_shell_command is NOT enabled => produces a
-                    // disabled-tool message, which still creates a compactable tool
-                    // group), then a plain reply. /compactfull must run the whole
-                    // ladder: micro-compact + silent summarize-and-replace.
-                    server.ToolCallRoundsRemaining = 1;
+                    // 16 turns of ~2KB markdown replies (~29k chars) so the
+                    // conversation grows well past the recent-tail window
+                    // (~24k chars at the default char ratio) even with the
+                    // tail's backward-walk overshoot; the older head must then
+                    // be summarized (the fake server answers the summary
+                    // request too).
+                    server.LongMarkdownReplies = true;
+                    server.StreamDelayMs = 5;
+                    server.StreamChunkChars = 64;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        for (int turn = 1; turn <= 16; turn++)
+                        {
+                            cli.WriteLine("message " + turn);
+                            CliRunner.WaitForText(cli, "# Reply turn " + turn, 30000);
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                        }
+
+                        cli.WriteLine("/compactfull");
+                        CliRunner.WaitForText(cli, "[Conversation compacted]", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.compaction_full_short_noop", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
                     server.StreamDelayMs = 5;
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0);
 
@@ -558,14 +588,19 @@ namespace SimpleLLMChatCLI.Tests
                     {
                         CliRunner.WaitForText(cli, "You:", 20000);
 
-                        cli.WriteLine("compact me");
-                        // The disabled tool rounds through and the plain reply follows.
+                        cli.WriteLine("hi");
                         CliRunner.WaitForText(cli, server.FixedReply, 30000);
                         CliRunner.WaitForText(cli, "You:", 15000);
 
+                        // The whole conversation fits in the recent-tail window:
+                        // no LLM summary call, no marker, nothing is dropped.
                         cli.WriteLine("/compactfull");
-                        CliRunner.WaitForText(cli, "[Conversation summarized - continuing...]", 30000);
+                        CliRunner.WaitForText(
+                            cli, "[Compaction: conversation fits in the keep window - nothing to summarize]", 20000);
                         CliRunner.WaitForText(cli, "You:", 15000);
+                        TestAssert.True(
+                            !cli.Stdout.Contains("[Conversation compacted]"),
+                            "no summary for a conversation that fits in the keep window");
                     }
                 }
             });
@@ -656,32 +691,46 @@ namespace SimpleLLMChatCLI.Tests
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
                 using (TempWorkspace ws = PackageCliWorkspace())
                 {
-                    // ~2 KB markdown per turn (window is in tokens = chars/3); at the
-                    // start of turn 2 usage sits in the silent-summarize band (90-95%).
-                    // The summarize pass (request #2) is injected as a 500 so the CLI
-                    // must fall back to truncation.
+                    // A short first turn plus one long message puts the start of
+                    // turn 3 at ~92% (29591 chars / 3 / 10670): inside the
+                    // silent-summarize band (90-95%) so the free truncate pass
+                    // (>=95%) stays quiet and the summarize pass fires with a
+                    // substantial head (the first turn). The summarize pass
+                    // (request #3) is injected as a 500 so the CLI must fall
+                    // back to truncation.
                     server.LongMarkdownReplies = true;
                     server.StreamDelayMs = 5;
-                    server.FailChatRequestAtTurn = 2;
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 655);
+                    server.StreamChunkChars = 64;
+                    server.FailChatRequestAtTurn = 3;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 10670);
 
                     string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
                     using (CliRunner cli = new CliRunner(exe, ws.Path))
                     {
                         CliRunner.WaitForText(cli, "You:", 15000);
 
-                        cli.WriteLine("first message");
+                        StringBuilder shortFirst = new StringBuilder();
+                        for (int i = 0; i < 2000; i++)
+                            shortFirst.Append('a');
+                        cli.WriteLine(shortFirst.ToString());
                         CliRunner.WaitForText(cli, "# Reply turn 1", 30000);
                         CliRunner.WaitForText(cli, "You:", 15000);
 
-                        // Turn 2 starts at ~92%: silent summarize fires, fails (500),
+                        StringBuilder longSecond = new StringBuilder();
+                        for (int i = 0; i < 24000; i++)
+                            longSecond.Append('b');
+                        cli.WriteLine(longSecond.ToString());
+                        CliRunner.WaitForText(cli, "# Reply turn 2", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        // Turn 3 starts at ~92%: silent summarize fires, fails (500),
                         // and the CLI falls back to truncation.
-                        cli.WriteLine("second message");
+                        cli.WriteLine("third message");
                         CliRunner.WaitForText(cli, "[Context usage high - summary failed, truncated", 30000);
 
-                        // The main request still succeeds. It is the server's 3rd chat
-                        // request (#2 was the failed summary), so it is labeled turn 3.
-                        CliRunner.WaitForText(cli, "# Reply turn 3", 30000);
+                        // The main request still succeeds. It is the server's 4th chat
+                        // request (#3 was the failed summary), so it is labeled turn 4.
+                        CliRunner.WaitForText(cli, "# Reply turn 4", 30000);
                         CliRunner.WaitForText(cli, "You:", 30000);
 
                         cli.WriteLine("/save after_summary");
@@ -689,7 +738,7 @@ namespace SimpleLLMChatCLI.Tests
 
                         string sessionFile = Path.Combine(ws.Path, "sessions", "after_summary.json");
                         string json = File.ReadAllText(sessionFile, Encoding.UTF8);
-                        TestAssert.Contains(json, "Reply turn 3", "latest reply preserved");
+                        TestAssert.Contains(json, "Reply turn 4", "latest reply preserved");
                     }
                 }
             });
