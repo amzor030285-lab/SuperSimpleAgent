@@ -23,9 +23,17 @@ namespace SimpleLLMChatGUI
         private readonly ObservableCollection<ChatTurn> _chatTurns = new ObservableCollection<ChatTurn>();
         private ChatTurn _streamingTurn;
         private ChatListBox chatList;
+        private bool _compacting;
+        private bool _summaryArrived;
+        private string _compactTail = "";
 
         private const double ChatTurnGapMin = 8;
         private const double ChatTurnGapMax = 24;
+
+        // The CLI prints this line before the summary text on manual compaction;
+        // seeing it lets the GUI keep the summary turn and clear the old history.
+        private const string CompactedMarker = "[Conversation compacted]";
+        private const int CompactedMarkerWindow = 64;
 
         /// <summary>
         /// Bottom gap between chat turns; scales with font size (~1em + 2), clamped.
@@ -235,6 +243,8 @@ namespace SimpleLLMChatGUI
         /// </summary>
         private void AppendStreamingText(string text)
         {
+            TrackCompactedMarker(text);
+
             string remaining = text;
             while (!string.IsNullOrEmpty(remaining))
             {
@@ -262,6 +272,19 @@ namespace SimpleLLMChatGUI
             if (!_streamingTurn.HasRenderedContent())
                 _chatTurns.Remove(_streamingTurn);
             _streamingTurn = null;
+        }
+
+        /// <summary>
+        /// Watches the streamed stdout for the manual-compaction marker line. A
+        /// rolling window catches the marker even when a read boundary splits it.
+        /// </summary>
+        private void TrackCompactedMarker(string text)
+        {
+            _compactTail = _compactTail + text;
+            if (_compactTail.Length > CompactedMarkerWindow)
+                _compactTail = _compactTail.Substring(_compactTail.Length - CompactedMarkerWindow);
+            if (_compactTail.IndexOf(CompactedMarker, StringComparison.Ordinal) >= 0)
+                _summaryArrived = true;
         }
 
         private void OnErrorOccurred(string errorMessage)
@@ -314,6 +337,21 @@ namespace SimpleLLMChatGUI
                 EndStreamingTurn();
                 if (IsMarkdownParsingEnabled())
                     ApplyMarkdown();
+
+                if (_compacting)
+                {
+                    _compacting = false;
+                    // The summary (if produced) is the last turn; the CLI replaced
+                    // the whole history with it, so mirror that in the chat.
+                    if (_summaryArrived && _chatTurns.Count > 1)
+                    {
+                        ChatTurn summaryTurn = _chatTurns[_chatTurns.Count - 1];
+                        _chatTurns.Clear();
+                        _chatTurns.Add(summaryTurn);
+                        ScrollChatToEnd();
+                    }
+                }
+
                 ExitGeneratingMode();
                 chatInput.Focus();
             }));
@@ -502,8 +540,23 @@ namespace SimpleLLMChatGUI
 
         private void compactButton_Click(object sender, RoutedEventArgs e)
         {
-            if (processHandler != null && processHandler.IsProcessRunning)
-                processHandler.SendInput("/compactfull");
+            if (processHandler == null || !processHandler.IsProcessRunning)
+            {
+                MessageBox.Show("CLI is not running.", "Compact");
+                return;
+            }
+
+            if (_isGenerating || _compacting)
+                return;
+
+            // Block input while the CLI generates the summary. The summary text
+            // arrives as a normal assistant turn; the next "You:" prompt ends the
+            // compacting state and keeps only the summary turn (see OnGenerationComplete).
+            _compacting = true;
+            _summaryArrived = false;
+            _compactTail = "";
+            SetCompactingMode(true);
+            processHandler.SendInput("/compactfull");
         }
 
         private void themeButton_Click(object sender, RoutedEventArgs e)
@@ -553,6 +606,23 @@ namespace SimpleLLMChatGUI
             sendButton.IsEnabled = true;
             saveButton.IsEnabled = true;
             loadButton.IsEnabled = true;
+            stopToolButton.IsEnabled = false;
+        }
+
+        /// <summary>
+        /// Blocks input while a manual compaction runs. Unlike generation mode the
+        /// send button is disabled (the summary pass is not steerable from the GUI),
+        /// so it shows "Compacting…" instead of "Stop".
+        /// </summary>
+        private void SetCompactingMode(bool on)
+        {
+            _compacting = on;
+            attachButton.IsEnabled = !on;
+            chatInput.IsEnabled = !on;
+            sendButton.Content = on ? "Compacting…" : "Send";
+            sendButton.IsEnabled = !on;
+            saveButton.IsEnabled = !on;
+            loadButton.IsEnabled = !on;
             stopToolButton.IsEnabled = false;
         }
 
