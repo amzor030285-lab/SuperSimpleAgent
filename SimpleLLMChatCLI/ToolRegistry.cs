@@ -92,7 +92,7 @@ namespace SimpleLLMChatCLI
         /// </summary>
         private string ReplacePlaceholders(string text)
         {
-            if (string.IsNullOrEmpty(text) || config == null)
+            if (string.IsNullOrEmpty(text))
                 return text;
 
             return Regex.Replace(text, @"\{config\.(\w+?)(?:\*(\d+))?\}", match =>
@@ -243,7 +243,7 @@ namespace SimpleLLMChatCLI
         {
             var results = new List<string>();
 
-            if (enabledTools == null || enabledTools.Count == 0 || contextInjectorsByExecutable.Count == 0)
+            if (enabledTools.Count == 0 || contextInjectorsByExecutable.Count == 0)
                 return results;
 
             // Determine which executables are active (have at least one enabled tool).
@@ -334,13 +334,6 @@ namespace SimpleLLMChatCLI
         /// Executes a tool by spawning its executable with the tool name as argv[1]
         /// and passing argument JSON + config via stdin.
         /// </summary>
-        public void ExecuteToolCall(string toolName, string arguments, out string toolContent, out int exitCode)
-        {
-            string imageBase64;
-            string imageMime;
-            ExecuteToolCall(toolName, arguments, out toolContent, out exitCode, out imageBase64, out imageMime);
-        }
-
         public void ExecuteToolCall(string toolName, string arguments, out string toolContent, out int exitCode,
             out string imageBase64, out string imageMime)
         {
@@ -428,7 +421,7 @@ namespace SimpleLLMChatCLI
                         string stderr = stderrTask.Result;
                         exitCode = process.ExitCode;
 
-                        string output = stdout ?? "";
+                        string output = stdout;
                         if (!string.IsNullOrEmpty(stderr))
                             output += stderr;
 
