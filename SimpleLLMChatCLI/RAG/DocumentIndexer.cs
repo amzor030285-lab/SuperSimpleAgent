@@ -130,7 +130,7 @@ namespace SimpleLLMChatCLI.RAG
                 string relative = index.ToDisplayPath(file);
                 foreach (ChunkInfo ci in Chunk(content, chunkLines, overlap))
                 {
-                    string text = Truncate(ci.Text, maxSnippet);
+                    string text = ci.Text.Length > maxSnippet ? ci.Text.Substring(0, maxSnippet) : ci.Text;
                     if (string.IsNullOrWhiteSpace(text))
                         continue;
 
@@ -210,9 +210,7 @@ namespace SimpleLLMChatCLI.RAG
 
         private void Report(IndexProgress progress)
         {
-            Action<IndexProgress> handler = _onProgress;
-            if (handler != null)
-                handler(progress);
+            _onProgress(progress);
         }
 
         private static bool TryReadContent(string file, out string content, out string hash)
@@ -224,7 +222,8 @@ namespace SimpleLLMChatCLI.RAG
                 byte[] bytes = File.ReadAllBytes(file);
                 if (DocumentScanFilter.LooksBinary(bytes, DocumentScanFilter.BinarySampleBytes))
                     return false;
-                content = DecodeText(bytes);
+                using (var reader = new StreamReader(new MemoryStream(bytes), Encoding.UTF8))
+                    content = reader.ReadToEnd();
                 hash = DocumentIndex.HashMd5Hex(content, lowercase: false);
                 return true;
             }
@@ -234,28 +233,10 @@ namespace SimpleLLMChatCLI.RAG
             }
         }
 
-        private static string DecodeText(byte[] bytes)
-        {
-            if (bytes == null || bytes.Length == 0)
-                return string.Empty;
-
-            // Honor a UTF-8 BOM; otherwise decode as UTF-8 (lenient).
-            if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-                return new UTF8Encoding(false).GetString(bytes, 3, bytes.Length - 3);
-            return new UTF8Encoding(false).GetString(bytes);
-        }
-
         private static long SafeMtime(string file)
         {
             try { return File.GetLastWriteTimeUtc(file).Ticks; }
             catch { return 0; }
-        }
-
-        private static string Truncate(string text, int maxChars)
-        {
-            if (string.IsNullOrEmpty(text) || text.Length <= maxChars)
-                return text;
-            return text.Substring(0, maxChars);
         }
 
         private struct ChunkInfo
@@ -267,9 +248,6 @@ namespace SimpleLLMChatCLI.RAG
 
         private static IEnumerable<ChunkInfo> Chunk(string content, int chunkLines, int overlap)
         {
-            if (string.IsNullOrEmpty(content))
-                yield break;
-
             string[] lines = content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n');
             if (chunkLines < 1) chunkLines = 60;
             int step = chunkLines - overlap;

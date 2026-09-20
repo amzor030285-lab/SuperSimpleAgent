@@ -17,7 +17,7 @@ namespace SimpleLLMChatCLI.RAG
 
         public static IndexedHitSet Search(DocumentIndex index, ConfigHandler config, string query, int maxResults)
         {
-            if (index == null || !index.HasIndex)
+            if (!index.HasIndex)
                 return null;
 
             EmbeddingsClient client = EmbeddingsClient.CreateFromConfig(config);
@@ -25,16 +25,14 @@ namespace SimpleLLMChatCLI.RAG
                 return null;
 
             float[] queryVector;
-            try { queryVector = client.Embed(query); }
+            try { queryVector = client.EmbedBatch(new List<string> { query })[0]; }
             catch (EmbeddingsException) { return null; }
-            if (queryVector == null)
-                return null;
 
             List<ChunkHit> hits = index.Vectors.Search(queryVector, maxResults);
-            if (hits == null || hits.Count == 0)
+            if (hits.Count == 0)
                 return null;
 
-            int maxSnippet = config != null ? config.GetConfigInt("ragMaxSnippetLength", 2000) : 2000;
+            int maxSnippet = config.GetConfigInt("ragMaxSnippetLength", 2000);
             var sb = new StringBuilder();
             var files = new List<string>();
             int shown = 0;
@@ -43,8 +41,6 @@ namespace SimpleLLMChatCLI.RAG
             {
                 if (shown >= maxResults)
                     break;
-                if (hit == null || hit.Chunk == null)
-                    continue;
 
                 string file = hit.Chunk.File;
                 if (string.IsNullOrEmpty(file) || !File.Exists(file))

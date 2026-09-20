@@ -44,7 +44,7 @@ namespace SimpleLLMChatCLI.RAG
 
         public bool HasIndex
         {
-            get { return Vectors != null && Vectors.Count > 0; }
+            get { return Vectors.Count > 0; }
         }
 
         public string ManifestPath
@@ -87,11 +87,6 @@ namespace SimpleLLMChatCLI.RAG
             lock (CurrentGate) { _current = null; }
         }
 
-        public static string GetIndexRootDir()
-        {
-            return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rag-index");
-        }
-
         public static string HashMd5Hex(string value, bool lowercase)
         {
             string input = value ?? string.Empty;
@@ -109,7 +104,7 @@ namespace SimpleLLMChatCLI.RAG
 
         public static string ResolveKnowledgePath(ConfigHandler config)
         {
-            string path = config != null ? config.GetConfigValue("ragKnowledgePath") : null;
+            string path = config.GetConfigValue("ragKnowledgePath");
             if (string.IsNullOrEmpty(path))
                 return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "knowledge");
             try
@@ -126,10 +121,9 @@ namespace SimpleLLMChatCLI.RAG
         {
             DocumentIndex index = new DocumentIndex();
             index.KnowledgePath = knowledgePath;
-            index.IndexDir = Path.Combine(GetIndexRootDir(), HashMd5Hex(knowledgePath, true));
+            string indexRootDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rag-index");
+            index.IndexDir = Path.Combine(indexRootDir, HashMd5Hex(knowledgePath, true));
             index.Manifest = LoadManifest(index.ManifestPath) ?? new IndexManifest();
-            if (index.Manifest.Files == null)
-                index.Manifest.Files = new Dictionary<string, IndexFileEntry>(StringComparer.OrdinalIgnoreCase);
             index.Vectors = VectorStore.Load(index.VectorsPath);
             return index;
         }
@@ -183,8 +177,6 @@ namespace SimpleLLMChatCLI.RAG
         /// <summary>True when stored index params differ from current config (requires full rebuild).</summary>
         public bool ParamsMismatch(ConfigHandler config)
         {
-            if (config == null)
-                return true;
             string model = config.GetConfigValue("embeddingsModel");
             if (!string.Equals(Manifest.EmbeddingsModel ?? string.Empty, model, StringComparison.Ordinal))
                 return true;

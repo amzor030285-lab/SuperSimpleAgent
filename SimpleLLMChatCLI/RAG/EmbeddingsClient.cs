@@ -33,8 +33,6 @@ namespace SimpleLLMChatCLI.RAG
 
         public static EmbeddingsClient CreateFromConfig(ConfigHandler config)
         {
-            if (config == null)
-                return null;
             string endpoint = config.GetConfigValue("embeddingsEndpoint");
             if (string.IsNullOrWhiteSpace(endpoint))
                 endpoint = config.GetConfigValue("llmserver");
@@ -45,12 +43,6 @@ namespace SimpleLLMChatCLI.RAG
             if (string.IsNullOrWhiteSpace(endpoint) || string.IsNullOrWhiteSpace(model))
                 return null;
             return new EmbeddingsClient(endpoint, apiKey, model);
-        }
-
-        public float[] Embed(string text)
-        {
-            List<float[]> result = EmbedBatch(new List<string> { text ?? string.Empty });
-            return result.Count > 0 ? result[0] : null;
         }
 
         public List<float[]> EmbedBatch(IList<string> texts)

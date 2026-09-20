@@ -16,11 +16,8 @@ namespace SimpleLLMChatCLI.RAG
         public void ComputeNorm()
         {
             double sum = 0;
-            if (Embedding != null)
-            {
-                for (int i = 0; i < Embedding.Length; i++)
-                    sum += (double)Embedding[i] * Embedding[i];
-            }
+            for (int i = 0; i < Embedding.Length; i++)
+                sum += (double)Embedding[i] * Embedding[i];
             Norm = Math.Sqrt(sum);
         }
     }
@@ -45,7 +42,7 @@ namespace SimpleLLMChatCLI.RAG
 
         public void Add(ChunkVector vector)
         {
-            if (vector == null || vector.Embedding == null || vector.Embedding.Length == 0)
+            if (vector.Embedding.Length == 0)
                 return;
             if (_dimension == 0)
                 _dimension = vector.Embedding.Length;
@@ -59,15 +56,14 @@ namespace SimpleLLMChatCLI.RAG
             _dimension = 0;
         }
 
-        public int RemoveByFile(string file)
+        public void RemoveByFile(string file)
         {
             if (string.IsNullOrEmpty(file))
-                return 0;
-            int removed = _vectors.RemoveAll(v =>
+                return;
+            _vectors.RemoveAll(v =>
                 string.Equals(v.File, file, StringComparison.OrdinalIgnoreCase));
             if (_vectors.Count == 0)
                 _dimension = 0;
-            return removed;
         }
 
         /// <summary>
@@ -77,7 +73,7 @@ namespace SimpleLLMChatCLI.RAG
         public List<ChunkHit> Search(float[] query, int topK)
         {
             List<ChunkHit> hits = new List<ChunkHit>();
-            if (query == null || query.Length == 0 || _vectors.Count == 0)
+            if (query.Length == 0 || _vectors.Count == 0)
                 return hits;
 
             double queryNorm = 0;
@@ -165,7 +161,7 @@ namespace SimpleLLMChatCLI.RAG
                     writer.Write(v.File ?? string.Empty);
                     writer.Write(v.StartLine);
                     writer.Write(v.EndLine);
-                    int len = v.Embedding != null ? v.Embedding.Length : 0;
+                    int len = v.Embedding.Length;
                     writer.Write(len);
                     for (int i = 0; i < len; i++)
                         writer.Write(v.Embedding[i]);

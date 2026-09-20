@@ -14,8 +14,8 @@ namespace SimpleLLMChatCLI.RAG
 
         public static HashSet<string> GetAllowedExtensions(ConfigHandler config)
         {
-            List<string> fromConfig = config != null ? config.GetConfigList("ragAllowedExtensions") : null;
-            IEnumerable<string> source = (fromConfig != null && fromConfig.Count > 0)
+            List<string> fromConfig = config.GetConfigList("ragAllowedExtensions");
+            IEnumerable<string> source = (fromConfig.Count > 0)
                 ? (IEnumerable<string>)fromConfig
                 : AppConstants.DefaultRagAllowedExtensions.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
 
@@ -31,7 +31,7 @@ namespace SimpleLLMChatCLI.RAG
 
         private static bool IsAllowedExtension(string filePath, HashSet<string> allowed)
         {
-            if (string.IsNullOrEmpty(filePath) || allowed == null || allowed.Count == 0)
+            if (allowed.Count == 0)
                 return false;
             string ext = Path.GetExtension(filePath);
             return !string.IsNullOrEmpty(ext) && allowed.Contains(ext);
@@ -44,8 +44,6 @@ namespace SimpleLLMChatCLI.RAG
         /// </summary>
         public static bool LooksBinary(byte[] sample, int sampleLength)
         {
-            if (sample == null)
-                return false;
             int limit = Math.Min(sampleLength, sample.Length);
             for (int i = 0; i < limit; i++)
             {
@@ -57,15 +55,13 @@ namespace SimpleLLMChatCLI.RAG
 
         public static string NormalizePath(string path)
         {
-            if (string.IsNullOrEmpty(path))
-                return path;
             try { return Path.GetFullPath(path); }
             catch { return path; }
         }
 
         public static IEnumerable<string> EnumerateFiles(string rootPath, HashSet<string> allowed)
         {
-            if (string.IsNullOrEmpty(rootPath) || !Directory.Exists(rootPath))
+            if (!Directory.Exists(rootPath))
                 yield break;
 
             var stack = new Stack<string>();

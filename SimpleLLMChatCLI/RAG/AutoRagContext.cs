@@ -21,7 +21,7 @@ namespace SimpleLLMChatCLI.RAG
                 MergedPrompt = baseUserPrompt
             };
 
-            if (config == null || !config.GetConfigBool("ragEnabled", false))
+            if (!config.GetConfigBool("ragEnabled", false))
                 return result;
             if (string.IsNullOrWhiteSpace(query))
                 return result;
@@ -60,9 +60,9 @@ namespace SimpleLLMChatCLI.RAG
 
         private static string BuildReadingLine(List<string> files)
         {
-            if (files == null || files.Count == 0)
+            if (files.Count == 0)
                 return null;
-            return "[reading " + string.Join(", ", files.ToArray()) + "]";
+            return "[reading " + string.Join(", ", files) + "]";
         }
 
     }

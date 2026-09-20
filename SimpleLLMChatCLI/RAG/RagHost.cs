@@ -52,7 +52,7 @@ namespace SimpleLLMChatCLI.RAG
         {
             ConfigHandler config;
             lock (Sync) { config = _config; }
-            if (config == null || !config.GetConfigBool("ragEnabled", false))
+            if (!config.GetConfigBool("ragEnabled", false))
             {
                 PublishError("RAG is disabled.");
                 return;
@@ -88,7 +88,7 @@ namespace SimpleLLMChatCLI.RAG
 
         public static string GetKnowledgePathHint(ConfigHandler config)
         {
-            if (config == null || !config.GetConfigBool("ragEnabled", false))
+            if (!config.GetConfigBool("ragEnabled", false))
                 return null;
             return "Knowledge for RAG is stored in " + DocumentIndex.ResolveKnowledgePath(config);
         }
@@ -101,8 +101,6 @@ namespace SimpleLLMChatCLI.RAG
         {
             ConfigHandler config;
             lock (Sync) { config = _config; }
-            if (config == null)
-                return;
             if (work != IndexWork.Clear && !config.GetConfigBool("ragEnabled", false))
                 return;
 
@@ -125,8 +123,6 @@ namespace SimpleLLMChatCLI.RAG
                 {
                     ConfigHandler config;
                     lock (Sync) { config = _config; }
-                    if (config == null)
-                        return;
 
                     DocumentIndexer indexer = new DocumentIndexer(config, OnProgress);
                     if (work == IndexWork.Clear)
@@ -154,7 +150,7 @@ namespace SimpleLLMChatCLI.RAG
 
             ConfigHandler config;
             lock (Sync) { config = _config; }
-            bool enabled = config != null && config.GetConfigBool("ragEnabled", false);
+            bool enabled = config.GetConfigBool("ragEnabled", false);
 
             if (pending && enabled)
             {
@@ -168,9 +164,9 @@ namespace SimpleLLMChatCLI.RAG
 
         private static void OnProgress(IndexProgress progress)
         {
-            if (progress == null || Program.StatusPipe == null)
+            if (Program.StatusPipe == null)
             {
-                if (progress != null && string.Equals(progress.Phase, StatusPipe.IndexingPhaseError, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(progress.Phase, StatusPipe.IndexingPhaseError, StringComparison.OrdinalIgnoreCase))
                     RememberError(progress.Message);
                 return;
             }
