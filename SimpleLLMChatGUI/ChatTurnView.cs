@@ -122,7 +122,10 @@ namespace SimpleLLMChatGUI
 
         /// <summary>
         /// Constrains user bubbles to 80% of the row width so they read as bubbles,
-        /// while assistant turns keep the full document width.
+        /// while assistant turns keep the full document width. Also pins the
+        /// turn's document PageWidth to the bubble's inner width: a FlowDocument
+        /// wraps at PageWidth, not at the host control's width, so long user
+        /// lines would otherwise run off the bubble edge instead of wrapping.
         /// </summary>
         private void UpdateUserBubbleMaxWidth()
         {
@@ -130,8 +133,10 @@ namespace SimpleLLMChatGUI
                 return;
 
             double width = _listBoxItem.ActualWidth;
-            if (width > 0)
-                MaxWidth = width * 0.8;
+            if (width <= 0)
+                return;
+            MaxWidth = width * 0.8;
+            Turn.SetPageWidth(Math.Max(0, MaxWidth - Padding.Left - Padding.Right));
         }
 
         /// <summary>
