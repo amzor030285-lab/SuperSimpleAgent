@@ -22,7 +22,6 @@ namespace SimpleLLMChatGUI
         private bool _startupPromptConsumed;
         private readonly ObservableCollection<ChatTurn> _chatTurns = new ObservableCollection<ChatTurn>();
         private ChatTurn _streamingTurn;
-        private ChatListBox chatList;
         private bool _compacting;
         private bool _summaryArrived;
         private string _compactTail = "";
@@ -86,9 +85,6 @@ namespace SimpleLLMChatGUI
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            // The list is a ChatListBox (no click-selection containers); the XAML
-            // element is unnamed, so resolve it from the visual tree.
-            chatList = FindChatListBox(this);
             chatList.SizeChanged += new SizeChangedEventHandler(chatList_SizeChanged);
 
             chatList.ItemsSource = _chatTurns;
@@ -147,9 +143,6 @@ namespace SimpleLLMChatGUI
 
         private void reasoningEffortLabel_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            if (reasoningEffortMenu == null)
-                return;
-
             foreach (MenuItem item in reasoningEffortMenu.Items)
             {
                 string value = item.Tag as string ?? "";
@@ -193,8 +186,7 @@ namespace SimpleLLMChatGUI
             processHandler.StatusReceived += OnStatusReceived;
             processHandler.RunningToolReceived += OnRunningToolReceived;
 
-            if (tokenTracker != null)
-                tokenTracker.Reset();
+            tokenTracker.Reset();
 
             // Start the process
             if (!processHandler.StartProcess("SimpleLLMChatCLI.exe"))
@@ -210,31 +202,35 @@ namespace SimpleLLMChatGUI
             chatInput.Focus();
         }
 
+        private void OnUi(Action action)
+        {
+            Dispatcher.BeginInvoke(action);
+        }
+
+        private void OnUiBackground(Action action)
+        {
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, (Action)action);
+        }
+
         private void OnStatusReceived(int tokens)
         {
-            Dispatcher.BeginInvoke((Action)(() =>
-            {
-                if (tokenTracker != null)
-                    tokenTracker.SetTokens(tokens);
-            }), System.Windows.Threading.DispatcherPriority.Background);
+            OnUiBackground(() => tokenTracker.SetTokens(tokens));
         }
 
         private void OnRunningToolReceived(string toolName)
         {
-            Dispatcher.BeginInvoke((Action)(() =>
-            {
-                stopToolButton.IsEnabled = !string.IsNullOrEmpty(toolName);
-            }), System.Windows.Threading.DispatcherPriority.Background);
+            OnUiBackground(() => stopToolButton.IsEnabled = !string.IsNullOrEmpty(toolName));
         }
 
         private void OnOutputReceived(string text)
         {
-            // BeginInvoke so stdout reading is not gated behind UI paint/scroll work.
-            Dispatcher.BeginInvoke((Action)(() =>
+            // Queue on the dispatcher so stdout reading is not gated behind UI
+            // paint/scroll work.
+            OnUi(() =>
             {
                 AppendStreamingText(text);
                 ScrollChatToEnd();
-            }));
+            });
         }
 
         /// <summary>
@@ -289,10 +285,7 @@ namespace SimpleLLMChatGUI
 
         private void OnErrorOccurred(string errorMessage)
         {
-            Dispatcher.BeginInvoke((Action)(() =>
-            {
-                MessageBox.Show(errorMessage, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }));
+            OnUi(() => MessageBox.Show(errorMessage, "Error", MessageBoxButton.OK, MessageBoxImage.Error));
         }
 
         private bool OnApprovalRequested(string toolName, string arguments)
@@ -324,7 +317,7 @@ namespace SimpleLLMChatGUI
 
         private void OnGenerationComplete()
         {
-            Dispatcher.BeginInvoke((Action)(() =>
+            OnUi(() =>
             {
                 // The CLI emits its initial "You:" prompt right after start; that
                 // first completion signal is not a real generation finish and must
@@ -335,8 +328,11 @@ namespace SimpleLLMChatGUI
                     return;
                 }
                 EndStreamingTurn();
+                // A generation now spans several turns; each tracks what it
+                // already rendered, so processed blocks are not revisited.
                 if (IsMarkdownParsingEnabled())
-                    ApplyMarkdown();
+                    foreach (ChatTurn turn in _chatTurns)
+                        turn.ProcessMarkdown();
 
                 if (_compacting)
                 {
@@ -354,19 +350,7 @@ namespace SimpleLLMChatGUI
 
                 ExitGeneratingMode();
                 chatInput.Focus();
-            }));
-        }
-
-        /// <summary>
-        /// A generation now spans several turns; each tracks what it already
-        /// rendered, so processed blocks are not revisited.
-        /// </summary>
-        private void ApplyMarkdown()
-        {
-            foreach (ChatTurn turn in _chatTurns)
-            {
-                turn.ProcessMarkdown();
-            }
+            });
         }
 
         private bool IsMarkdownParsingEnabled()
@@ -438,9 +422,6 @@ namespace SimpleLLMChatGUI
 
         private void ApplyDocumentPageWidth(ChatTurn turn)
         {
-            if (turn == null || chatList == null)
-                return;
-
             double width = chatList.ActualWidth
                 - SystemParameters.VerticalScrollBarWidth
                 - 16;
@@ -485,20 +466,6 @@ namespace SimpleLLMChatGUI
                 ClearChatSelection(VisualTreeHelper.GetChild(root, i));
         }
 
-        private static ChatListBox FindChatListBox(DependencyObject root)
-        {
-            if (root is ChatListBox chatListBox)
-                return chatListBox;
-
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-            {
-                ChatListBox child = FindChatListBox(VisualTreeHelper.GetChild(root, i));
-                if (child != null)
-                    return child;
-            }
-            return null;
-        }
-
         private static ScrollViewer FindScrollViewer(DependencyObject root)
         {
             if (root is ScrollViewer viewer)
@@ -538,13 +505,20 @@ namespace SimpleLLMChatGUI
             themeButton.ToolTip = "Theme: " + ColorHelper.GetThemeDisplayName(theme);
         }
 
-        private void compactButton_Click(object sender, RoutedEventArgs e)
+        private bool CliRunning(string title)
         {
             if (processHandler == null || !processHandler.IsProcessRunning)
             {
-                MessageBox.Show("CLI is not running.", "Compact");
-                return;
+                MessageBox.Show("CLI is not running.", title);
+                return false;
             }
+            return true;
+        }
+
+        private void compactButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (!CliRunning("Compact"))
+                return;
 
             if (_isGenerating || _compacting)
                 return;
@@ -552,7 +526,6 @@ namespace SimpleLLMChatGUI
             // Block input while the CLI generates the summary. The summary text
             // arrives as a normal assistant turn; the next "You:" prompt ends the
             // compacting state and keeps only the summary turn (see OnGenerationComplete).
-            _compacting = true;
             _summaryArrived = false;
             _compactTail = "";
             SetCompactingMode(true);
@@ -680,30 +653,20 @@ namespace SimpleLLMChatGUI
 
             if (processHandler != null && processHandler.IsProcessRunning)
             {
-                if (imageHandler?.IsImageAttached == true && !string.IsNullOrEmpty(imageHandler.AttachedImagePath))
+                bool withImage = imageHandler.IsImageAttached
+                    && !string.IsNullOrEmpty(imageHandler.AttachedImagePath);
+                bool sent = withImage
+                    ? processHandler.SendInputWithImage(imageHandler.AttachedImagePath, userInput)
+                    : processHandler.SendInput(userInput);
+                if (!sent)
                 {
-                    // Send input with image
-                    if (!processHandler.SendInputWithImage(imageHandler.AttachedImagePath, userInput))
-                    {
-                        MessageBox.Show("Failed to send input with image to the process.");
-                        SetInputControlsEnabled(true);
-                        return;
-                    }
-
-                    // Detach image after sending
+                    MessageBox.Show("Failed to send input to the process.");
+                    SetInputControlsEnabled(true);
+                    return;
+                }
+                // DetachImage also resets the attach button via its event.
+                if (withImage)
                     imageHandler.DetachImage();
-                    attachButton.IsChecked = false;
-                }
-                else
-                {
-                    // Normal input
-                    if (!processHandler.SendInput(userInput))
-                    {
-                        MessageBox.Show("Failed to send input to the process.");
-                        SetInputControlsEnabled(true);
-                        return;
-                    }
-                }
 
                 chatInput.Clear();
             }
@@ -737,8 +700,7 @@ namespace SimpleLLMChatGUI
         // Fired when the attach button is toggled OFF
         private void attachButton_Unchecked(object sender, RoutedEventArgs e)
         {
-            if (imageHandler != null)
-                imageHandler.DetachImage();
+            imageHandler.DetachImage();
         }
 
         private void chatInput_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
@@ -760,7 +722,7 @@ namespace SimpleLLMChatGUI
             // Queue the clear operation to run after all pending output has been processed.
             // Use BeginInvoke (fire-and-forget) so the UI thread doesn't pump re-entrantly
             // while waiting — that caused intermittent crashes when clicking Clear.
-            Dispatcher.BeginInvoke((Action)(() =>
+            OnUiBackground(() =>
             {
                 EndStreamingTurn();
                 _chatTurns.Clear();
@@ -776,16 +738,13 @@ namespace SimpleLLMChatGUI
                 }
                 catch { }
                 StartLLMProcess();
-            }), System.Windows.Threading.DispatcherPriority.Background);
+            });
         }
 
         private void saveButton_Click(object sender, RoutedEventArgs e)
         {
-            if (processHandler == null || !processHandler.IsProcessRunning)
-            {
-                MessageBox.Show("CLI is not running.", "Save Session");
+            if (!CliRunning("Save Session"))
                 return;
-            }
 
             string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
             List<SessionStore.SessionInfo> sessions = SessionStore.List(sessionsDir);
@@ -800,11 +759,8 @@ namespace SimpleLLMChatGUI
 
         private void loadButton_Click(object sender, RoutedEventArgs e)
         {
-            if (processHandler == null || !processHandler.IsProcessRunning)
-            {
-                MessageBox.Show("CLI is not running.", "Load Session");
+            if (!CliRunning("Load Session"))
                 return;
-            }
 
             string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
             List<SessionStore.SessionInfo> sessions = SessionStore.List(sessionsDir);
@@ -925,8 +881,7 @@ namespace SimpleLLMChatGUI
                 LoadAndApplyColors();
                 if (processHandler != null)
                     processHandler.SetAssistantName(GetAssistantName());
-                if (tokenTracker != null)
-                    tokenTracker.Refresh();
+                tokenTracker.Refresh();
 
                 if (processHandler != null && processHandler.IsProcessRunning)
                     processHandler.SendReload();
