@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace SimpleLLMChatGUI
 {
@@ -21,7 +22,7 @@ namespace SimpleLLMChatGUI
         public event Action<string> RunningToolReceived;
 
         private readonly StringBuilder streamBuffer = new StringBuilder();
-        private readonly Decoder utf8Decoder = Encoding.UTF8.GetDecoder();
+        private readonly char[] charBuffer = new char[256];
         private StatusPipeClient statusPipeClient;
         private StreamWriter inputWriter;
 
@@ -74,7 +75,6 @@ namespace SimpleLLMChatGUI
                 llmProcess.StartInfo.Arguments = "--no-banners";
                 textBuffer.Clear();
                 streamBuffer.Clear();
-                utf8Decoder.Reset();
                 llmProcess.Start();
                 inputWriter = new StreamWriter(llmProcess.StandardInput.BaseStream, new UTF8Encoding(false));
                 inputWriter.AutoFlush = true;
@@ -85,10 +85,7 @@ namespace SimpleLLMChatGUI
                 statusPipeClient.RunningToolReceived += OnRunningToolPipeReceived;
                 statusPipeClient.Start();
 
-                // 256 byte async buffer
-                var buffer = new byte[256];
-                Stream outputStream = llmProcess.StandardOutput.BaseStream;
-                BeginReadOutput(outputStream, buffer);
+                ReadOutputLoop();
 
                 return true;
             }
@@ -101,9 +98,7 @@ namespace SimpleLLMChatGUI
 
         private void OnStatusPipeReceived(int tokens)
         {
-            Action<int> handler = StatusReceived;
-            if (handler != null)
-                handler(tokens);
+            StatusReceived?.Invoke(tokens);
         }
 
         private void OnIndexingStatusPipeReceived(IndexingStatusEvent status)
@@ -113,9 +108,7 @@ namespace SimpleLLMChatGUI
 
         private void OnRunningToolPipeReceived(string toolName)
         {
-            Action<string> handler = RunningToolReceived;
-            if (handler != null)
-                handler(toolName);
+            RunningToolReceived?.Invoke(toolName);
         }
 
         private void DisposeStatusPipeClient()
@@ -139,7 +132,6 @@ namespace SimpleLLMChatGUI
                     // Encode multi-line text as single line: replace newlines with <<NEWLINE>> marker
                     string encodedInput = input.Replace("\r\n", "<<NEWLINE>>").Replace("\n", "<<NEWLINE>>").Replace("\r", "<<NEWLINE>>");
                     inputWriter.WriteLine(encodedInput);
-                    inputWriter.Flush();
                     return true;
                 }
                 catch (Exception ex)
@@ -149,23 +141,6 @@ namespace SimpleLLMChatGUI
                 }
             }
             return false;
-        }
-
-        public bool SendInputWithImage(string imagePath, string prompt)
-        {
-            if (string.IsNullOrWhiteSpace(imagePath))
-            {
-                ErrorOccurred?.Invoke("Image path cannot be empty.");
-                return false;
-            }
-
-            // Ensure the path is quoted
-            string quotedPath = "\"" + imagePath + "\"";
-
-            // Build the final command
-            string command = "/image " + quotedPath + " " + prompt;
-
-            return SendInput(command);
         }
 
         public bool SendReasoningEffort(string effort)
@@ -219,11 +194,28 @@ namespace SimpleLLMChatGUI
             }
         }
 
-        private void BeginReadOutput(Stream stream, byte[] buffer)
+        private void ReadOutputLoop()
         {
             try
             {
-                stream.BeginRead(buffer, 0, buffer.Length, new AsyncCallback(OutputReadCallback), new Tuple<Stream, byte[]>(stream, buffer));
+                Task.Factory.StartNew(() =>
+                {
+                    while (true)
+                    {
+                        int chars;
+                        try
+                        {
+                            chars = llmProcess.StandardOutput.Read(charBuffer, 0, charBuffer.Length);
+                        }
+                        catch
+                        {
+                            return;
+                        }
+                        if (chars <= 0)
+                            return;
+                        ProcessStreamingText(new string(charBuffer, 0, chars));
+                    }
+                });
             }
             catch
             {
@@ -231,55 +223,13 @@ namespace SimpleLLMChatGUI
             }
         }
 
-        private void OutputReadCallback(IAsyncResult ar)
-        {
-            var state = (Tuple<Stream, byte[]>)ar.AsyncState;
-            Stream stream = state.Item1;
-            byte[] buffer = state.Item2;
-
-            int bytesRead;
-            try
-            {
-                bytesRead = stream.EndRead(ar);
-            }
-            catch
-            {
-                return;
-            }
-
-if (bytesRead > 0)
-                {
-                    try
-                    {
-                        int charCount = utf8Decoder.GetCharCount(buffer, 0, bytesRead);
-                        char[] chars = new char[charCount];
-                        utf8Decoder.GetChars(buffer, 0, bytesRead, chars, 0);
-                        string newText = new string(chars);
-
-                        if (!string.IsNullOrEmpty(newText))
-                        {
-                            // Process text immediately for streaming
-                            ProcessStreamingText(newText);
-                        }
-                    }
-                    catch
-                    {
-                        // If UTF-8 decoding fails, skip this chunk
-                    }
-
-                    // Continue reading
-                    BeginReadOutput(stream, buffer);
-                }
-        }
-
-        public bool SendApprovalResponse(bool approved)
+        private bool SendApprovalResponse(bool approved)
         {
             if (llmProcess != null && !llmProcess.HasExited && inputWriter != null)
             {
                 try
                 {
                     inputWriter.WriteLine(approved ? "Y" : "N");
-                    inputWriter.Flush();
                     return true;
                 }
                 catch (Exception ex)
@@ -308,7 +258,35 @@ if (bytesRead > 0)
 
                 if (approvalIndex < 0)
                 {
-                    FlushBufferedTextWithoutApprovalPrompt(buffered);
+                    // Hold back an in-progress tool-call block.
+                    int runIndex = buffered.LastIndexOf(ToolApproval.RunToolPrefix, StringComparison.Ordinal);
+                    if (runIndex >= 0)
+                    {
+                        if (runIndex > 0)
+                            ProcessTextChunk(buffered.Substring(0, runIndex));
+
+                        streamBuffer.Clear();
+                        streamBuffer.Append(buffered.Substring(runIndex));
+                        return;
+                    }
+
+                    // Hold back any partial suffix of known prompt / block markers so they
+                    // are not flushed as chat text by accident.
+                    int holdBack = Math.Max(
+                        GetPartialSuffixLength(buffered, ToolApproval.ApprovalPrompt),
+                        GetPartialSuffixLength(buffered, ToolApproval.RunToolPrefix));
+
+                    if (holdBack > 0)
+                    {
+                        ProcessTextChunk(buffered.Substring(0, buffered.Length - holdBack));
+                        streamBuffer.Clear();
+                        streamBuffer.Append(buffered.Substring(buffered.Length - holdBack));
+                    }
+                    else
+                    {
+                        ProcessTextChunk(buffered);
+                        streamBuffer.Clear();
+                    }
                     return;
                 }
 
@@ -340,39 +318,6 @@ if (bytesRead > 0)
             }
         }
 
-        private void FlushBufferedTextWithoutApprovalPrompt(string buffered)
-        {
-            // Hold back an in-progress tool-call block.
-            int runIndex = buffered.LastIndexOf(ToolApproval.RunToolPrefix, StringComparison.Ordinal);
-            if (runIndex >= 0)
-            {
-                if (runIndex > 0)
-                    ProcessTextChunk(buffered.Substring(0, runIndex));
-
-                streamBuffer.Clear();
-                streamBuffer.Append(buffered.Substring(runIndex));
-                return;
-            }
-
-            // Hold back any partial suffix of known prompt / block markers so they
-            // are not flushed as chat text by accident.
-            int holdBack = Math.Max(
-                GetPartialSuffixLength(buffered, ToolApproval.ApprovalPrompt),
-                GetPartialSuffixLength(buffered, ToolApproval.RunToolPrefix));
-
-            if (holdBack > 0)
-            {
-                ProcessTextChunk(buffered.Substring(0, buffered.Length - holdBack));
-                streamBuffer.Clear();
-                streamBuffer.Append(buffered.Substring(buffered.Length - holdBack));
-            }
-            else
-            {
-                ProcessTextChunk(buffered);
-                streamBuffer.Clear();
-            }
-        }
-
         private static int GetPartialSuffixLength(string text, string marker)
         {
             int maxLength = Math.Min(marker.Length - 1, text.Length);
@@ -396,9 +341,7 @@ if (bytesRead > 0)
                 return;
             }
 
-            bool approved = false;
-            if (ApprovalRequested != null)
-                approved = ApprovalRequested(toolName, arguments);
+            bool approved = ApprovalRequested != null && ApprovalRequested(toolName, arguments);
 
             SendApprovalResponse(approved);
         }
@@ -438,37 +381,20 @@ if (bytesRead > 0)
                 if (isCompletePattern)
                 {
                     // Process everything before "You:" and output it
-                    string textBeforeYou = textChunk.Substring(0, youIndex);
-                    if (!string.IsNullOrEmpty(textBeforeYou))
-                    {
-                        OutputText(textBeforeYou);
-                    }
+                    OutputText(textChunk.Substring(0, youIndex));
 
                     // Signal that generation is complete
                     GenerationComplete?.Invoke();
 
                     // Don't output the "You:" pattern itself
-                    // Keep any text after "You:" for next chunk
-                    string textAfterYou = textChunk.Substring(youIndex + 4);
-                    if (!string.IsNullOrEmpty(textAfterYou))
-                    {
-                        // Remove leading whitespace after "You:"
-                        textAfterYou = textAfterYou.TrimStart(' ', '\t');
-                        if (!string.IsNullOrEmpty(textAfterYou))
-                        {
-                            OutputText(textAfterYou);
-                        }
-                    }
+                    // Keep any text after "You:" for next chunk (leading whitespace trimmed)
+                    OutputText(textChunk.Substring(youIndex + 4).TrimStart(' ', '\t'));
                 }
                 else
                 {
                     // Incomplete "You:" pattern, output everything except the last few characters
                     int safeEndIndex = Math.Max(0, youIndex - 1);
-                    string safeText = textChunk.Substring(0, safeEndIndex);
-                    if (!string.IsNullOrEmpty(safeText))
-                    {
-                        OutputText(safeText);
-                    }
+                    OutputText(textChunk.Substring(0, safeEndIndex));
 
                     // Keep the incomplete pattern for next chunk
                     textBuffer.Append(textChunk.Substring(safeEndIndex));

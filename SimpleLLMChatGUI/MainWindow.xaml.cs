@@ -654,7 +654,7 @@ namespace SimpleLLMChatGUI
                 bool withImage = imageHandler.IsImageAttached
                     && !string.IsNullOrEmpty(imageHandler.AttachedImagePath);
                 bool sent = withImage
-                    ? processHandler.SendInputWithImage(imageHandler.AttachedImagePath, userInput)
+                    ? processHandler.SendInput("/image \"" + imageHandler.AttachedImagePath + "\" " + userInput)
                     : processHandler.SendInput(userInput);
                 if (!sent)
                 {
