@@ -27,8 +27,6 @@ namespace SimpleLLMChatGUI
         private static readonly DependencyProperty CorrectionQueuedProperty = DependencyProperty.RegisterAttached(
             "CorrectionQueued", typeof(bool), typeof(ChatTurnView), new PropertyMetadata(false));
 
-        private const double UserBubbleCornerRadius = 8;
-        private const double UserBubbleMaxWidthFraction = 0.8;
         private const double RoleLabelScale = 0.86;
 
         private ScrollViewer _scrollViewer;
@@ -133,7 +131,7 @@ namespace SimpleLLMChatGUI
 
             double width = _listBoxItem.ActualWidth;
             if (width > 0)
-                MaxWidth = width * UserBubbleMaxWidthFraction;
+                MaxWidth = width * 0.8;
         }
 
         /// <summary>
@@ -169,9 +167,12 @@ namespace SimpleLLMChatGUI
             _editor.Resources.Add(typeof(Paragraph), paragraph);
             _editor.Document = Turn.Document;
 
+            string roleLabel = Turn.RoleLabel;
+            if (string.IsNullOrEmpty(roleLabel))
+                roleLabel = Turn.Role == ChatTurnRole.User ? "You" : AppConstants.DefaultAssistantName;
             _roleHeader = new TextBlock
             {
-                Text = BuildRoleHeaderText(),
+                Text = roleLabel + " · " + Turn.Created.ToString("HH:mm"),
                 Margin = new Thickness(0, 0, 0, 2),
                 HorizontalAlignment = Turn.Role == ChatTurnRole.User
                     ? HorizontalAlignment.Right
@@ -220,7 +221,7 @@ namespace SimpleLLMChatGUI
 
             if (Turn.Role == ChatTurnRole.User)
             {
-                CornerRadius = new CornerRadius(UserBubbleCornerRadius);
+                CornerRadius = new CornerRadius(8);
                 Padding = new Thickness(10, 8, 10, 8);
                 HorizontalAlignment = HorizontalAlignment.Right;
                 SetResourceReference(BackgroundProperty, "UserBubbleBackgroundBrush");
@@ -245,14 +246,6 @@ namespace SimpleLLMChatGUI
                 _contentRoot.Measure(new Size(ActualWidth, double.PositiveInfinity));
                 QueueScrollCorrection(_scrollViewer, _contentRoot.DesiredSize.Height - previousHeight);
             }
-        }
-
-        private string BuildRoleHeaderText()
-        {
-            string label = Turn.RoleLabel;
-            if (string.IsNullOrEmpty(label))
-                label = Turn.Role == ChatTurnRole.User ? "You" : AppConstants.DefaultAssistantName;
-            return label + " · " + Turn.Created.ToString("HH:mm");
         }
 
         private static void QueueScrollCorrection(ScrollViewer scroll, double delta)

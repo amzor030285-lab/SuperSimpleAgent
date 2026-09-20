@@ -91,7 +91,6 @@ namespace SimpleLLMChatGUI
         private bool _restoring;
 
         public bool IsCompleted { get { return _completed; } }
-        public bool HasDocument { get { return _document != null; } }
         public string SourceText { get { return _completedSource ?? _source.ToString(); } }
         public FlowDocument Document
         {
@@ -486,7 +485,6 @@ namespace SimpleLLMChatGUI
                 Active = true,
                 Name = name,
                 Kind = kind,
-                EllipsisCount = 1,
                 StartedUtc = DateTime.UtcNow
             };
 
@@ -640,29 +638,12 @@ namespace SimpleLLMChatGUI
         /// </summary>
         private static string TakeToolCallName(string text, out string name)
         {
-            if (string.IsNullOrEmpty(text))
-            {
-                name = "tool";
-                return text;
-            }
-
-            int newline = text.IndexOf('\n');
-            if (newline < 0)
-            {
-                name = text.Trim();
-                if (name.Length == 0)
-                    name = "tool";
-                return string.Empty;
-            }
-
-            name = text.Substring(0, newline).Trim();
+            int nl = text.IndexOf('\n');
+            string line = nl < 0 ? text : text.Substring(0, nl);
+            name = line.Trim();
             if (name.Length == 0)
                 name = "tool";
-
-            string rest = text.Substring(newline + 1);
-            if (rest.Length > 0 && rest[0] == '\r')
-                rest = rest.Substring(1);
-            return rest;
+            return nl < 0 ? string.Empty : text.Substring(nl + 1).TrimStart('\r');
         }
 
         private static bool TryFindTag(string text, string[] tags, out int index, out int length)
