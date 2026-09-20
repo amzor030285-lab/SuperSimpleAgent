@@ -146,7 +146,8 @@ namespace SimpleLLMChatGUI
             MDTable table = block as MDTable;
             if (table != null)
             {
-                System.Windows.Documents.Table docTable = BuildTableContainer(table, baseFontSize, TableAvailableWidth(document));
+                double available = document.PageWidth - document.PagePadding.Left - document.PagePadding.Right;
+                System.Windows.Documents.Table docTable = BuildTableContainer(table, baseFontSize, available > 0 ? available : 800);
                 if (docTable != null)
                     document.Blocks.Add(docTable);
                 return;
@@ -343,27 +344,10 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Width a table can use inside the document: PageWidth minus page
-        /// padding (the chat document uses zero padding), with a fallback for
-        /// documents whose PageWidth has not been set yet.
-        /// </summary>
-        private static double TableAvailableWidth(FlowDocument document)
-        {
-            double width = document.PageWidth - document.PagePadding.Left - document.PagePadding.Right;
-            return width > 0 ? width : 800;
-        }
-
-        /// <summary>
-        /// Builds a markdown table as a native WPF document
-        /// <see cref="System.Windows.Documents.Table"/> so its text is part of the
-        /// chat document and can be selected and copied like any other text.
-        /// Columns use fixed pixel widths proportional to their measured content:
-        /// .NET 4 WPF does not distribute star-sized <see cref="TableColumn"/>
-        /// widths reliably (unequal stars collapse columns to zero width). If the
-        /// measured total exceeds the document width, all columns are scaled down
-        /// proportionally so the table always fits and wide text wraps. The table
-        /// supplies the outer border; each cell supplies only its right/bottom
-        /// border so inner lines are 1px.
+        /// Native WPF <see cref="System.Windows.Documents.Table"/> so cell text is
+        /// selectable and copyable; fixed pixel column widths because .NET 4
+        /// star-sized <see cref="TableColumn"/> widths collapse columns to zero;
+        /// the measured total is scaled down to fit availableWidth.
         /// </summary>
         private static System.Windows.Documents.Table BuildTableContainer(MDTable table, double baseFontSize, double availableWidth)
         {
@@ -387,8 +371,8 @@ namespace SimpleLLMChatGUI
 
             // Column pixel widths: widest cell per column (headers bold, inline
             // bold/code measured in their rendered styles, +10% slack so the
-            // column fits its widest cell on one line). The total is scaled down
-            // to fit the document width when it overflows.
+            // column fits its widest cell on one line); scale fits the total into
+            // the available document width when it overflows.
             var widths = new double[columnCount];
             double total = 0;
             for (int c = 0; c < columnCount; c++)
@@ -399,12 +383,7 @@ namespace SimpleLLMChatGUI
                 widths[c] = Math.Max(TableMinColumnWidth, w * 1.1 + TableCellPaddingWidth);
                 total += widths[c];
             }
-            if (availableWidth > 0 && total > availableWidth)
-            {
-                double k = availableWidth / total;
-                for (int c = 0; c < columnCount; c++)
-                    widths[c] *= k;
-            }
+            double scale = total > availableWidth ? availableWidth / total : 1;
 
             var docTable = new System.Windows.Documents.Table
             {
@@ -414,7 +393,7 @@ namespace SimpleLLMChatGUI
             };
             docTable.SetResourceReference(System.Windows.Documents.Block.BorderBrushProperty, "TableBorderBrush");
             for (int c = 0; c < columnCount; c++)
-                docTable.Columns.Add(new TableColumn { Width = new GridLength(widths[c], GridUnitType.Pixel) });
+                docTable.Columns.Add(new TableColumn { Width = new GridLength(widths[c] * scale, GridUnitType.Pixel) });
 
             var rowGroup = new TableRowGroup();
             docTable.RowGroups.Add(rowGroup);
