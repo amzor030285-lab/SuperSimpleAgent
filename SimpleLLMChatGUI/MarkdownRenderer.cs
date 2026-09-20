@@ -103,7 +103,7 @@ namespace SimpleLLMChatGUI
             MathBlock math = block as MathBlock;
             if (math != null)
             {
-                document.Blocks.Add(BuildCodeBlockContainer("math", CodeLines(math), baseFontSize));
+                document.Blocks.Add(WrapBlockContainer(BuildCodeBlockContent("math", CodeLines(math), baseFontSize)));
                 return;
             }
 
@@ -111,14 +111,14 @@ namespace SimpleLLMChatGUI
             if (fence != null)
             {
                 string language = fence.Info != null ? fence.Info.Trim() : null;
-                document.Blocks.Add(BuildCodeBlockContainer(language, CodeLines(fence), baseFontSize));
+                document.Blocks.Add(WrapBlockContainer(BuildCodeBlockContent(language, CodeLines(fence), baseFontSize)));
                 return;
             }
 
             CodeBlock code = block as CodeBlock;
             if (code != null)
             {
-                document.Blocks.Add(BuildCodeBlockContainer(null, CodeLines(code), baseFontSize));
+                document.Blocks.Add(WrapBlockContainer(BuildCodeBlockContent(null, CodeLines(code), baseFontSize)));
                 return;
             }
 
@@ -156,7 +156,7 @@ namespace SimpleLLMChatGUI
             ListBlock list = block as ListBlock;
             if (list != null)
             {
-                document.Blocks.Add(BuildListContainer(list, baseFontSize));
+                document.Blocks.Add(WrapBlockContainer(BuildListLevel(list, baseFontSize)));
                 return;
             }
 
@@ -233,16 +233,12 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Builds a fenced code block: a header row (language label + Copy button)
-        /// over a monospace code area, wrapped in a
-        /// <see cref="BlockUIContainer"/>.
+        /// Hosts a plain UI element as a top-level document block with the
+        /// standard vertical spacing.
         /// </summary>
-        private static BlockUIContainer BuildCodeBlockContainer(string language, List<string> codeLines, double baseFontSize)
+        private static BlockUIContainer WrapBlockContainer(UIElement content)
         {
-            return new BlockUIContainer(BuildCodeBlockContent(language, codeLines, baseFontSize))
-            {
-                Margin = new Thickness(0, 4, 0, 4)
-            };
+            return new BlockUIContainer(content) { Margin = new Thickness(0, 4, 0, 4) };
         }
 
         /// <summary>
@@ -302,20 +298,7 @@ namespace SimpleLLMChatGUI
 
             // A read-only TextBox (not a TextBlock) so the user can select part of
             // the code and copy the selection.
-            var code = new NoScrollTextBox
-            {
-                Text = codeText,
-                IsReadOnly = true,
-                IsReadOnlyCaretVisible = true,
-                IsTabStop = false,
-                Background = Brushes.Transparent,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(0),
-                FontSize = baseFontSize,
-                TextWrapping = TextWrapping.Wrap
-            };
-            code.SetResourceReference(TextElement.FontFamilyProperty, FontHandler.CodeBlockFontFamilyKey);
-            code.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+            var code = CreateReadOnlyTextBox(codeText, baseFontSize, new Thickness(0), true);
             var codeArea = new Border { Padding = new Thickness(8, 6, 8, 6), Child = code };
             codeArea.SetResourceReference(Border.BackgroundProperty, "CodeBlockBackgroundColorBrush");
 
@@ -327,13 +310,10 @@ namespace SimpleLLMChatGUI
 
         private static Paragraph BuildHorizontalRule()
         {
-            Brush separatorBrush = (Application.Current?.MainWindow?.Foreground as Brush)
-                ?? SystemColors.ControlTextBrush;
-
             var paragraph = new Paragraph
             {
                 Margin = new Thickness(0, 3, 0, 3),
-                BorderBrush = separatorBrush,
+                BorderBrush = SystemColors.ControlTextBrush,
                 BorderThickness = new Thickness(0, 1, 0, 0),
                 Padding = new Thickness(0),
                 LineHeight = 1,
@@ -455,20 +435,12 @@ namespace SimpleLLMChatGUI
                 return string.Empty;
 
             var sb = new StringBuilder();
-            MDInline inline = inlines.FirstChild;
-            while (inline != null)
-            {
-                AppendPlainText(sb, inline);
-                inline = inline.NextSibling;
-            }
+            AppendPlainText(sb, inlines);
             return sb.ToString();
         }
 
         private static TextAlignment CellAlignment(MDTable table, int column)
         {
-            if (column >= table.ColumnDefinitions.Count)
-                return TextAlignment.Left;
-
             TableColumnAlign? alignment = table.ColumnDefinitions[column].Alignment;
             if (alignment == null)
                 return TextAlignment.Left;
@@ -485,73 +457,46 @@ namespace SimpleLLMChatGUI
                 return 0;
 
             var sb = new StringBuilder();
-            MDInline inline = inlines.FirstChild;
-            while (inline != null)
-            {
-                AppendPlainText(sb, inline);
-                inline = inline.NextSibling;
-            }
+            AppendPlainText(sb, inlines);
             string text = sb.ToString();
-            if (text.Length == 0)
-                return 0;
 
+            int styled = ContainsStyled(inlines);
             double w = MeasureTextWidth(text, baseFontSize, FontWeights.Normal, ChatFontFamily());
-            if (ContainsBold(inlines))
+            if ((styled & 1) != 0)
                 w = Math.Max(w, MeasureTextWidth(text, baseFontSize, FontWeights.Bold, ChatFontFamily()));
-            if (ContainsCode(inlines))
+            if ((styled & 2) != 0)
                 w = Math.Max(w, MeasureTextWidth(text, baseFontSize, FontWeights.Normal, CodeFontFamily()));
             return w;
         }
 
-        private static bool ContainsBold(ContainerInline root)
+        // Bitmask of inline styles present in the subtree: bit0 = bold, bit1 = code.
+        private static int ContainsStyled(ContainerInline root)
         {
+            int styled = 0;
             MDInline inline = root != null ? root.FirstChild : null;
             while (inline != null)
             {
                 EmphasisInline emphasis = inline as EmphasisInline;
                 if (emphasis != null && emphasis.DelimiterChar != '~' && emphasis.DelimiterCount >= 2)
-                    return true;
-
-                ContainerInline container = inline as ContainerInline;
-                if (container != null && ContainsBold(container))
-                    return true;
-
-                inline = inline.NextSibling;
-            }
-            return false;
-        }
-
-        private static bool ContainsCode(ContainerInline root)
-        {
-            MDInline inline = root != null ? root.FirstChild : null;
-            while (inline != null)
-            {
+                    styled |= 1;
                 if (inline is CodeInline)
-                    return true;
+                    styled |= 2;
 
                 ContainerInline container = inline as ContainerInline;
-                if (container != null && ContainsCode(container))
-                    return true;
+                if (container != null)
+                    styled |= ContainsStyled(container);
 
                 inline = inline.NextSibling;
             }
-            return false;
+            return styled;
         }
 
         /// <summary>
         /// Builds a (nested) list as a vertical stack of two-column rows (marker,
-        /// then wrapping text), wrapped in a <see cref="BlockUIContainer"/> so
-        /// wrapped lines hang under the text instead of the marker. Nested levels
-        /// are indented inside the previous level's text column.
+        /// then wrapping text) so wrapped lines hang under the text instead of
+        /// the marker. Nested levels are indented inside the previous level's
+        /// text column.
         /// </summary>
-        private static BlockUIContainer BuildListContainer(ListBlock list, double baseFontSize)
-        {
-            return new BlockUIContainer(BuildListLevel(list, baseFontSize))
-            {
-                Margin = new Thickness(0, 4, 0, 4)
-            };
-        }
-
         private static StackPanel BuildListLevel(ListBlock list, double baseFontSize)
         {
             var stack = new StackPanel { Orientation = Orientation.Vertical };
@@ -577,8 +522,15 @@ namespace SimpleLLMChatGUI
             // Ordered markers always display as "N." (the legacy renderer
             // normalized "N)" the same way).
             string marker = ordered ? item.Order + "." : "\u2022";
-            var markerBlock = CreateListTextBlock(baseFontSize, new Thickness(0, 1, 8, 1));
+            var markerBlock = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = baseFontSize,
+                LineHeight = ChatTurn.LineHeightMultiplier,
+                Margin = new Thickness(0, 1, 8, 1)
+            };
             markerBlock.Inlines.Add(new Run(marker));
+            markerBlock.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
             Grid.SetColumn(markerBlock, 0);
             row.Children.Add(markerBlock);
 
@@ -597,10 +549,9 @@ namespace SimpleLLMChatGUI
                     // selectable in WPF).
                     string plainText;
                     if (TryPlainText(paragraph.Inline, out plainText))
-                        content.Children.Add(CreateListTextBox(plainText, baseFontSize, new Thickness(0, 1, 0, 1)));
+                        content.Children.Add(CreateReadOnlyTextBox(plainText, baseFontSize, new Thickness(0, 1, 0, 1), false));
                     else
-                        content.Children.Add(CreateRichTextHost(paragraph.Inline, TextAlignment.Left, false,
-                            baseFontSize, new Thickness(0, 1, 0, 1)));
+                        content.Children.Add(CreateRichTextHost(paragraph.Inline, baseFontSize, new Thickness(0, 1, 0, 1)));
                     continue;
                 }
 
@@ -630,27 +581,14 @@ namespace SimpleLLMChatGUI
             return row;
         }
 
-        private static TextBlock CreateListTextBlock(double baseFontSize, Thickness margin)
-        {
-            var textBlock = new TextBlock
-            {
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = baseFontSize,
-                LineHeight = ChatTurn.LineHeightMultiplier,
-                Margin = margin
-            };
-            textBlock.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
-            return textBlock;
-        }
-
         /// <summary>
-        /// Plain list item text as a read-only selectable
-        /// <see cref="TextBox"/> (same metrics as
-        /// <see cref="CreateListTextBlock"/>).
+        /// Read-only selectable <see cref="TextBox"/> for code blocks and plain
+        /// list items; <paramref name="codeFont"/> switches to the monospace
+        /// family.
         /// </summary>
-        private static TextBox CreateListTextBox(string text, double baseFontSize, Thickness margin)
+        private static NoScrollTextBox CreateReadOnlyTextBox(string text, double baseFontSize, Thickness margin, bool codeFont)
         {
-            var textBox = new NoScrollTextBox
+            var box = new NoScrollTextBox
             {
                 Text = text,
                 Margin = margin,
@@ -664,8 +602,10 @@ namespace SimpleLLMChatGUI
                 TextWrapping = TextWrapping.Wrap,
                 VerticalContentAlignment = VerticalAlignment.Center
             };
-            textBox.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
-            return textBox;
+            if (codeFont)
+                box.SetResourceReference(TextElement.FontFamilyProperty, FontHandler.CodeBlockFontFamilyKey);
+            box.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+            return box;
         }
 
         /// <summary>
@@ -674,8 +614,7 @@ namespace SimpleLLMChatGUI
         /// TextBlock, so formatted text lives in its own read-only rich control
         /// (same metrics as the surrounding text).
         /// </summary>
-        private static NoScrollRichTextBox CreateRichTextHost(ContainerInline inlines, TextAlignment alignment,
-            bool bold, double baseFontSize, Thickness margin)
+        private static NoScrollRichTextBox CreateRichTextHost(ContainerInline inlines, double baseFontSize, Thickness margin)
         {
             var host = new NoScrollRichTextBox
             {
@@ -691,16 +630,12 @@ namespace SimpleLLMChatGUI
                 VerticalContentAlignment = VerticalAlignment.Center
             };
             host.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
-            if (bold)
-                host.FontWeight = FontWeights.Bold;
 
-            // Alignment lives on the paragraph: RichTextBox has no TextAlignment.
             // No LineHeight override: keep the font's natural line height so
             // rich and plain rows come out the same height.
             var paragraph = new Paragraph
             {
-                Margin = new Thickness(0),
-                TextAlignment = alignment
+                Margin = new Thickness(0)
             };
             AppendInlines(paragraph.Inlines, inlines, baseFontSize);
             // A fresh RichTextBox document already contains an empty paragraph;
@@ -856,7 +791,6 @@ namespace SimpleLLMChatGUI
             var codeSpan = new Span(codeRun);
             codeSpan.SetResourceReference(TextElement.BackgroundProperty, "CodeBlockBackgroundColorBrush");
             codeSpan.SetResourceReference(TextElement.FontFamilyProperty, FontHandler.CodeBlockFontFamilyKey);
-            codeRun.ClearValue(TextElement.FontFamilyProperty);
             return codeSpan;
         }
 
@@ -871,42 +805,36 @@ namespace SimpleLLMChatGUI
             MDInline inline = root != null ? root.FirstChild : null;
             while (inline != null)
             {
-                if (!AppendPlainFragment(sb, inline))
+                LiteralInline literal = inline as LiteralInline;
+                if (literal != null)
                 {
-                    text = null;
-                    return false;
+                    sb.Append(literal.Content.ToString());
+                    inline = inline.NextSibling;
+                    continue;
                 }
-                inline = inline.NextSibling;
+
+                LineBreakInline lineBreak = inline as LineBreakInline;
+                if (lineBreak != null)
+                {
+                    sb.Append('\n');
+                    inline = inline.NextSibling;
+                    continue;
+                }
+
+                TaskList task = inline as TaskList;
+                if (task != null)
+                {
+                    sb.Append(task.Checked ? "[x]" : "[ ]");
+                    inline = inline.NextSibling;
+                    continue;
+                }
+
+                text = null;
+                return false;
             }
 
             text = sb.ToString();
             return true;
-        }
-
-        private static bool AppendPlainFragment(StringBuilder sb, MDInline inline)
-        {
-            LiteralInline literal = inline as LiteralInline;
-            if (literal != null)
-            {
-                sb.Append(literal.Content.ToString());
-                return true;
-            }
-
-            LineBreakInline lineBreak = inline as LineBreakInline;
-            if (lineBreak != null)
-            {
-                sb.Append('\n');
-                return true;
-            }
-
-            TaskList task = inline as TaskList;
-            if (task != null)
-            {
-                sb.Append(task.Checked ? "[x]" : "[ ]");
-                return true;
-            }
-
-            return false;
         }
 
         /// <summary>
@@ -988,18 +916,11 @@ namespace SimpleLLMChatGUI
                 Cursor = Cursors.Hand
             };
             hyperlink.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
-            AttachTooltip(hyperlink, uri.AbsoluteUri);
+            // The ToolTip attached property gives native hover open/close with
+            // the system show delay, so no manual timer is needed.
+            hyperlink.ToolTip = new ToolTip { Content = uri.AbsoluteUri, Placement = PlacementMode.Mouse };
             hyperlink.PreviewMouseLeftButtonDown += OnHyperlinkClick;
             return hyperlink;
-        }
-
-        private static void AttachTooltip(Hyperlink hyperlink, string text)
-        {
-            var tooltip = new ToolTip { Content = text, Placement = PlacementMode.Mouse };
-            var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-            timer.Tick += (s, _) => { timer.Stop(); tooltip.IsOpen = true; };
-            hyperlink.MouseEnter += (s, _) => timer.Start();
-            hyperlink.MouseLeave += (s, _) => { timer.Stop(); tooltip.IsOpen = false; };
         }
 
         private static Popup _copiedPopup;
