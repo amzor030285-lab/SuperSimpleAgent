@@ -157,9 +157,7 @@ namespace SimpleLLMChatGUI
 
         private void reasoningEffortMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            MenuItem item = sender as MenuItem;
-            if (item == null)
-                return;
+            MenuItem item = (MenuItem)sender;
 
             _reasoningEffort = item.Tag as string ?? "";
             UpdateReasoningEffortLabel();
@@ -492,14 +490,9 @@ namespace SimpleLLMChatGUI
             {
                 // On error, do nothing (use system defaults)
             }
-            UpdateThemeButton();
-        }
 
-        private void UpdateThemeButton()
-        {
             string theme = ColorHelper.GetTheme(App.ColorsFileName);
-            bool dark = ColorHelper.IsDarkTheme(theme);
-            themeButton.Content = dark ? "☾" : "☀";
+            themeButton.Content = ColorHelper.IsDarkTheme(theme) ? "☾" : "☀";
             themeButton.ToolTip = "Theme: " + ColorHelper.GetThemeDisplayName(theme);
         }
 
@@ -524,9 +517,18 @@ namespace SimpleLLMChatGUI
             // Block input while the CLI generates the summary. The summary text
             // arrives as a normal assistant turn; the next "You:" prompt ends the
             // compacting state and keeps only the summary turn (see OnGenerationComplete).
+            // Unlike generation mode the send button is disabled (the summary pass
+            // is not steerable from the GUI), so it shows "Compacting…".
             _summaryArrived = false;
             _compactTail = "";
-            SetCompactingMode(true);
+            _compacting = true;
+            attachButton.IsEnabled = false;
+            chatInput.IsEnabled = false;
+            sendButton.Content = "Compacting…";
+            sendButton.IsEnabled = false;
+            saveButton.IsEnabled = false;
+            loadButton.IsEnabled = false;
+            stopToolButton.IsEnabled = false;
             processHandler.SendInput("/compactfull");
         }
 
@@ -577,23 +579,6 @@ namespace SimpleLLMChatGUI
             sendButton.IsEnabled = true;
             saveButton.IsEnabled = true;
             loadButton.IsEnabled = true;
-            stopToolButton.IsEnabled = false;
-        }
-
-        /// <summary>
-        /// Blocks input while a manual compaction runs. Unlike generation mode the
-        /// send button is disabled (the summary pass is not steerable from the GUI),
-        /// so it shows "Compacting…" instead of "Stop".
-        /// </summary>
-        private void SetCompactingMode(bool on)
-        {
-            _compacting = on;
-            attachButton.IsEnabled = !on;
-            chatInput.IsEnabled = !on;
-            sendButton.Content = on ? "Compacting…" : "Send";
-            sendButton.IsEnabled = !on;
-            saveButton.IsEnabled = !on;
-            loadButton.IsEnabled = !on;
             stopToolButton.IsEnabled = false;
         }
 
@@ -651,8 +636,7 @@ namespace SimpleLLMChatGUI
 
             if (processHandler != null && processHandler.IsProcessRunning)
             {
-                bool withImage = imageHandler.IsImageAttached
-                    && !string.IsNullOrEmpty(imageHandler.AttachedImagePath);
+                bool withImage = imageHandler.IsImageAttached;
                 bool sent = withImage
                     ? processHandler.SendInput("/image \"" + imageHandler.AttachedImagePath + "\" " + userInput)
                     : processHandler.SendInput(userInput);

@@ -384,13 +384,8 @@ namespace SimpleLLMChatGUI
                 Expander expander = container.Child as Expander;
                 if (expander != null)
                 {
-                    TextBlock body = expander.Content as TextBlock;
-                    if (body != null)
-                        body.FontSize = fontSize;
-
-                    TextBlock header = expander.Header as TextBlock;
-                    if (header != null)
-                        header.FontSize = fontSize;
+                    ((TextBlock)expander.Content).FontSize = fontSize;
+                    ((TextBlock)expander.Header).FontSize = fontSize;
                     continue;
                 }
 
@@ -532,7 +527,7 @@ namespace SimpleLLMChatGUI
             if (state == null)
                 return;
 
-            if (!_restoring && _source != null) _bodyLength = _source.Length;
+            if (!_restoring) _bodyLength = _source.Length;
             state.Active = false;
             state.DurationSeconds = Math.Max(0, (int)Math.Round((DateTime.UtcNow - state.StartedUtc).TotalSeconds));
             _activeBlock = null;
@@ -545,22 +540,14 @@ namespace SimpleLLMChatGUI
 
         private void OnBlockExpanded(object sender, RoutedEventArgs e)
         {
-            Expander expander = sender as Expander;
-            CollapsibleBlockState state = expander != null ? expander.Tag as CollapsibleBlockState : null;
-            if (state == null)
-                return;
-
+            CollapsibleBlockState state = (CollapsibleBlockState)((Expander)sender).Tag;
             StopEllipsisTimer(state);
             state.HeaderLabel.Text = BuildLabelText(state);
         }
 
         private void OnBlockCollapsed(object sender, RoutedEventArgs e)
         {
-            Expander expander = sender as Expander;
-            CollapsibleBlockState state = expander != null ? expander.Tag as CollapsibleBlockState : null;
-            if (state == null)
-                return;
-
+            CollapsibleBlockState state = (CollapsibleBlockState)((Expander)sender).Tag;
             if (state.Active)
                 StartEllipsisTimer(state);
             else

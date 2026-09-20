@@ -58,7 +58,7 @@ namespace SimpleLLMChatGUI
         /// </summary>
         public static void Render(FlowDocument document, string source)
         {
-            if (document == null || string.IsNullOrEmpty(source))
+            if (string.IsNullOrEmpty(source))
                 return;
 
             MarkdownDocument parsed = Markdown.Parse(source, Pipeline);
@@ -80,7 +80,7 @@ namespace SimpleLLMChatGUI
         /// </summary>
         public static void ApplyHeaderFontSizes(FlowDocument document, double baseFontSize)
         {
-            if (document == null || baseFontSize <= 0)
+            if (baseFontSize <= 0)
                 return;
 
             foreach (System.Windows.Documents.Block block in document.Blocks)
@@ -147,9 +147,7 @@ namespace SimpleLLMChatGUI
             if (table != null)
             {
                 double available = document.PageWidth - document.PagePadding.Left - document.PagePadding.Right;
-                System.Windows.Documents.Table docTable = BuildTableContainer(table, baseFontSize, available > 0 ? available : 800);
-                if (docTable != null)
-                    document.Blocks.Add(docTable);
+                document.Blocks.Add(BuildTableContainer(table, baseFontSize, available > 0 ? available : 800));
                 return;
             }
 
@@ -333,21 +331,12 @@ namespace SimpleLLMChatGUI
         {
             var rows = new List<MDTableRow>();
             for (int i = 0; i < table.Count; i++)
-            {
-                MDTableRow row = table[i] as MDTableRow;
-                if (row != null)
-                    rows.Add(row);
-            }
+                rows.Add((MDTableRow)table[i]);
 
             // Markdig 0.18.3 reports ColumnDefinitions.Count as N+1 (an extra
-            // empty alignment slot); the real column count is the widest row.
-            int columnCount = 0;
-            for (int r = 0; r < rows.Count; r++)
-                columnCount = Math.Max(columnCount, rows[r].Count);
-
+            // empty alignment slot); all rows are normalized to the same width.
+            int columnCount = rows[0].Count;
             int rowCount = rows.Count;
-            if (columnCount == 0 || rowCount == 0)
-                return null;
 
             // Column pixel widths: widest cell per column (headers bold, inline
             // bold/code measured in their rendered styles, +10% slack so the
@@ -411,12 +400,7 @@ namespace SimpleLLMChatGUI
 
         private static ContainerInline CellInlines(MDTableRow row, int column)
         {
-            if (row == null || column >= row.Count)
-                return null;
-
-            MDTableCell cell = row[column] as MDTableCell;
-            if (cell == null)
-                return null;
+            MDTableCell cell = (MDTableCell)row[column];
 
             for (int i = 0; i < cell.Count; i++)
             {
@@ -473,7 +457,7 @@ namespace SimpleLLMChatGUI
         private static int ContainsStyled(ContainerInline root)
         {
             int styled = 0;
-            MDInline inline = root != null ? root.FirstChild : null;
+            MDInline inline = root.FirstChild;
             while (inline != null)
             {
                 EmphasisInline emphasis = inline as EmphasisInline;
@@ -651,7 +635,7 @@ namespace SimpleLLMChatGUI
         /// </summary>
         private static void AppendInlines(InlineCollection target, ContainerInline root, double baseFontSize)
         {
-            MDInline inline = root != null ? root.FirstChild : null;
+            MDInline inline = root.FirstChild;
             while (inline != null)
             {
                 AppendInline(target, inline, baseFontSize);
@@ -802,7 +786,7 @@ namespace SimpleLLMChatGUI
         private static bool TryPlainText(ContainerInline root, out string text)
         {
             var sb = new StringBuilder();
-            MDInline inline = root != null ? root.FirstChild : null;
+            MDInline inline = root.FirstChild;
             while (inline != null)
             {
                 LiteralInline literal = inline as LiteralInline;
@@ -928,22 +912,18 @@ namespace SimpleLLMChatGUI
 
         private static void OnHyperlinkClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            Hyperlink hyperlink = sender as Hyperlink;
-            if (hyperlink != null && hyperlink.NavigateUri != null)
+            string url = ((Hyperlink)sender).NavigateUri.AbsoluteUri;
+            if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
             {
-                string url = hyperlink.NavigateUri.AbsoluteUri;
-                if ((Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control)
-                {
-                    // Ctrl+click opens the link in the default browser.
-                    Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-                }
-                else
-                {
-                    try { Clipboard.SetText(url); } catch { }
-                    ShowCopiedPopup();
-                }
-                e.Handled = true;
+                // Ctrl+click opens the link in the default browser.
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
             }
+            else
+            {
+                try { Clipboard.SetText(url); } catch { }
+                ShowCopiedPopup();
+            }
+            e.Handled = true;
         }
 
         /// <summary>
