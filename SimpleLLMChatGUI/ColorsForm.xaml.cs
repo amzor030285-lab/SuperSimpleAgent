@@ -206,7 +206,7 @@ namespace SimpleLLMChatGUI
             {
                 if (setting.Value.HasValue)
                 {
-                    lines.Add($"{setting.Config.Key}={ColorHelper.ColorToString(setting.Value.Value)}");
+                    lines.Add($"{setting.Config.Key}=#{setting.Value.Value.A:X2}{setting.Value.Value.R:X2}{setting.Value.Value.G:X2}{setting.Value.Value.B:X2}");
                 }
                 else
                 {

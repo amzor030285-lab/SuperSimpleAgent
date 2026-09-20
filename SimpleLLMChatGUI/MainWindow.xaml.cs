@@ -483,17 +483,14 @@ namespace SimpleLLMChatGUI
 
         private void LoadAndApplyColors()
         {
-            if (File.Exists(App.ColorsFileName))
+            try
             {
-                try
-                {
-                    var colorSettings = IniFileHandler.LoadIni(App.ColorsFileName);
-                    ColorHelper.LoadAndApplyColors(colorSettings);
-                }
-                catch
-                {
-                    // On error, do nothing (use system defaults)
-                }
+                var colorSettings = IniFileHandler.LoadIni(App.ColorsFileName);
+                ColorHelper.ApplyTheme(ColorHelper.GetThemeName(colorSettings), colorSettings);
+            }
+            catch
+            {
+                // On error, do nothing (use system defaults)
             }
             UpdateThemeButton();
         }

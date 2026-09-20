@@ -176,31 +176,12 @@ namespace SimpleLLMChatGUI
 
             try
             {
-                // Remove # if present
                 string hex = colorString.TrimStart('#');
-
-                // Handle different formats
                 if (hex.Length == 6)
-                {
-                    // RGB format, add FF for alpha
                     hex = "FF" + hex;
-                }
-                else if (hex.Length == 8)
-                {
-                    // ARGB format
-                }
-                else
-                {
+                else if (hex.Length != 8)
                     return false;
-                }
-
-                // Parse hex string
-                byte a = Convert.ToByte(hex.Substring(0, 2), 16);
-                byte r = Convert.ToByte(hex.Substring(2, 2), 16);
-                byte g = Convert.ToByte(hex.Substring(4, 2), 16);
-                byte b = Convert.ToByte(hex.Substring(6, 2), 16);
-
-                color = Color.FromArgb(a, r, g, b);
+                color = (Color)ColorConverter.ConvertFromString("#" + hex);
                 return true;
             }
             catch
@@ -216,7 +197,7 @@ namespace SimpleLLMChatGUI
         /// <param name="brush">The brush to apply</param>
         public static void UpdateColorBrush(string resourceKey, Brush brush)
         {
-            if (Application.Current != null && Application.Current.Resources != null)
+            if (Application.Current != null)
             {
                 Application.Current.Resources[resourceKey] = brush;
             }
@@ -552,21 +533,11 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Loads colors from an INI dictionary and applies them (theme palette + custom overrides).
-        /// </summary>
-        public static void LoadAndApplyColors(Dictionary<string, string> colorSettings)
-        {
-            ApplyTheme(GetThemeName(colorSettings), colorSettings);
-        }
-
-        /// <summary>
         /// Reads the current theme from a colors INI file ("system" when absent).
         /// </summary>
         public static string GetTheme(string colorsPath)
         {
-            if (File.Exists(colorsPath))
-                return GetThemeName(IniFileHandler.LoadIni(colorsPath));
-            return ThemeSystem;
+            return GetThemeName(IniFileHandler.LoadIni(colorsPath));
         }
 
         /// <summary>
@@ -574,9 +545,7 @@ namespace SimpleLLMChatGUI
         /// </summary>
         public static void SaveTheme(string themeName, string colorsPath)
         {
-            Dictionary<string, string> settings = File.Exists(colorsPath)
-                ? IniFileHandler.LoadIni(colorsPath)
-                : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            Dictionary<string, string> settings = IniFileHandler.LoadIni(colorsPath);
             settings[ThemeKey] = themeName;
 
             var lines = new List<string>();
@@ -585,14 +554,5 @@ namespace SimpleLLMChatGUI
             File.WriteAllLines(colorsPath, lines);
         }
 
-        /// <summary>
-        /// Converts a WPF Color to a hex string format (e.g., #FF000000 for black).
-        /// </summary>
-        /// <param name="color">The color to convert</param>
-        /// <returns>Hex string representation of the color in ARGB format</returns>
-        public static string ColorToString(Color color)
-        {
-            return $"#{color.A:X2}{color.R:X2}{color.G:X2}{color.B:X2}";
-        }
     }
 }
