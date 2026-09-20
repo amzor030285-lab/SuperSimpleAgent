@@ -113,11 +113,8 @@ namespace SimpleLLMChatCLI
             foreach (SessionStore.SessionInfo info in sessions)
             {
                 DateTime savedUtc = SessionStore.EffectiveSavedAtUtc(info);
-                DateTime local = savedUtc != DateTime.MinValue
-                    ? savedUtc.ToLocalTime()
-                    : DateTime.MinValue;
-                string when = local != DateTime.MinValue
-                    ? local.ToString("yyyy-MM-dd HH:mm")
+                string when = savedUtc != DateTime.MinValue
+                    ? savedUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")
                     : "unknown";
                 double kb = (double)info.SizeBytes / 1024.0;
                 ChatOutput.WriteLine("  " + info.Name + "  (" + when + ", " + info.MessageCount + " messages, " + kb.ToString("F1") + " KB)");
@@ -148,16 +145,10 @@ namespace SimpleLLMChatCLI
             }
             finally
             {
-                if (StatusPipe != null)
-                {
-                    StatusPipe.Dispose();
-                    StatusPipe = null;
-                }
-                if (ControlPipe != null)
-                {
-                    ControlPipe.Dispose();
-                    ControlPipe = null;
-                }
+                StatusPipe.Dispose();
+                StatusPipe = null;
+                ControlPipe.Dispose();
+                ControlPipe = null;
             }
         }
 
@@ -197,7 +188,7 @@ namespace SimpleLLMChatCLI
             // (which previously overwrote "lastsession" on the first new message).
             List<LLMClient.ChatMessage> restored = null;
             if (SessionStore.Load(sessionsDir, "lastsession", out restored)
-                && restored != null && restored.Count > 0)
+                && restored.Count > 0)
             {
                 conversation.AddRange(restored);
                 ChatOutput.WriteLine("\n-- restored lastsession: " + restored.Count + " messages --");
