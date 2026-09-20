@@ -14,7 +14,6 @@ public class LLMClient
 {
     private readonly ConfigHandler config;
     private readonly ToolRegistry registry;
-    private readonly Func<string, string, bool> requestToolApproval;
 
     // Cached sysprompt + tools schema length (NyoCoder-style base overhead).
     // Cleared (set null) on /reload so the next request recomputes it.
@@ -22,11 +21,10 @@ public class LLMClient
 
     public string ReasoningEffort { get; set; }
 
-    public LLMClient(ConfigHandler config, ToolRegistry registry, Func<string, string, bool> requestToolApproval = null)
+    public LLMClient(ConfigHandler config, ToolRegistry registry)
     {
         this.registry = registry;
         this.config = config;
-        this.requestToolApproval = requestToolApproval ?? CliRequestApproval;
     }
 
     // Struct for chat messages
@@ -78,10 +76,8 @@ public class LLMClient
         ChatBlockDisplayMode toolCallDisplay = config.GetChatBlockDisplayMode("toolcalldisplay", ChatBlockDisplayMode.Collapsed);
         ChatBlockDisplayMode toolOutputDisplay = config.GetChatBlockDisplayMode("tooloutputdisplay", ChatBlockDisplayMode.Shown);
 
-        HashSet<string> enabledSet = new HashSet<string>(
-            enabledTools ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
-        HashSet<string> approvalSet = new HashSet<string>(
-            toolsRequiringApproval ?? new List<string>(), StringComparer.OrdinalIgnoreCase);
+        HashSet<string> enabledSet = new HashSet<string>(enabledTools, StringComparer.OrdinalIgnoreCase);
+        HashSet<string> approvalSet = new HashSet<string>(toolsRequiringApproval, StringComparer.OrdinalIgnoreCase);
 
         // If prior context is already high, compact it (micro/summarize/ask), then
         // run the user prompt.
@@ -93,7 +89,7 @@ public class LLMClient
         RagHost.FlushPendingErrorOnce();
         RagHost.WaitIfIndexing();
 
-        string contentForLlm = userMessage ?? string.Empty;
+        string contentForLlm = userMessage;
         if (config.GetConfigBool("ragEnabled", false))
         {
             bool everyTurn = string.Equals(
@@ -121,9 +117,7 @@ public class LLMClient
 
         // Context injectors (memory/skills summaries) are fetched once per user message
         // and reused across agent-loop iterations (tool rounds) for this turn.
-        List<string> contextInjections = registry != null
-            ? registry.GetContextInjections(enabledTools)
-            : new List<string>();
+        List<string> contextInjections = registry.GetContextInjections(enabledTools);
 
         // The assistant name is printed once per turn:
         //   "LLM: output"  when the response starts with plain output, or
@@ -205,7 +199,7 @@ public class LLMClient
                 };
             }
 
-            LLMCompletionResponse response = sendMessages(conversation, enabledTools, ChatOutput.Write, toolCallStreamCallback, onContentStart, startBlock, outputOnly, contextInjections);
+            LLMCompletionResponse response = SendHttpRequest(BuildRequestPayload(conversation, enabledTools, contextInjections), ChatOutput.Write, toolCallStreamCallback, onContentStart, startBlock, outputOnly);
 
             // Calibrate the token estimator against the server's real tokenizer. The
             // conversation has not changed during the request, so the character count
@@ -298,7 +292,7 @@ public class LLMClient
                     }
                     else if (needsApproval)
                     {
-                        if (requestToolApproval(call.Name, call.Arguments))
+                        if (CliRequestApproval(call.Name, call.Arguments))
                         {
                             ExecuteTool(call, out toolContent, out exitCode, out toolImage, out toolImageMime, out toolSeconds, outputOnly);
                         }
@@ -767,15 +761,6 @@ public class LLMClient
     }
 
     /// <summary>
-    /// Manual /compact command: runs the 80% micro-compaction regardless of the
-    /// current usage so the user can trim old tool traffic on demand.
-    /// </summary>
-    public static int PerformMicroCompact(List<ChatMessage> conversation)
-    {
-        return MicroCompact(conversation, 2);
-    }
-
-    /// <summary>
     /// Manual /compactfull command: first the free micro-compaction (drops old
     /// tool groups), then the opencode-style summarize-and-replace. The summary
     /// is printed to the chat so the GUI can show it in place of the old history.
@@ -889,12 +874,10 @@ public class LLMClient
     /// </summary>
     public void RefreshBaseCharacterOverhead(List<string> enabledTools)
     {
-        List<string> contextInjections = registry != null
-            ? registry.GetContextInjections(enabledTools)
-            : new List<string>();
+        List<string> contextInjections = registry.GetContextInjections(enabledTools);
         string systemPrompt = BuildSystemPrompt(enabledTools, contextInjections);
         int toolsChars = 0;
-        if (enabledTools != null && enabledTools.Count > 0 && registry != null)
+        if (enabledTools.Count > 0)
         {
             JArray toolsArray = registry.BuildToolsArray(enabledTools);
             if (toolsArray.Count > 0)
@@ -907,12 +890,9 @@ public class LLMClient
     {
         string sysprompt = ConfigHandler.DecodeStoredPrompt(config.GetConfigValue("sysprompt")) ?? "";
 
-        if (registry != null)
-        {
-            List<string> injections = contextInjections ?? registry.GetContextInjections(enabledTools);
-            foreach (string injection in injections)
-                sysprompt += "\n\n" + injection;
-        }
+        List<string> injections = contextInjections ?? registry.GetContextInjections(enabledTools);
+        foreach (string injection in injections)
+            sysprompt += "\n\n" + injection;
 
         string ragHint = RagHost.GetKnowledgePathHint(config);
         if (!string.IsNullOrEmpty(ragHint))
@@ -941,11 +921,8 @@ public class LLMClient
             ["content"] = systemPrompt
         });
 
-        if (conversation != null)
-        {
-            foreach (var msg in conversation)
-                messages.Add(BuildMessageObject(msg));
-        }
+        foreach (var msg in conversation)
+            messages.Add(BuildMessageObject(msg));
 
         payload["messages"] = messages;
 
@@ -964,8 +941,7 @@ public class LLMClient
         if (!BaseOverheadChars.HasValue)
         {
             List<string> configuredTools = config.GetConfigList("tools");
-            bool summarizationPass = (enabledTools == null || enabledTools.Count == 0)
-                && configuredTools != null && configuredTools.Count > 0;
+            bool summarizationPass = enabledTools.Count == 0 && configuredTools.Count > 0;
             if (!summarizationPass)
                 BaseOverheadChars = systemPrompt.Length + toolsChars;
         }
@@ -1240,9 +1216,6 @@ public class LLMClient
     /// </summary>
     private static string ExtractPreviousSummary(List<ChatMessage> conversation)
     {
-        if (conversation == null)
-            return null;
-
         for (int i = conversation.Count - 1; i >= 0; i--)
         {
             string content = conversation[i].Content;
@@ -1344,19 +1317,6 @@ public class LLMClient
         }
 
         return msgObj;
-    }
-
-    LLMCompletionResponse sendMessages(
-        List<ChatMessage> conversation,
-        List<string> enabledTools,
-        Action<string> outputCallback = null,
-        Action<ToolRegistry.ToolCall> toolCallCallback = null,
-        Action onContentStart = null,
-        Action startBlock = null,
-        bool outputOnly = false,
-        List<string> contextInjections = null)
-    {
-        return SendHttpRequest(BuildRequestPayload(conversation, enabledTools, contextInjections), outputCallback, toolCallCallback, onContentStart, startBlock, outputOnly);
     }
 
     private LLMCompletionResponse SendHttpRequest(JObject payload, Action<string> outputCallback = null,

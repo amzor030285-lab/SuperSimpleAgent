@@ -396,7 +396,7 @@ namespace SimpleLLMChatCLI
 
                 if (userInput == "/compact")
                 {
-                    int removed = LLMClient.PerformMicroCompact(conversation);
+                    int removed = LLMClient.MicroCompact(conversation, 2);
                     if (removed > 0)
                         ChatOutput.WriteLine("Compaction: removed " + removed + " old tool messages.");
                     else
