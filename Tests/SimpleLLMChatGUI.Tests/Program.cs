@@ -244,6 +244,81 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("gui.markdown_edge_cases", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    server.FixedReply =
+                        "Mixed **bold**, *italic*, ~~strike~~ and `code` in one line.\n" +
+                        "\n" +
+                        "- top one\n" +
+                        "  - nested one\n" +
+                        "- top two\n" +
+                        "\n" +
+                        "1. step one\n" +
+                        "2. step two\n" +
+                        "\n" +
+                        "- [x] done item\n" +
+                        "- [ ] open item\n" +
+                        "\n" +
+                        "> note **inside** quote\n" +
+                        "\n" +
+                        "| Left | Right |\n" +
+                        "|:-----|------:|\n" +
+                        "| `a1` | **b2** |\n" +
+                        "\n" +
+                        "---\n" +
+                        "\n" +
+                        "See [docs](https://example.com/docs) and [mail](mailto:x@y.z) for more.\n" +
+                        "\n" +
+                        "2.4.1. dotted paragraph line.";
+                    server.StreamDelayMs = 5;
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.SendTurn("show the edge cases", 30000);
+
+                        string text = gui.GetAllText();
+
+                        // Inline styles: rendered without raw markers.
+                        TestAssert.True(!text.Contains("**bold**"), "bold markers consumed");
+                        TestAssert.True(!text.Contains("*italic*"), "italic markers consumed");
+                        TestAssert.True(!text.Contains("~~strike~~"), "strikethrough markers consumed");
+                        TestAssert.True(!text.Contains("`code`"), "code span markers consumed");
+
+                        // Lists: nested and ordered, markers consumed.
+                        TestAssert.Contains(text, "nested one", "nested list item rendered");
+                        TestAssert.Contains(text, "step two", "ordered item rendered");
+                        TestAssert.True(!text.Contains("- top one"), "unordered marker consumed");
+
+                        // Task list.
+                        TestAssert.Contains(text, "[x]", "checked task rendered");
+                        TestAssert.Contains(text, "[ ]", "unchecked task rendered");
+
+                        // Blockquote with inline bold.
+                        TestAssert.Contains(text, "inside", "blockquote inline text rendered");
+                        TestAssert.True(!text.Contains("> note"), "blockquote marker consumed");
+
+                        // Table with inline code and bold cells.
+                        TestAssert.Contains(text, "a1", "code cell rendered");
+                        TestAssert.Contains(text, "b2", "bold cell rendered");
+                        TestAssert.True(!text.Contains(":-----"), "table separator consumed");
+
+                        // Links: http as hyperlink label, mailto as plain label.
+                        TestAssert.Contains(text, "docs", "link label rendered");
+                        TestAssert.Contains(text, "mail", "mailto label rendered");
+                        TestAssert.True(!text.Contains("mailto:"), "mailto url not displayed");
+                        TestAssert.True(!text.Contains("(https://"), "raw link syntax not displayed");
+
+                        // A dotted version line must stay a paragraph, not a list.
+                        TestAssert.Contains(text, "2.4.1. dotted paragraph line.", "dotted line stays plain text");
+                    }
+                }
+            });
+
             TestRunner.Run("gui.window_and_long_chat", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
@@ -314,7 +389,7 @@ namespace SimpleLLMChatGUI.Tests
         static TempWorkspace PackageGuiWorkspace()
         {
             TempWorkspace ws = new TempWorkspace("gui-run");
-            string[] files = { "SimpleLLMChatGUI.exe", "SimpleLLMChatCLI.exe", "Newtonsoft.Json.dll" };
+                string[] files = { "SimpleLLMChatGUI.exe", "SimpleLLMChatCLI.exe", "Newtonsoft.Json.dll", "Markdig.dll" };
             foreach (string f in files)
             {
                 string src = ToolClient.ProductExe(f);

@@ -105,7 +105,6 @@ namespace SimpleLLMChatGUI
                         LineHeight = LineHeightMultiplier
                     };
                     _hasContent = false;
-                    MarkdownProcessedBlockCount = 0;
                     _restoring = true;
                     try
                     {
@@ -155,8 +154,18 @@ namespace SimpleLLMChatGUI
         public void ProcessMarkdown()
         {
             _markdown = true;
-            if (_document != null)
-                MarkdownHandler.ProcessMarkdown(_document, ref MarkdownProcessedBlockCount);
+            if (_document == null)
+                return;
+
+            // Collapsible (thinking / tool) turns keep their raw body text;
+            // only plain-text turns go through the markdown renderer.
+            foreach (Block block in _document.Blocks)
+            {
+                if (block is BlockUIContainer)
+                    return;
+            }
+
+            MarkdownRenderer.Render(_document, SourceText);
         }
 
         public void SetPageWidth(double width)
@@ -182,11 +191,6 @@ namespace SimpleLLMChatGUI
             _activeBlock = null;
             _document = null;
         }
-
-        /// <summary>
-        /// Block index already processed by MarkdownHandler for this turn's document.
-        /// </summary>
-        public int MarkdownProcessedBlockCount;
 
         // False until visible text is appended; used to drop the CLI's
         // inter-turn padding newlines, which would otherwise render as
@@ -371,7 +375,7 @@ namespace SimpleLLMChatGUI
             if (_document == null) return;
             Document.FontSize = fontSize;
             Document.LineHeight = LineHeightMultiplier;
-            MarkdownHandler.ApplyHeaderFontSizes(Document, fontSize);
+            MarkdownRenderer.ApplyHeaderFontSizes(Document, fontSize);
             foreach (Block block in Document.Blocks)
             {
                 BlockUIContainer container = block as BlockUIContainer;

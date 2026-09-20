@@ -19,6 +19,7 @@ mkdir "%OUT%"
 copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\SimpleLLMChatCLI.exe" "%OUT%\" >nul
 copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\SimpleLLMChatCLI.exe.config" "%OUT%\" >nul
 copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\SimpleLLMChatGUI.exe" "%OUT%\" >nul
+copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\Markdig.dll" "%OUT%\" >nul
 copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\Newtonsoft.Json.dll"  "%OUT%\" >nul
 
 for %%T in (FileTools PythonTools ShellTools WebTools MemoryTools SkillTools DesktopTools) do (

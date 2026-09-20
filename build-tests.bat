@@ -112,6 +112,8 @@ call :CopyIfExists "%ROOT%deps\curl.exe" "%TESTBUILD%\SimpleLLMChatCLI.Tests\cur
 
 copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\SimpleLLMChatGUI.exe" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
 
+copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\Markdig.dll" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
+
 copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\SimpleLLMChatCLI.exe" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
 
 copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
