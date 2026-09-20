@@ -146,9 +146,9 @@ namespace SimpleLLMChatGUI
             MDTable table = block as MDTable;
             if (table != null)
             {
-                BlockUIContainer tableBlock = BuildTableContainer(table, baseFontSize);
-                if (tableBlock != null)
-                    document.Blocks.Add(tableBlock);
+                System.Windows.Documents.Table docTable = BuildTableContainer(table, baseFontSize, TableAvailableWidth(document));
+                if (docTable != null)
+                    document.Blocks.Add(docTable);
                 return;
             }
 
@@ -343,16 +343,29 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Builds a markdown table as a <see cref="System.Windows.Controls.Grid"/> of
-        /// bordered cell <see cref="Border"/>s, wrapped in a
-        /// <see cref="BlockUIContainer"/>. Columns are star-sized with weights
-        /// proportional to their content width, so the table always fills the
-        /// available (window-driven) width, wide text wraps, and the layout
-        /// re-scales live when the window resizes. The outer frame supplies the
-        /// outer border; each cell supplies only its right/bottom border so
-        /// inner lines are 1px.
+        /// Width a table can use inside the document: PageWidth minus page
+        /// padding (the chat document uses zero padding), with a fallback for
+        /// documents whose PageWidth has not been set yet.
         /// </summary>
-        private static BlockUIContainer BuildTableContainer(MDTable table, double baseFontSize)
+        private static double TableAvailableWidth(FlowDocument document)
+        {
+            double width = document.PageWidth - document.PagePadding.Left - document.PagePadding.Right;
+            return width > 0 ? width : 800;
+        }
+
+        /// <summary>
+        /// Builds a markdown table as a native WPF document
+        /// <see cref="System.Windows.Documents.Table"/> so its text is part of the
+        /// chat document and can be selected and copied like any other text.
+        /// Columns use fixed pixel widths proportional to their measured content:
+        /// .NET 4 WPF does not distribute star-sized <see cref="TableColumn"/>
+        /// widths reliably (unequal stars collapse columns to zero width). If the
+        /// measured total exceeds the document width, all columns are scaled down
+        /// proportionally so the table always fits and wide text wraps. The table
+        /// supplies the outer border; each cell supplies only its right/bottom
+        /// border so inner lines are 1px.
+        /// </summary>
+        private static System.Windows.Documents.Table BuildTableContainer(MDTable table, double baseFontSize, double availableWidth)
         {
             var rows = new List<MDTableRow>();
             for (int i = 0; i < table.Count; i++)
@@ -362,100 +375,79 @@ namespace SimpleLLMChatGUI
                     rows.Add(row);
             }
 
-            int columnCount = table.ColumnDefinitions.Count;
+            // Markdig 0.18.3 reports ColumnDefinitions.Count as N+1 (an extra
+            // empty alignment slot); the real column count is the widest row.
+            int columnCount = 0;
+            for (int r = 0; r < rows.Count; r++)
+                columnCount = Math.Max(columnCount, rows[r].Count);
+
             int rowCount = rows.Count;
             if (columnCount == 0 || rowCount == 0)
                 return null;
 
-            // Column weights: widest cell per column (headers bold, inline
+            // Column pixel widths: widest cell per column (headers bold, inline
             // bold/code measured in their rendered styles, +10% slack so the
-            // star-scaled column always fits its widest cell on one line).
-            var weights = new double[columnCount];
+            // column fits its widest cell on one line). The total is scaled down
+            // to fit the document width when it overflows.
+            var widths = new double[columnCount];
+            double total = 0;
             for (int c = 0; c < columnCount; c++)
             {
                 double w = MeasureTextWidth(CellText(rows[0], c), baseFontSize, FontWeights.Bold, ChatFontFamily());
                 for (int r = 1; r < rowCount; r++)
                     w = Math.Max(w, MeasureCellInlines(CellInlines(rows[r], c), baseFontSize));
-                weights[c] = Math.Max(TableMinColumnWidth, w * 1.1 + TableCellPaddingWidth);
+                widths[c] = Math.Max(TableMinColumnWidth, w * 1.1 + TableCellPaddingWidth);
+                total += widths[c];
+            }
+            if (availableWidth > 0 && total > availableWidth)
+            {
+                double k = availableWidth / total;
+                for (int c = 0; c < columnCount; c++)
+                    widths[c] *= k;
             }
 
-            var grid = new Grid();
+            var docTable = new System.Windows.Documents.Table
+            {
+                BorderThickness = new Thickness(1),
+                CellSpacing = 0,
+                Margin = new Thickness(0, 4, 0, 4)
+            };
+            docTable.SetResourceReference(System.Windows.Documents.Block.BorderBrushProperty, "TableBorderBrush");
             for (int c = 0; c < columnCount; c++)
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(weights[c], GridUnitType.Star) });
-            for (int r = 0; r < rowCount; r++)
-                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+                docTable.Columns.Add(new TableColumn { Width = new GridLength(widths[c], GridUnitType.Pixel) });
+
+            var rowGroup = new TableRowGroup();
+            docTable.RowGroups.Add(rowGroup);
 
             for (int r = 0; r < rowCount; r++)
             {
                 bool isHeader = rows[r].IsHeader;
+                var docRow = new System.Windows.Documents.TableRow();
                 for (int c = 0; c < columnCount; c++)
                 {
-                    grid.Children.Add(CreateTableCell(CellInlines(rows[r], c), CellAlignment(table, c), isHeader,
-                        baseFontSize, c, columnCount, r, rowCount));
+                    var cell = new System.Windows.Documents.TableCell
+                    {
+                        Padding = new Thickness(6, 3, 6, 3),
+                        BorderThickness = new Thickness(0, 0, c == columnCount - 1 ? 0 : 1, r == rowCount - 1 ? 0 : 1),
+                        TextAlignment = CellAlignment(table, c)
+                    };
+                    cell.SetResourceReference(System.Windows.Documents.TableCell.BorderBrushProperty, "TableBorderBrush");
+                    if (isHeader)
+                    {
+                        cell.SetResourceReference(TextElement.BackgroundProperty, "TableHeaderBackgroundBrush");
+                        cell.FontWeight = FontWeights.Bold;
+                    }
+
+                    var paragraph = new Paragraph { Margin = new Thickness(0) };
+                    paragraph.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+                    AppendInlines(paragraph.Inlines, CellInlines(rows[r], c), baseFontSize);
+                    cell.Blocks.Add(paragraph);
+                    docRow.Cells.Add(cell);
                 }
+                rowGroup.Rows.Add(docRow);
             }
 
-            var frame = new Border
-            {
-                BorderThickness = new Thickness(1),
-                Child = grid
-            };
-            frame.SetResourceReference(Border.BorderBrushProperty, "TableBorderBrush");
-
-            return new BlockUIContainer(frame)
-            {
-                Margin = new Thickness(0, 4, 0, 4)
-            };
-        }
-
-        private static Border CreateTableCell(ContainerInline inlines, TextAlignment alignment, bool isHeader,
-            double baseFontSize, int column, int columnCount, int row, int rowCount)
-        {
-            var cellBorder = new Border
-            {
-                Padding = new Thickness(6, 3, 6, 3),
-                BorderThickness = new Thickness(0, 0, column == columnCount - 1 ? 0 : 1, row == rowCount - 1 ? 0 : 1)
-            };
-            cellBorder.SetResourceReference(Border.BorderBrushProperty, "TableBorderBrush");
-            if (isHeader)
-                cellBorder.SetResourceReference(Border.BackgroundProperty, "TableHeaderBackgroundBrush");
-
-            Grid.SetColumn(cellBorder, column);
-            Grid.SetRow(cellBorder, row);
-
-            // Plain cells become a read-only TextBox so part of the cell can be
-            // selected and copied; cells with inline markdown live in a read-only
-            // rich text host (formatted TextBlocks are not selectable in WPF).
-            FrameworkElement content;
-            string plainText;
-            if (TryPlainText(inlines, out plainText))
-            {
-                var textBox = new NoScrollTextBox
-                {
-                    Text = plainText,
-                    IsReadOnly = true,
-                    IsReadOnlyCaretVisible = true,
-                    IsTabStop = false,
-                    Background = Brushes.Transparent,
-                    BorderThickness = new Thickness(0),
-                    Padding = new Thickness(0),
-                    FontSize = baseFontSize,
-                    TextWrapping = TextWrapping.Wrap,
-                    TextAlignment = alignment,
-                    VerticalContentAlignment = VerticalAlignment.Center
-                };
-                textBox.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
-                if (isHeader)
-                    textBox.FontWeight = FontWeights.Bold;
-                content = textBox;
-            }
-            else
-            {
-                content = CreateRichTextHost(inlines, alignment, isHeader, baseFontSize, new Thickness(0));
-            }
-
-            cellBorder.Child = content;
-            return cellBorder;
+            return docTable;
         }
 
         private static ContainerInline CellInlines(MDTableRow row, int column)
