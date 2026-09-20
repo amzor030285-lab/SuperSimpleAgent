@@ -216,11 +216,6 @@ namespace SimpleLLMChatGUI
             set { _embeddingsApiKey = value; OnPropertyChanged(nameof(EmbeddingsApiKey)); }
         }
 
-        public Options()
-            : this(null)
-        {
-        }
-
         public Options(ProcessHandler processHandler)
         {
             _processHandler = processHandler;
@@ -242,35 +237,6 @@ namespace SimpleLLMChatGUI
                 .ToList();
             _systemFonts.Insert(0, "Default");
 
-            InitializeDefaults();
-        }
-
-        private void InitializeDefaults()
-        {
-            ServerURL = "";
-            ApiKey = "";
-            Model = "";
-            SysPrompt = "";
-            ContextWindowSize = 0;
-            AssistantName = AppConstants.DefaultAssistantName;
-            ThinkingDisplayModeText = "Collapsed";
-            ToolCallDisplayModeText = "Collapsed";
-            ToolOutputDisplayModeText = "Shown";
-            MarkdownParsing = true;
-            CodeFontFamily = "";
-            CustomFontFamily = "";
-            ChatFontSize = AppConstants.DefaultChatFontSize;
-            RagEnabled = false;
-            RagKnowledgePath = "";
-            RagMaxResults = 5;
-            IndexChunkLines = 60;
-            IndexChunkOverlap = 10;
-            RagMaxSnippetLength = 2000;
-            RagRetrieveMode = "newchat";
-            RagAllowedExtensions = AppConstants.DefaultRagAllowedExtensions;
-            EmbeddingsEndpoint = "";
-            EmbeddingsModel = "";
-            EmbeddingsApiKey = "";
         }
 
         private void SaveButton_Click(object sender, RoutedEventArgs e)
@@ -393,7 +359,7 @@ namespace SimpleLLMChatGUI
             ToolCallDisplayModeText = config.GetChatBlockDisplayMode("toolcalldisplay", ChatBlockDisplayMode.Collapsed).ToString();
             ToolOutputDisplayModeText = config.GetChatBlockDisplayMode("tooloutputdisplay", ChatBlockDisplayMode.Shown).ToString();
             MarkdownParsing = config.GetConfigBool("markdownparsing", true);
-            ThemeComboBox.SelectedIndex = ThemeIndex(ColorHelper.GetTheme(App.ColorsFileName));
+            ThemeComboBox.SelectedIndex = Math.Max(0, Array.IndexOf(ColorHelper.ThemeOrder, ColorHelper.GetTheme(App.ColorsFileName)));
             CodeFontFamily = config.GetConfigValue("codeblockfontfamily");
             CustomFontFamily = config.GetConfigValue("customfontfamily");
             ChatFontSize = config.GetConfigInt("fontsize", AppConstants.DefaultChatFontSize);
@@ -415,7 +381,8 @@ namespace SimpleLLMChatGUI
 
             ApiKeyPasswordBox.Password = ApiKey;
             EmbeddingsApiKeyPasswordBox.Password = EmbeddingsApiKey;
-            ApplyRetrieveModeToCombo();
+            RagRetrieveModeComboBox.SelectedIndex =
+                string.Equals(RagRetrieveMode, "everyturn", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         }
 
         private void LoadToolSelections(ConfigHandler config)
@@ -439,29 +406,11 @@ namespace SimpleLLMChatGUI
         private void RefreshIndexingStatusUi()
         {
             IndexingStatusSnapshot status = IndexingStatusHub.GetSnapshot();
-            if (IndexingStatusBrief != null)
-                IndexingStatusBrief.Text = status.BriefText ?? "Index: (unknown)";
-            if (IndexingStatusDetail != null)
-                IndexingStatusDetail.Text = status.DetailText ?? string.Empty;
-            if (BuildIndexButton != null)
-                BuildIndexButton.IsEnabled = !status.IsBusy;
-            if (ClearIndexButton != null)
-                ClearIndexButton.IsEnabled = !status.IsBusy;
-        }
-
-        private void ApplyRetrieveModeToCombo()
-        {
-            if (RagRetrieveModeComboBox == null)
-                return;
-            RagRetrieveModeComboBox.SelectedIndex =
-                string.Equals(RagRetrieveMode, "everyturn", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
-        }
-
-        private void SyncRetrieveModeFromCombo()
-        {
-            if (RagRetrieveModeComboBox == null)
-                return;
-            RagRetrieveMode = RagRetrieveModeComboBox.SelectedIndex == 1 ? "everyturn" : "newchat";
+            IndexingStatusBrief.Text = status.BriefText ?? "Index: (unknown)";
+            IndexingStatusDetail.Text = status.DetailText ?? string.Empty;
+            bool enabled = !status.IsBusy;
+            BuildIndexButton.IsEnabled = enabled;
+            ClearIndexButton.IsEnabled = enabled;
         }
 
         private void BuildIndexButton_Click(object sender, RoutedEventArgs e)
@@ -481,19 +430,9 @@ namespace SimpleLLMChatGUI
         {
             ApiKey = ApiKeyPasswordBox.Password;
             EmbeddingsApiKey = EmbeddingsApiKeyPasswordBox.Password;
-            SyncRetrieveModeFromCombo();
+            RagRetrieveMode = RagRetrieveModeComboBox.SelectedIndex == 1 ? "everyturn" : "newchat";
             SaveThemeSelection();
             SaveIni(App.ConfigFilePath);
-        }
-
-        private static int ThemeIndex(string theme)
-        {
-            for (int i = 0; i < ColorHelper.ThemeOrder.Length; i++)
-            {
-                if (ColorHelper.ThemeOrder[i] == theme)
-                    return i;
-            }
-            return 0;
         }
 
         private void SaveThemeSelection()
@@ -542,33 +481,36 @@ namespace SimpleLLMChatGUI
         {
             var sections = new List<KeyValuePair<string, List<string>>>
             {
-                new KeyValuePair<string, List<string>>("Appearance", GetAppearanceSettings()),
-                new KeyValuePair<string, List<string>>("RAG", GetRagSettings()),
-                new KeyValuePair<string, List<string>>("System", GetSystemSettings()),
+                new KeyValuePair<string, List<string>>("Appearance", new List<string>
+                {
+                    "assistantname=" + AssistantName,
+                    "codeblockfontfamily=" + CodeFontFamily,
+                    "customfontfamily=" + CustomFontFamily,
+                    "fontsize=" + ChatFontSize,
+                    "markdownparsing=" + (MarkdownParsing ? "1" : "0"),
+                    "thinkingdisplay=" + (ThinkingDisplayModeText ?? "Collapsed").ToLowerInvariant(),
+                    "toolcalldisplay=" + (ToolCallDisplayModeText ?? "Collapsed").ToLowerInvariant(),
+                    "tooloutputdisplay=" + (ToolOutputDisplayModeText ?? "Shown").ToLowerInvariant(),
+                }),
+                new KeyValuePair<string, List<string>>("RAG", new List<string>
+                {
+                    "ragenabled=" + (RagEnabled ? "1" : "0"),
+                    "ragallowedextensions=" + RagExtensionList.FormatForStorage(RagAllowedExtensions),
+                    "indexchunkoverlap=" + IndexChunkOverlap,
+                    "indexchunklines=" + IndexChunkLines,
+                    "embeddingsapikey=" + (EmbeddingsApiKey ?? string.Empty),
+                    "embeddingsendpoint=" + (EmbeddingsEndpoint ?? string.Empty),
+                    "embeddingsmodel=" + (EmbeddingsModel ?? string.Empty),
+                    "ragknowledgepath=" + (RagKnowledgePath ?? string.Empty),
+                    "ragmaxsnippetlength=" + RagMaxSnippetLength,
+                    "ragmaxresults=" + RagMaxResults,
+                    "ragretrievemode=" + (RagRetrieveMode ?? "newchat"),
+                }),
+                new KeyValuePair<string, List<string>>("System", SettingsIniWriter.GetSystemSettings(ApiKey, ServerURL, Model, SysPrompt, ContextWindowSize)),
                 new KeyValuePair<string, List<string>>("Tools", GetToolSettings()),
             };
             AddDynamicToolSettings(sections);
             SettingsIniWriter.WriteSections(path, sections);
-        }
-
-        private List<string> GetAppearanceSettings()
-        {
-            return new List<string>
-            {
-                "assistantname=" + AssistantName,
-                "codeblockfontfamily=" + CodeFontFamily,
-                "customfontfamily=" + CustomFontFamily,
-                "fontsize=" + ChatFontSize,
-                "markdownparsing=" + (MarkdownParsing ? "1" : "0"),
-                "thinkingdisplay=" + (ThinkingDisplayModeText ?? "Collapsed").ToLowerInvariant(),
-                "toolcalldisplay=" + (ToolCallDisplayModeText ?? "Collapsed").ToLowerInvariant(),
-                "tooloutputdisplay=" + (ToolOutputDisplayModeText ?? "Shown").ToLowerInvariant(),
-            };
-        }
-
-        private List<string> GetSystemSettings()
-        {
-            return SettingsIniWriter.GetSystemSettings(ApiKey, ServerURL, Model, SysPrompt, ContextWindowSize);
         }
 
         private List<string> GetToolSettings()
@@ -587,25 +529,6 @@ namespace SimpleLLMChatGUI
                     toolLines.Add("tooltimeout." + kvp.Key.ToLowerInvariant() + "=" + parsed);
             }
             return toolLines;
-        }
-
-        private List<string> GetRagSettings()
-        {
-            string allowedExt = RagExtensionList.FormatForStorage(RagAllowedExtensions);
-            return new List<string>
-            {
-                "ragenabled=" + (RagEnabled ? "1" : "0"),
-                "ragallowedextensions=" + allowedExt,
-                "indexchunkoverlap=" + IndexChunkOverlap,
-                "indexchunklines=" + IndexChunkLines,
-                "embeddingsapikey=" + (EmbeddingsApiKey ?? string.Empty),
-                "embeddingsendpoint=" + (EmbeddingsEndpoint ?? string.Empty),
-                "embeddingsmodel=" + (EmbeddingsModel ?? string.Empty),
-                "ragknowledgepath=" + (RagKnowledgePath ?? string.Empty),
-                "ragmaxsnippetlength=" + RagMaxSnippetLength,
-                "ragmaxresults=" + RagMaxResults,
-                "ragretrievemode=" + (RagRetrieveMode ?? "newchat"),
-            };
         }
 
         private void AddDynamicToolSettings(List<KeyValuePair<string, List<string>>> sections)
