@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Documents;
@@ -816,16 +817,96 @@ namespace SimpleLLMChatGUI
                     turn.Role = ChatTurnRole.User;
                     turn.RoleLabel = "You";
                     turn.AppendText(msg.Content);
+                    turn.Complete();
+                    continue;
                 }
-                else
+
+                string text = BuildHistoricText(msg);
+                if (string.IsNullOrEmpty(text))
                 {
-                    turn.RoleLabel = GetAssistantName();
-                    turn.AppendText(msg.Content);
-                    if (IsMarkdownParsingEnabled())
-                        turn.ProcessMarkdown();
+                    // Nothing visible (empty assistant message) — drop the turn.
+                    _chatTurns.Remove(turn);
+                    continue;
                 }
-                turn.Complete();
+
+                turn.RoleLabel = GetAssistantName();
+                AppendHistoricText(turn, text).Complete();
             }
+        }
+
+        /// <summary>
+        /// Appends reconstructed historic text the way streaming does: when a
+        /// collapsible block boundary is reached the remaining text continues
+        /// in a fresh turn.
+        /// </summary>
+        private ChatTurn AppendHistoricText(ChatTurn firstTurn, string text)
+        {
+            ChatTurn turn = firstTurn;
+            string remaining = text;
+            while (!string.IsNullOrEmpty(remaining))
+            {
+                string leftover = turn.AppendText(remaining);
+                if (string.IsNullOrEmpty(leftover))
+                    break;
+
+                if (IsMarkdownParsingEnabled())
+                    turn.ProcessMarkdown();
+                turn.Complete();
+                turn = AddTurn();
+                turn.RoleLabel = GetAssistantName();
+                remaining = leftover;
+            }
+
+            if (IsMarkdownParsingEnabled())
+                turn.ProcessMarkdown();
+            return turn;
+        }
+
+        /// <summary>
+        /// Rebuilds the marker text the CLI streams live for a historic message,
+        /// so saved tool calls and tool outputs render as the same collapsible
+        /// blocks the user saw in the original session.
+        /// </summary>
+        private static string BuildHistoricText(HistoricMessage msg)
+        {
+            string content = msg.Content ?? string.Empty;
+
+            if (string.Equals(msg.Role, "tool", StringComparison.OrdinalIgnoreCase))
+            {
+                if (App.Config.GetChatBlockDisplayMode("tooloutputdisplay", ChatBlockDisplayMode.Shown) == ChatBlockDisplayMode.Hidden)
+                    // Hidden shows only the exit-code stub, like the live stream.
+                    return "[tool output] " + ExtractExitCodeLine(content);
+                return "[tool output]\n" + content + "\n[/tool output]";
+            }
+
+            if (msg.ToolCalls == null || msg.ToolCalls.Count == 0)
+                return content;
+
+            bool hideArgs = App.Config.GetChatBlockDisplayMode("toolcalldisplay", ChatBlockDisplayMode.Collapsed) == ChatBlockDisplayMode.Hidden;
+            StringBuilder sb = new StringBuilder(content);
+            for (int i = 0; i < msg.ToolCalls.Count; i++)
+            {
+                HistoricToolCall call = msg.ToolCalls[i];
+                sb.Append("[tool call] ").Append(string.IsNullOrEmpty(call.Name) ? "tool" : call.Name);
+                if (!hideArgs && !string.IsNullOrEmpty(call.Arguments))
+                {
+                    sb.Append('\n').Append(call.Arguments);
+                    if (!call.Arguments.EndsWith("\n"))
+                        sb.Append('\n');
+                }
+                sb.Append("\n[/tool call]");
+            }
+            return sb.ToString();
+        }
+
+        private static string ExtractExitCodeLine(string content)
+        {
+            int start = content.IndexOf("Exit Code: ", StringComparison.Ordinal);
+            if (start < 0)
+                return string.Empty;
+
+            int end = content.IndexOf('\n', start);
+            return end < 0 ? content.Substring(start) : content.Substring(start, end - start);
         }
 
         private void AutoRestoreLastSession()
@@ -853,6 +934,13 @@ namespace SimpleLLMChatGUI
         {
             public string Role { get; set; }
             public string Content { get; set; }
+            public List<HistoricToolCall> ToolCalls { get; set; }
+        }
+
+        private sealed class HistoricToolCall
+        {
+            public string Name { get; set; }
+            public string Arguments { get; set; }
         }
 
         private void clearButton_Click(object sender, RoutedEventArgs e)
