@@ -106,6 +106,55 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("gui.reply_contains_you_prompt", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    // The reply quotes the user mid-line: only the CLI's own
+                    // blank-line-anchored "You: " prompt may end the generation.
+                    server.FixedReply = "To answer as You: phrased it, the answer is 42.";
+                    server.StreamDelayMs = 5;
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.SendTurn("answer the question", 30000);
+
+                        string text = gui.GetAllText();
+                        TestAssert.Contains(text, "as You: phrased it", "mid-line You: text stays in the reply");
+                        TestAssert.Contains(text, "the answer is 42.", "reply not truncated at the quote");
+                        TestAssert.Equal("Send", gui.SendButtonName(), "idle after the turn");
+                    }
+                }
+            });
+
+            TestRunner.Run("gui.reply_you_colon_no_space", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    // "You:" not followed by a space can never be the CLI's
+                    // prompt (it always emits "You: "); the old code held such
+                    // text back forever and never finished the turn.
+                    server.FixedReply = "The macro You:assign expands to 1.";
+                    server.StreamDelayMs = 5;
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.SendTurn("expand the macro", 30000);
+
+                        string text = gui.GetAllText();
+                        TestAssert.Contains(text, "You:assign", "non-prompt You: text shown");
+                        TestAssert.Contains(text, "expands to 1.", "reply completes");
+                        TestAssert.Equal("Send", gui.SendButtonName(), "idle after the turn");
+                    }
+                }
+            });
+
             TestRunner.Run("gui.save_load_dialogs", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

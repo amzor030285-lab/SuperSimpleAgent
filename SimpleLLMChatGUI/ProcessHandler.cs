@@ -12,6 +12,7 @@ namespace SimpleLLMChatGUI
         private Process llmProcess;
         private bool disposed;
         private StringBuilder textBuffer = new StringBuilder(); // Buffer for incomplete text
+        private bool _streamAtStart = true; // Nothing of the stream has been consumed yet.
         private Regex _promptLinePattern = BuildPromptLinePattern(AppConstants.DefaultAssistantName);
 
         public event Action<string> OutputReceived;
@@ -73,9 +74,10 @@ namespace SimpleLLMChatGUI
                 llmProcess.StartInfo.RedirectStandardInput = true;
                 llmProcess.StartInfo.CreateNoWindow = true;
                 llmProcess.StartInfo.StandardOutputEncoding = Encoding.UTF8;
-                llmProcess.StartInfo.Arguments = "--no-banners";
+                llmProcess.                StartInfo.Arguments = "--no-banners";
                 textBuffer.Clear();
                 streamBuffer.Clear();
+                _streamAtStart = true;
                 llmProcess.Start();
                 inputWriter = new StreamWriter(llmProcess.StandardInput.BaseStream, new UTF8Encoding(false));
                 inputWriter.AutoFlush = true;
@@ -352,60 +354,99 @@ namespace SimpleLLMChatGUI
             if (string.IsNullOrEmpty(textChunk))
                 return;
 
-            if (textBuffer.Length > 0)
+            textBuffer.Append(textChunk);
+            string text = textBuffer.ToString();
+            textBuffer.Clear();
+
+            // The CLI emits its end-of-turn prompt on a line of its own, so it
+            // is always preceded by a newline: "\n\nYou: " after a reply,
+            // "\nYou: " after a command line (/save, /load, ...), and at the
+            // very start of the stream. A "You: " mid-line in the reply (e.g.
+            // the model quoting the user) is chat content and must not end the
+            // generation; a "You:" without a trailing space is never the
+            // prompt. The one exception, a silent command's re-prompt (zero
+            // newlines, e.g. /reasoning), arrives only while the GUI is idle
+            // and is stripped from display by the prompt-line filter.
+            int pos = 0;
+            while (pos < text.Length)
             {
-                textBuffer.Append(textChunk);
-                textChunk = textBuffer.ToString();
-                textBuffer.Clear();
+                int youIndex = FindYouPrompt(text, pos, _streamAtStart);
+                if (youIndex < 0)
+                    break;
+
+                // Everything before the prompt is the end of the generation.
+                if (youIndex > pos)
+                    OutputText(text.Substring(pos, youIndex - pos));
+
+                // Signal that generation is complete
+                GenerationComplete?.Invoke();
+
+                // Consume the prompt itself; the stream continues mid-line
+                // (the next output is a newline, then the reply label).
+                pos = youIndex + YouPromptMarker.Length;
+                while (pos < text.Length && (text[pos] == ' ' || text[pos] == '\t'))
+                    pos++;
+                _streamAtStart = false;
             }
 
-            // For streaming, we want to output text immediately
-            // But we need to be careful about "You:" patterns
-
-            // Check if this chunk contains a "You:" pattern
-            int youIndex = textChunk.IndexOf("You:");
-            if (youIndex >= 0)
+            if (pos < text.Length)
             {
-                // Check if this "You:" is complete (followed by whitespace or newline)
-                bool isCompletePattern = false;
-                if (youIndex + 4 < textChunk.Length)
+                // Hold back a trailing partial prompt (e.g. "\nYou:") so a
+                // prompt split across reads is still seen with its anchoring
+                // newline. A "You:" not followed by a space can never be the
+                // prompt (the CLI always emits "You: "), so it is not held.
+                int holdBack = GetPartialYouPromptSuffixLength(text, pos, _streamAtStart);
+                int emitEnd = text.Length - holdBack;
+                if (emitEnd > pos)
                 {
-                    char nextChar = textChunk[youIndex + 4];
-                    isCompletePattern = char.IsWhiteSpace(nextChar) || nextChar == '\n' || nextChar == '\r';
+                    OutputText(text.Substring(pos, emitEnd - pos));
+                    _streamAtStart = false;
                 }
-                else
-                {
-                    // "You:" is at the end, so it's incomplete
-                    isCompletePattern = false;
-                }
-
-                if (isCompletePattern)
-                {
-                    // Process everything before "You:" and output it
-                    OutputText(textChunk.Substring(0, youIndex));
-
-                    // Signal that generation is complete
-                    GenerationComplete?.Invoke();
-
-                    // Don't output the "You:" pattern itself
-                    // Keep any text after "You:" for next chunk (leading whitespace trimmed)
-                    OutputText(textChunk.Substring(youIndex + 4).TrimStart(' ', '\t'));
-                }
-                else
-                {
-                    // Incomplete "You:" pattern, output everything except the last few characters
-                    int safeEndIndex = Math.Max(0, youIndex - 1);
-                    OutputText(textChunk.Substring(0, safeEndIndex));
-
-                    // Keep the incomplete pattern for next chunk
-                    textBuffer.Append(textChunk.Substring(safeEndIndex));
-                }
+                if (holdBack > 0)
+                    textBuffer.Append(text.Substring(emitEnd));
             }
-            else
+        }
+
+        /// <summary>
+        /// The CLI's end-of-turn prompt, exactly as ChatOutput writes it.
+        /// </summary>
+        private const string YouPromptMarker = "You: ";
+
+        /// <summary>
+        /// Finds the CLI's prompt: "You: " sitting at the very start of the
+        /// stream, or preceded by a newline (the prompt is always written on a
+        /// line of its own). Returns -1 when the remainder holds no such
+        /// prompt. streamAtStart is true only while no stream bytes have been
+        /// consumed.
+        /// </summary>
+        private static int FindYouPrompt(string text, int start, bool streamAtStart)
+        {
+            int from = start;
+            while (true)
             {
-                // No "You:" pattern in this chunk, output it immediately
-                OutputText(textChunk);
+                int idx = text.IndexOf(YouPromptMarker, from, StringComparison.Ordinal);
+                if (idx < 0)
+                    return -1;
+                if ((idx == 0 && streamAtStart) || (idx > 0 && text[idx - 1] == '\n'))
+                    return idx;
+                from = idx + 1;
             }
+        }
+
+        /// <summary>
+        /// Longest suffix of text[pos..length) that could still grow into the
+        /// CLI's prompt once more bytes arrive.
+        /// </summary>
+        private static int GetPartialYouPromptSuffixLength(string text, int pos, bool streamAtStart)
+        {
+            string marker = (streamAtStart && pos == 0) ? YouPromptMarker : "\n" + YouPromptMarker;
+            int maxLength = Math.Min(marker.Length - 1, text.Length - pos);
+            for (int length = maxLength; length > 0; length--)
+            {
+                if (text.EndsWith(marker.Substring(0, length), StringComparison.Ordinal))
+                    return length;
+            }
+            return 0;
         }
 
         private void OutputText(string text)
