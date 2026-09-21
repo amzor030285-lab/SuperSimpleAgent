@@ -170,6 +170,38 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("gui.markdown_crash_cases", () =>
+            {
+                // Ragged table row (Markdig pads it with an empty childless cell)
+                // and a link whose label holds an autolink (WPF forbids a
+                // Hyperlink inside a Hyperlink) — both used to crash Render.
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    server.FixedReply =
+                        "Table with a short row:\n\n" +
+                        "| Name | Value |\n" +
+                        "|:-----|------:|\n" +
+                        "| alpha |\n" +
+                        "\n" +
+                        "Nested link: [<http://inner.example>](http://outer.example)";
+                    server.StreamDelayMs = 5;
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.SendTurn("show the crash cases", 30000);
+
+                        string text = gui.GetAllText();
+                        TestAssert.Contains(text, "alpha", "ragged-row table rendered");
+                        TestAssert.True(!text.Contains(":-----"), "separator row consumed");
+                        TestAssert.Contains(text, "http://inner.example", "autolink text preserved");
+                        TestAssert.Contains(text, "http://outer.example", "outer url preserved");
+                    }
+                }
+            });
+
             TestRunner.Run("gui.markdown_lists_blockquote", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

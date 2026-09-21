@@ -635,6 +635,11 @@ namespace SimpleLLMChatGUI
         /// </summary>
         private static void AppendInlines(InlineCollection target, ContainerInline root, double baseFontSize)
         {
+            // Markdig pads ragged table rows with empty cells that carry no
+            // ParagraphBlock (CellInlines returns null for those).
+            if (root == null)
+                return;
+
             MDInline inline = root.FirstChild;
             while (inline != null)
             {
@@ -694,6 +699,22 @@ namespace SimpleLLMChatGUI
                     string alt = link.Label != null ? link.Label : string.Empty;
                     if (alt.Length > 0)
                         target.Add(new Run(alt));
+                    return;
+                }
+
+                // WPF Hyperlink cannot nest another Hyperlink (TextSchema throws on
+                // add), but Markdig allows links/autolinks inside link labels —
+                // render such links as label text plus the URL in parentheses.
+                if (HasNestedLink(link))
+                {
+                    var textBuilder = new StringBuilder();
+                    AppendPlainText(textBuilder, link);
+                    string text = textBuilder.ToString();
+                    string url = link.Url != null ? link.Url.Trim() : string.Empty;
+                    if (url.Length > 0 && !string.Equals(text, url, StringComparison.Ordinal))
+                        text = text.Length > 0 ? text + " (" + url + ")" : url;
+                    if (text.Length > 0)
+                        target.Add(new Run(text));
                     return;
                 }
 
@@ -876,6 +897,13 @@ namespace SimpleLLMChatGUI
                 return;
             }
 
+            AutolinkInline autolink = inline as AutolinkInline;
+            if (autolink != null)
+            {
+                sb.Append(autolink.Url);
+                return;
+            }
+
             ContainerInline container = inline as ContainerInline;
             if (container != null)
             {
@@ -886,6 +914,30 @@ namespace SimpleLLMChatGUI
                     child = child.NextSibling;
                 }
             }
+        }
+
+        /// <summary>
+        /// True when the subtree contains a non-image link or autolink —
+        /// inlines that would render as a WPF Hyperlink, which cannot nest.
+        /// </summary>
+        private static bool HasNestedLink(ContainerInline root)
+        {
+            MDInline child = root.FirstChild;
+            while (child != null)
+            {
+                LinkInline link = child as LinkInline;
+                if (link != null && !link.IsImage)
+                    return true;
+                if (child is AutolinkInline)
+                    return true;
+
+                ContainerInline container = child as ContainerInline;
+                if (container != null && HasNestedLink(container))
+                    return true;
+
+                child = child.NextSibling;
+            }
+            return false;
         }
 
         private static Hyperlink CreateHyperlink(string url)
