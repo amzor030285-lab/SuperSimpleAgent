@@ -231,6 +231,16 @@ public class LLMClient
                     continue;
                 }
 
+                // A model without vision support rejects any image in the payload, and
+                // the image-bearing message would then poison every later turn. Strip
+                // all images and retry once as text-only.
+                if (LooksLikeImageNotSupported(response.Content)
+                    && StripImages(conversation) > 0)
+                {
+                    ChatOutput.WriteLine("[Model does not support images - image removed and retrying]");
+                    continue;
+                }
+
                 if (!outputOnly)
                     ChatOutput.StartBlock();
                 ChatOutput.WriteLine("Request to LLM Failed (" + response.Content + ")");
@@ -464,6 +474,7 @@ public class LLMClient
             message.Content = head
                 + "\n[... " + omitted + " characters omitted: message exceeded the " + budget + " character budget ...]\n"
                 + tail;
+            conversation[i] = message;
             capped++;
         }
         return capped;
@@ -487,6 +498,42 @@ public class LLMClient
             || text.Contains("maximum")
             || text.Contains("length");
         return isHttpError && overflowHint;
+    }
+
+    /// <summary>
+    /// True when a request-failure error text indicates the server rejected the
+    /// prompt because the model cannot accept image input (500 with an
+    /// "image input is not supported" style message).
+    /// </summary>
+    private static bool LooksLikeImageNotSupported(string errorText)
+    {
+        if (string.IsNullOrEmpty(errorText))
+            return false;
+
+        string text = errorText.ToLowerInvariant();
+        return text.Contains("image input is not supported")
+            || text.Contains("image is not supported")
+            || text.Contains("does not support images");
+    }
+
+    /// <summary>
+    /// Clears image attachments from every conversation message so the next
+    /// request goes out text-only. Returns the number of images removed.
+    /// </summary>
+    private static int StripImages(List<ChatMessage> conversation)
+    {
+        int removed = 0;
+        for (int i = 0; i < conversation.Count; i++)
+        {
+            ChatMessage message = conversation[i];
+            if (string.IsNullOrEmpty(message.Image))
+                continue;
+            message.Image = null;
+            message.ImageMime = null;
+            conversation[i] = message;
+            removed++;
+        }
+        return removed;
     }
 
     /// <summary>

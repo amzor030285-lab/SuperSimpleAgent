@@ -180,6 +180,47 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.image_not_supported_recovery", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.FixedReply = "Hello there.";
+                    server.StreamDelayMs = 5;
+                    server.RejectImageRequests = true;
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    // Minimal 1x1 PNG so /image has a real file to encode.
+                    byte[] png = Convert.FromBase64String(
+                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcS3AAAADUlEQVR4" +
+                        "nGNgYGD4DwABHQAf" +
+                        "aKT/3QAAAABJRU5ErkJggg==");
+                    File.WriteAllBytes(Path.Combine(ws.Path, "tiny.png"), png);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("/image \"tiny.png\" describe this");
+
+                        // The first attempt carries the image and is rejected.
+                        CliRunner.WaitForText(
+                            cli, "[Model does not support images - image removed and retrying]", 30000);
+
+                        // The retry goes out text-only and succeeds.
+                        CliRunner.WaitForTextAfter(
+                            cli, "[Model does not support images - image removed and retrying]",
+                            "Hello there.", 30000);
+                        CliRunner.WaitForTextAfter(cli, "Hello there.", "You: ", 15000);
+
+                        // The conversation is no longer poisoned: a plain text turn works.
+                        cli.WriteLine("next question");
+                        CliRunner.WaitForTextAfter(cli, "You: ", "Hello there.", 30000);
+                    }
+                }
+            });
+
             TestRunner.Run("cli.session_save_load", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

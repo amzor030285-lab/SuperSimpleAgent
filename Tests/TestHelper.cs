@@ -830,6 +830,12 @@ public sealed class FakeOpenAiServer : IDisposable
     public int FailChatRequestAtTurn { get; set; }
 
     /// <summary>
+    /// When true, chat requests whose payload contains an image are rejected with
+    /// the 500 a vision-less model returns ("image input is not supported").
+    /// </summary>
+    public bool RejectImageRequests { get; set; }
+
+    /// <summary>
     /// When > 0, the first chat request sends headers + one SSE chunk, flushes, then
     /// stalls (keeps the connection open, sends nothing) for this many milliseconds —
     /// simulating a frozen model mid-generation.
@@ -936,6 +942,14 @@ public sealed class FakeOpenAiServer : IDisposable
     private void WriteSseChat(HttpListenerContext ctx)
     {
         _turn++;
+
+        if (RejectImageRequests &&
+            LastBody.IndexOf("image_url", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            WriteJson(ctx, 500,
+                "{\"error\":{\"code\":500,\"message\":\"image input is not supported - hint: if this is unexpected, you may need to provide the mmproj\",\"type\":\"server_error\"}}");
+            return;
+        }
 
         if (FailChatRequestAtTurn > 0 && _turn == FailChatRequestAtTurn)
         {
