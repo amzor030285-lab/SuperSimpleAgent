@@ -72,6 +72,7 @@ namespace SimpleLLMChatGUI
                 llmProcess.StartInfo.RedirectStandardOutput = true;
                 llmProcess.StartInfo.RedirectStandardInput = true;
                 llmProcess.StartInfo.CreateNoWindow = true;
+                llmProcess.StartInfo.StandardOutputEncoding = Encoding.UTF8;
                 llmProcess.StartInfo.Arguments = "--no-banners";
                 textBuffer.Clear();
                 streamBuffer.Clear();
