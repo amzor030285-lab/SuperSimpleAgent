@@ -1520,7 +1520,7 @@ public class LLMClient
             // Try curl fallback for HTTPS connection errors
             string serverUrl = config.GetConfigValue("llmserver") ?? "";
             if (CurlClient.CanFallback(serverUrl, ex))
-                return CurlClient.SendRequest(serverUrl, config.GetConfigValue("apikey"), payload, outputCallback, onReasoningChunk, onReasoningSummary, toolCallCallback, onContentStart, startBlock);
+                return CurlClient.SendRequest(serverUrl, config.GetConfigValue("apikey"), payload, outputCallback, onReasoningChunk, onReasoningSummary, requestTimeoutMs / 1000, stallSeconds, toolCallCallback, onContentStart, startBlock);
 
             return new LLMCompletionResponse(reason, null, "request_failed");
         }
@@ -1572,8 +1572,9 @@ public class LLMClient
 
     /// <summary>
     /// Thread-safe last-activity timestamp fed by the stream stall watchdog.
+    /// Also used by the curl fallback (CurlClient).
     /// </summary>
-    private sealed class StreamActivity
+    internal sealed class StreamActivity
     {
         private long _lastTicks;
 
@@ -1595,8 +1596,9 @@ public class LLMClient
 
     /// <summary>
     /// TextReader that reports every byte read to the stall watchdog.
+    /// Also used by the curl fallback (CurlClient).
     /// </summary>
-    private sealed class ActivityReader : TextReader
+    internal sealed class ActivityReader : TextReader
     {
         private readonly TextReader _inner;
         private readonly StreamActivity _activity;

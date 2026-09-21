@@ -4,7 +4,9 @@ using SimpleLLMChatCLI.RAG;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 
 namespace SimpleLLMChatCLI.Tests
 {
@@ -12,6 +14,11 @@ namespace SimpleLLMChatCLI.Tests
     {
         static int Main(string[] args)
         {
+            // The suite EXE doubles as a fake curl.exe for the curl-fallback tests
+            // (it is copied to curl.exe next to the CLI under test). The mode env
+            // var selects it: the CLI launches curl with its own fixed arguments.
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("FAKE_CURL_MODE")))
+                return FakeCurlMain(args);
             return SuiteMain.Run("SimpleLLMChatCLI", args, Run);
         }
 
@@ -364,6 +371,104 @@ namespace SimpleLLMChatCLI.Tests
                         cli.WriteLine("hello");
                         CliRunner.WaitForText(cli, "no-space SSE works", 15000);
                         CliRunner.WaitForText(cli, "You:", 15000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.curl_fallback_ok", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // llmserver is an https:// URL pointed at a plain HTTP server: the
+                    // .NET 4.0 client fails the TLS handshake, so the CLI must take
+                    // the curl fallback. The bundled "curl.exe" is this test EXE in
+                    // --fake-curl mode answering with a short SSE stream.
+                    File.Copy(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                        "SimpleLLMChatCLI.Tests.exe"), Path.Combine(ws.Path, "curl.exe"), true);
+                    string httpsUrl = server.BaseUrl.Replace("http://", "https://");
+                    WriteCliIni(ws.Path, httpsUrl);
+
+                    Environment.SetEnvironmentVariable("FAKE_CURL_MODE", "ok");
+                    try
+                    {
+                        string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                        using (CliRunner cli = new CliRunner(exe, ws.Path))
+                        {
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                            cli.WriteLine("hello");
+                            CliRunner.WaitForText(cli, "curl works", 20000);
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                        }
+                    }
+                    finally
+                    {
+                        Environment.SetEnvironmentVariable("FAKE_CURL_MODE", null);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.curl_fallback_stall", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The fake curl never produces stream data; the 2 s stall watchdog
+                    // must kill it instead of hanging the CLI forever (curl has no
+                    // idle timeout of its own for streaming).
+                    File.Copy(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                        "SimpleLLMChatCLI.Tests.exe"), Path.Combine(ws.Path, "curl.exe"), true);
+                    string httpsUrl = server.BaseUrl.Replace("http://", "https://");
+                    WriteCliIni(ws.Path, httpsUrl, streamStallTimeout: 2);
+
+                    Environment.SetEnvironmentVariable("FAKE_CURL_MODE", "hang");
+                    try
+                    {
+                        string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                        using (CliRunner cli = new CliRunner(exe, ws.Path))
+                        {
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                            cli.WriteLine("hello");
+                            CliRunner.WaitForText(cli, "Request to LLM Failed", 30000);
+                            TestAssert.Contains(cli.Stdout, "model stalled", "stall reason printed");
+                            CliRunner.WaitForText(cli, "You:", 30000);
+                        }
+                    }
+                    finally
+                    {
+                        Environment.SetEnvironmentVariable("FAKE_CURL_MODE", null);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.curl_fallback_connect_timeout", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The fake curl simulates curl(1) honoring --connect-timeout (exit 28)
+                    // only when the flag is present, proving the CLI passes it.
+                    File.Copy(Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                        "SimpleLLMChatCLI.Tests.exe"), Path.Combine(ws.Path, "curl.exe"), true);
+                    string httpsUrl = server.BaseUrl.Replace("http://", "https://");
+                    WriteCliIni(ws.Path, httpsUrl, requestTimeout: 2);
+
+                    Environment.SetEnvironmentVariable("FAKE_CURL_MODE", "hang-connect");
+                    try
+                    {
+                        string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                        using (CliRunner cli = new CliRunner(exe, ws.Path))
+                        {
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                            cli.WriteLine("hello");
+                            CliRunner.WaitForText(cli, "Request to LLM Failed", 30000);
+                            TestAssert.Contains(cli.Stdout, "cURL failed (exit 28)", "connect timeout surfaced");
+                            CliRunner.WaitForText(cli, "You:", 30000);
+                        }
+                    }
+                    finally
+                    {
+                        Environment.SetEnvironmentVariable("FAKE_CURL_MODE", null);
                     }
                 }
             });
@@ -944,6 +1049,76 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
         }
+
+        /// <summary>
+        /// Fake curl.exe for the curl-fallback tests. Behavior is selected by the
+        /// FAKE_CURL_MODE env var:
+        ///   "ok"           - read the request from the named pipe, emit a short SSE reply
+        ///   "hang"         - never connect/respond (simulates a frozen server)
+        ///   "hang-connect" - behave like curl hitting --connect-timeout (exit 28) only
+        ///                    when the flag is actually present in the arguments
+        /// </summary>
+        static int FakeCurlMain(string[] args)
+        {
+            string mode = Environment.GetEnvironmentVariable("FAKE_CURL_MODE");
+            if (mode == null) mode = "";
+            bool hasConnectTimeout = false;
+            string pipeName = null;
+
+            for (int i = 1; i < args.Length; i++)
+            {
+                string a = args[i];
+                if (a == "--connect-timeout")
+                    hasConnectTimeout = true;
+                int pipeIdx = a.IndexOf("\\pipe\\", StringComparison.OrdinalIgnoreCase);
+                if (pipeIdx >= 0)
+                {
+                    pipeName = a.Substring(pipeIdx + 6).Trim('"');
+                }
+            }
+
+            if (mode == "hang-connect" && hasConnectTimeout)
+                return 28; // curl(1)'s timeout exit code
+
+            if (mode == "hang")
+            {
+                Thread.Sleep(60000);
+                return 0;
+            }
+
+            if (pipeName != null)
+            {
+                // curl(1) opens the \\.\pipe\<name> body pipe directly. .NET's
+                // FileStream rejects device paths, so open it via CreateFile.
+                IntPtr handle = CreateFile("\\\\.\\pipe\\" + pipeName,
+                    0x80000000 /*GENERIC_READ*/, 3 /*share r/w*/, IntPtr.Zero,
+                    3 /*OPEN_EXISTING*/, 0x80 /*NORMAL*/, IntPtr.Zero);
+                if (handle != IntPtr.Zero)
+                {
+                    byte[] buf = new byte[65536];
+                    int n;
+                    while (ReadFile(handle, buf, (uint)buf.Length, out n, IntPtr.Zero) && n > 0) { }
+                    CloseHandle(handle);
+                }
+            }
+
+            string evt = "data: {\"choices\":[{\"delta\":{\"content\":\"curl works\"}}]}\n\n"
+                + "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n"
+                + "data: [DONE]\n\n";
+            Console.Write(evt);
+            Console.Out.Flush();
+            return 0;
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern IntPtr CreateFile(string name, uint access, uint share, IntPtr secAttrs,
+            uint disposition, uint flags, IntPtr template);
+
+        [DllImport("kernel32.dll")]
+        static extern bool ReadFile(IntPtr handle, byte[] buffer, uint count, out int read, IntPtr overlapped);
+
+        [DllImport("kernel32.dll")]
+        static extern bool CloseHandle(IntPtr handle);
 
         static bool HasConfigKey(JObject cfgObj, string name)
         {

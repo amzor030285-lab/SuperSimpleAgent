@@ -2,6 +2,7 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.IO.Pipes;
 using System.Text;
 using System.Threading;
@@ -22,20 +23,31 @@ namespace SimpleLLMChatCLI
 
         /// <summary>
         /// Non-streaming JSON POST. Used for embeddings (and similar one-shot APIs).
+        /// <paramref name="timeoutSeconds"/> caps both the connect phase
+        /// (--connect-timeout) and the whole request (--max-time); a dead server
+        /// must not hang the caller forever.
         /// </summary>
-        public static string PostJson(string fullUrl, string apiKey, JObject payload, out int exitCode)
+        public static string PostJson(string fullUrl, string apiKey, JObject payload,
+            int timeoutSeconds, out int exitCode)
         {
             exitCode = -1;
             try
             {
                 string output = null;
                 string error = null;
-                exitCode = RunPost(fullUrl, apiKey, payload, noBuffer: false, process =>
-                {
-                    Thread errThread = StartStderrReader(process, text => error = text);
-                    output = process.StandardOutput.ReadToEnd();
-                    errThread.Join(5000);
-                });
+                Outcome outcome = RunPost(fullUrl, apiKey, payload,
+                    noBuffer: false,
+                    connectTimeoutSeconds: timeoutSeconds,
+                    maxTimeSeconds: timeoutSeconds,
+                    stallSeconds: 0,
+                    activity: null,
+                    process =>
+                    {
+                        Thread errThread = StartStderrReader(process, text => error = text);
+                        output = process.StandardOutput.ReadToEnd();
+                        errThread.Join(5000);
+                    });
+                exitCode = outcome.ExitCode;
 
                 if (exitCode != 0 && string.IsNullOrEmpty(output))
                     return "cURL failed (exit " + exitCode + "): " + error;
@@ -50,12 +62,16 @@ namespace SimpleLLMChatCLI
 
         /// <summary>
         /// Streaming chat-completions POST. Parses SSE from curl stdout.
+        /// <paramref name="connectTimeoutSeconds"/> caps the connect phase; a stream
+        /// silent for longer than <paramref name="stallSeconds"/> kills curl, just
+        /// like the stall watchdog on the direct HTTP path (0 disables it).
         /// </summary>
         public static LLMClient.LLMCompletionResponse SendRequest(
             string serverUrl, string apiKey, JObject payload,
             Action<string> outputCallback,
             Action<string> onReasoningChunk,
             Action<int> onReasoningSummary,
+            int connectTimeoutSeconds, int stallSeconds,
             Action<ToolRegistry.ToolCall> onToolCallChunk = null,
             Action onContentStart = null,
             Action startBlock = null)
@@ -67,20 +83,38 @@ namespace SimpleLLMChatCLI
                     string.Empty, null, string.Empty);
                 string stderr = null;
                 bool parsed = false;
-                int exitCode = RunPost(url, apiKey, payload, noBuffer: true, process =>
-                {
-                    Thread errThread = StartStderrReader(process, text => stderr = text);
-                    result = SseStreamParser.Parse(
-                        process.StandardOutput, outputCallback, onReasoningChunk, onReasoningSummary,
-                        onToolCallChunk, onContentStart, startBlock);
-                    parsed = true;
-                    errThread.Join(5000);
-                });
+                LLMClient.StreamActivity activity = new LLMClient.StreamActivity();
+                Outcome outcome = RunPost(url, apiKey, payload,
+                    noBuffer: true,
+                    connectTimeoutSeconds: connectTimeoutSeconds,
+                    maxTimeSeconds: 0,
+                    stallSeconds: stallSeconds,
+                    activity: activity,
+                    process =>
+                    {
+                        Thread errThread = StartStderrReader(process, text => stderr = text);
+                        result = SseStreamParser.Parse(
+                            new LLMClient.ActivityReader(process.StandardOutput, activity),
+                            outputCallback, onReasoningChunk, onReasoningSummary,
+                            onToolCallChunk, onContentStart, startBlock);
+                        parsed = true;
+                        errThread.Join(5000);
+                    });
 
-                if (exitCode != 0)
+                // A stop clicked while the curl stream was in flight: same result as
+                // aborting the direct HTTP request.
+                if (outcome.AbortKilled)
+                    return new LLMClient.LLMCompletionResponse("generation_aborted", null, "aborted");
+
+                if (outcome.StallKilled)
+                    return new LLMClient.LLMCompletionResponse(
+                        "no stream data for " + stallSeconds + " s (model stalled, request aborted)",
+                        null, "request_failed");
+
+                if (outcome.ExitCode != 0)
                 {
                     return new LLMClient.LLMCompletionResponse(
-                        "cURL failed (exit " + exitCode + "): " + stderr,
+                        "cURL failed (exit " + outcome.ExitCode + "): " + stderr,
                         null, "request_failed");
                 }
 
@@ -102,6 +136,13 @@ namespace SimpleLLMChatCLI
             }
         }
 
+        private struct Outcome
+        {
+            public int ExitCode;
+            public bool StallKilled;
+            public bool AbortKilled;
+        }
+
         private static Thread StartStderrReader(Process process, Action<string> onComplete)
         {
             Thread errThread = new Thread(() =>
@@ -119,10 +160,20 @@ namespace SimpleLLMChatCLI
 
         /// <summary>
         /// Shared pipe + process setup. <paramref name="consume"/> reads stdout while curl runs;
-        /// the pipe writer is joined and the process waited on afterward. Returns exit code.
+        /// the pipe writer is joined and the process waited on afterward. Returns exit code
+        /// plus why the process was killed, if the watchdog did it.
         /// </summary>
-        private static int RunPost(string fullUrl, string apiKey, JObject payload, bool noBuffer, Action<Process> consume)
+        private static Outcome RunPost(string fullUrl, string apiKey, JObject payload,
+            bool noBuffer, int connectTimeoutSeconds, int maxTimeSeconds, int stallSeconds,
+            LLMClient.StreamActivity activity, Action<Process> consume)
         {
+            Outcome outcome = new Outcome
+            {
+                ExitCode = -1,
+                StallKilled = false,
+                AbortKilled = false
+            };
+
             string pipeName = "llmcurl_" + Guid.NewGuid().ToString("N");
             byte[] jsonBytes = Encoding.UTF8.GetBytes(payload.ToString(Formatting.None));
 
@@ -132,6 +183,8 @@ namespace SimpleLLMChatCLI
                 string args = "-s"
                     + (noBuffer ? " -N" : "")
                     + TlsCurlFallback.CacertFlag()
+                    + (connectTimeoutSeconds > 0 ? " --connect-timeout " + connectTimeoutSeconds : "")
+                    + (maxTimeSeconds > 0 ? " --max-time " + maxTimeSeconds : "")
                     + " -X POST"
                     + " -H \"Content-Type: application/json\""
                     + (string.IsNullOrEmpty(apiKey) ? "" : " -H \"Authorization: Bearer " + apiKey + "\"")
@@ -166,11 +219,60 @@ namespace SimpleLLMChatCLI
                     pipeThread.IsBackground = true;
                     pipeThread.Start();
 
-                    consume(process);
+                    int finished = 0;
+                    int killKind = 0; // 1 = stall, 2 = user abort
+
+                    if (stallSeconds > 0 && activity != null)
+                    {
+                        // Watchdog: kill curl if the stream goes silent for longer than
+                        // stallSeconds, or as soon as a stop is requested. Without this,
+                        // a blackholed or frozen server blocks this thread forever
+                        // (curl itself has no idle timeout for streaming).
+                        Thread stallWatchdog = new Thread(delegate ()
+                        {
+                            try
+                            {
+                                while (finished == 0)
+                                {
+                                    if (AbortSupport.AbortRequested)
+                                    {
+                                        if (Interlocked.Exchange(ref killKind, 2) == 0)
+                                        {
+                                            try { process.Kill(); } catch { }
+                                        }
+                                        return;
+                                    }
+                                    if (activity.Idle() > TimeSpan.FromSeconds(stallSeconds))
+                                    {
+                                        if (Interlocked.Exchange(ref killKind, 1) == 0)
+                                        {
+                                            try { process.Kill(); } catch { }
+                                        }
+                                        return;
+                                    }
+                                    Thread.Sleep(250);
+                                }
+                            }
+                            catch { }
+                        }) { IsBackground = true };
+                        stallWatchdog.Start();
+                    }
+
+                    try
+                    {
+                        consume(process);
+                    }
+                    finally
+                    {
+                        Interlocked.Exchange(ref finished, 1);
+                    }
 
                     pipeThread.Join(5000);
                     process.WaitForExit();
-                    return process.ExitCode;
+                    outcome.ExitCode = process.ExitCode;
+                    if (killKind == 1) outcome.StallKilled = true;
+                    if (killKind == 2) outcome.AbortKilled = true;
+                    return outcome;
                 }
             }
         }

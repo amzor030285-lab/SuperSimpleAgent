@@ -159,7 +159,8 @@ namespace SimpleLLMChatCLI.RAG
                 if (CurlClient.CanFallback(url, ex))
                 {
                     int exitCode;
-                    string body = CurlClient.PostJson(url, _apiKey, payload, out exitCode);
+                    // Same 120 s cap as the direct request above.
+                    string body = CurlClient.PostJson(url, _apiKey, payload, 120, out exitCode);
                     if (exitCode == 0 && !string.IsNullOrEmpty(body))
                         return body;
                     error = "Embeddings request failed (curl): " + (body ?? ex.Message);
