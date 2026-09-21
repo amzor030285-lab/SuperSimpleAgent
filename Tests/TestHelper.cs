@@ -865,6 +865,17 @@ public sealed class FakeOpenAiServer : IDisposable
     /// <summary>Tokens-per-char ratio used when <see cref="IncludeUsagePromptTokens"/> is on.</summary>
     public double UsageTokenRatio { get; set; }
 
+    /// <summary>
+    /// When true, SSE events are written as "data:..." without the space after the
+    /// colon — the space is optional per the SSE spec and some servers omit it.
+    /// </summary>
+    public bool DataPrefixNoSpace { get; set; }
+
+    private string DataPrefix
+    {
+        get { return DataPrefixNoSpace ? "data:" : "data: "; }
+    }
+
     private int _toolCallSeq;
 
     public FakeOpenAiServer()
@@ -1048,7 +1059,7 @@ public sealed class FakeOpenAiServer : IDisposable
 
                 int len = Math.Min(chunkChars, content.Length - i);
                 string piece = content.Substring(i, len);
-                string evt = "data: {\"choices\":[{\"delta\":{\"content\":\"" +
+                string evt = DataPrefix + "{\"choices\":[{\"delta\":{\"content\":\"" +
                     EscapeJson(piece) + "\"}}]}\n\n";
                 byte[] bytes = Encoding.UTF8.GetBytes(evt);
                 output.Write(bytes, 0, bytes.Length);
@@ -1058,12 +1069,12 @@ public sealed class FakeOpenAiServer : IDisposable
             }
 
             byte[] trail = Encoding.UTF8.GetBytes(
-                "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
+                DataPrefix + "{\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n" +
                 (IncludeUsagePromptTokens
-                    ? "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":" + ComputePromptTokens(LastBody) +
+                    ? DataPrefix + "{\"choices\":[],\"usage\":{\"prompt_tokens\":" + ComputePromptTokens(LastBody) +
                       ",\"completion_tokens\":0,\"total_tokens\":0}}\n\n"
                     : "") +
-                "data: [DONE]\n\n");
+                DataPrefix + "[DONE]\n\n");
             output.Write(trail, 0, trail.Length);
             output.Flush();
         }

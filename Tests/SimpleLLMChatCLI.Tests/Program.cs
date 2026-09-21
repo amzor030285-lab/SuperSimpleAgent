@@ -345,6 +345,29 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.sse_data_no_space", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The space after "data:" is optional per the SSE spec; some
+                    // servers/proxies omit it and the parser must accept both.
+                    server.FixedReply = "no-space SSE works";
+                    server.DataPrefixNoSpace = true;
+                    server.StreamDelayMs = 5;
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForText(cli, "no-space SSE works", 15000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                    }
+                }
+            });
+
             TestRunner.Run("cli.context_high_auto_truncate", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

@@ -35,9 +35,11 @@ namespace SimpleLLMChatCLI
             string line;
             while ((line = reader.ReadLine()) != null)
             {
-                if (!line.StartsWith("data: ")) continue;
+                // SSE spec: "data" field, optionally followed by ONE space. Some
+                // servers/proxies omit it, so accept both forms.
+                if (!line.StartsWith("data:")) continue;
 
-                string jsonPart = line.Substring(6);
+                string jsonPart = line.Substring(5).TrimStart(' ');
                 if (jsonPart == "[DONE]") break;
 
                 if (jsonPart.Contains("\"error\""))
