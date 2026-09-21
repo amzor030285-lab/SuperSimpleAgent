@@ -725,6 +725,73 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.lastsession_save_capped", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // A pre-cap-era lastsession: 100 messages of ~19000 chars each
+                    // (~2 MB), far over the 1 MB cap.
+                    StringBuilder sb = new StringBuilder();
+                    sb.Append("{\"Version\":1,\"SavedAtUtc\":\"2026-01-01T00:00:00Z\",\"Messages\":[");
+                    for (int i = 0; i < 100; i++)
+                    {
+                        if (i > 0)
+                            sb.Append(',');
+                        string content = i == 0 ? "OLD_MARKER_FIRST_MESSAGE" : new string('a', 19000);
+                        sb.Append("{\"Role\":\"user\",\"Content\":\"" + content
+                            + "\",\"ToolCallId\":\"\",\"ToolCalls\":[]}");
+                    }
+                    sb.Append("]}");
+                    string sessionsDir = Path.Combine(ws.Path, "sessions");
+                    Directory.CreateDirectory(sessionsDir);
+                    File.WriteAllText(Path.Combine(sessionsDir, "lastsession.json"), sb.ToString(), Encoding.UTF8);
+
+                    server.StreamDelayMs = 5;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    string file = Path.Combine(sessionsDir, "lastsession.json");
+                    long size = 0;
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "-- restored lastsession: 100 messages --", 20000);
+
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+                        // The re-prompt after the reply proves the loop finished the
+                        // iteration (the lastsession mirror runs at its end).
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 15000);
+
+                        // The auto-save after the turn must have capped the mirror.
+                        TestAssert.True(File.Exists(file), "lastsession.json exists after the turn");
+                        size = new FileInfo(file).Length;
+                        TestAssert.True(size <= SessionStore.MaxLastSessionBytes,
+                            "lastsession.json is within the cap: " + size + " <= "
+                            + SessionStore.MaxLastSessionBytes + "\nCLI stderr:\n" + cli.Stderr);
+                    }
+
+                    List<JObject> messages = null;
+                    TestAssert.True(SessionStore.Load(sessionsDir, "lastsession", out messages),
+                        "capped lastsession.json still parses");
+                    TestAssert.True(messages.Count < 102,
+                        "oldest messages were dropped: " + messages.Count + " < 102");
+                    TestAssert.True(messages.Count >= 2, "newest messages kept: " + messages.Count);
+                    TestAssert.Equal(server.FixedReply, (string)messages[messages.Count - 1]["Content"],
+                        "last message is the new reply");
+                    TestAssert.Equal("hello", (string)messages[messages.Count - 2]["Content"],
+                        "second-to-last is the new user turn");
+                    bool oldGone = true;
+                    for (int i = 0; i < messages.Count; i++)
+                    {
+                        string content = (string)messages[i]["Content"];
+                        if (content != null && content.IndexOf("OLD_MARKER_FIRST_MESSAGE") >= 0)
+                            oldGone = false;
+                    }
+                    TestAssert.True(oldGone, "the oldest (marker) message was dropped");
+                }
+            });
+
             TestRunner.Run("cli.compaction_micro_command", () =>
             {
                 string fileToolsDir = Path.GetFullPath(Path.Combine(

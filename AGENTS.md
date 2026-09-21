@@ -28,7 +28,7 @@ Optionally pass a suite name to run only that suite in step 3:
 
 ## Tests
 - Suites (filter name for `run-tests.bat [Suite]`): FileTools, MemoryTools, SkillTools, ShellTools, PythonTools, WebTools, DesktopTools, SimpleLLMChatCLI, SimpleLLMChatGUI.
-- GUI suite takes ~4 min; a `SLOW` verdict on `gui.window_and_long_chat` is normal and still passes. CLI suite has 30 tests. `cli.curl_fallback_stall` and `cli.curl_fallback_connect_timeout` are inherently `SLOW` (they wait out the stall/connect timeouts) and still pass.
+- GUI suite takes ~4 min; a `SLOW` verdict on `gui.window_and_long_chat` is normal and still passes. CLI suite has 31 tests. `cli.curl_fallback_stall` and `cli.curl_fallback_connect_timeout` are inherently `SLOW` (they wait out the stall/connect timeouts) and still pass.
 - Logs: `Tests\logs\<runid>\`.
 - One known transient failure: `gui.code_block_copy` can fail with `CLIPBRD_E_CANT_OPEN` if another process holds the clipboard; a re-run passes.
 

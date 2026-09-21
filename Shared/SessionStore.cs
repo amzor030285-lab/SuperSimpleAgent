@@ -15,6 +15,14 @@ public static class SessionStore
 {
     public const int CurrentVersion = 1;
 
+    /// <summary>
+    /// Hard size limit for the auto-mirrored "lastsession" file. Long chats would
+    /// otherwise grow it without bound (each auto-save re-serializes the whole
+    /// conversation), which is expensive to write and read on constrained
+    /// 32-bit machines.
+    /// </summary>
+    public const long MaxLastSessionBytes = 1048576;
+
     /// <summary>Marker prefix carried on the synthetic summary user message after compaction.</summary>
     public const string SummaryMarker = "[Previous conversation summary]";
 
@@ -71,28 +79,10 @@ public static class SessionStore
             string safe = SanitizeName(name);
             fullPath = Path.Combine(dir, safe + ".json");
 
-            // Keep the file's leading SavedAtUtc stable across auto-saves so the
-            // header line does not churn on every write; LastSavedAtUtc tracks the
-            // most recent write for sorting and display.
-            DateTime savedAtUtc = DateTime.UtcNow;
-            try
-            {
-                if (File.Exists(fullPath))
-                {
-                    Envelope<T> previous = JsonConvert.DeserializeObject<Envelope<T>>(
-                        File.ReadAllText(fullPath, Encoding.UTF8));
-                    if (previous != null && previous.SavedAtUtc != DateTime.MinValue)
-                        savedAtUtc = previous.SavedAtUtc;
-                }
-            }
-            catch
-            {
-            }
-
             Envelope<T> envelope = new Envelope<T>
             {
                 Version = CurrentVersion,
-                SavedAtUtc = savedAtUtc,
+                SavedAtUtc = StableSavedAtUtc<T>(fullPath),
                 LastSavedAtUtc = DateTime.UtcNow,
                 Messages = messages ?? new List<T>()
             };
@@ -103,6 +93,101 @@ public static class SessionStore
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Saves like <see cref="Save"/>, but keeps the file within
+    /// <paramref name="maxBytes"/>: when the full conversation does not fit, the
+    /// oldest messages are dropped (the newest tail is kept, which is what matters
+    /// for continuity). Used for the auto-mirrored "lastsession" file.
+    /// </summary>
+    public static bool SaveCapped<T>(string dir, string name, List<T> messages, long maxBytes, out string fullPath)
+    {
+        fullPath = null;
+        try
+        {
+            Directory.CreateDirectory(dir);
+            string safe = SanitizeName(name);
+            fullPath = Path.Combine(dir, safe + ".json");
+
+            DateTime savedAtUtc = StableSavedAtUtc<T>(fullPath);
+
+            int count = messages != null ? messages.Count : 0;
+
+            // Serialize each message once so the oldest can be dropped without
+            // re-serializing the whole conversation on every step.
+            string[] fragments = new string[count];
+            for (int i = 0; i < count; i++)
+                fragments[i] = JsonConvert.SerializeObject(messages[i]);
+
+            // Envelope overhead with an empty message list (compact format); the
+            // final file is exactly this plus the kept fragments and commas.
+            Envelope<T> probe = new Envelope<T>
+            {
+                Version = CurrentVersion,
+                SavedAtUtc = savedAtUtc,
+                LastSavedAtUtc = DateTime.UtcNow,
+                Messages = new List<T>()
+            };
+            long budget = maxBytes
+                - Encoding.UTF8.GetByteCount(JsonConvert.SerializeObject(probe, Formatting.None));
+
+            // Keep the longest suffix (newest messages) that fits the budget.
+            int start = count;
+            long used = 0;
+            for (int i = count - 1; i >= 0; i--)
+            {
+                long add = Encoding.UTF8.GetByteCount(fragments[i]);
+                if (i < count - 1)
+                    add++; // separating comma
+                if (start < count && used + add > budget)
+                    break;
+                used += add;
+                start = i;
+            }
+
+            List<T> kept = new List<T>(count - start);
+            for (int i = start; i < count; i++)
+                kept.Add(messages[i]);
+
+            Envelope<T> envelope = new Envelope<T>
+            {
+                Version = CurrentVersion,
+                SavedAtUtc = savedAtUtc,
+                LastSavedAtUtc = DateTime.UtcNow,
+                Messages = kept
+            };
+            File.WriteAllText(fullPath, JsonConvert.SerializeObject(envelope, Formatting.None), Encoding.UTF8);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The SavedAtUtc of an existing file, or now. Keeping the leading
+    /// SavedAtUtc stable across auto-saves stops the header line from churning
+    /// on every write; LastSavedAtUtc tracks the most recent write.
+    /// </summary>
+    private static DateTime StableSavedAtUtc<T>(string fullPath)
+    {
+        DateTime savedAtUtc = DateTime.UtcNow;
+        try
+        {
+            if (File.Exists(fullPath))
+            {
+                Envelope<T> previous = JsonConvert.DeserializeObject<Envelope<T>>(
+                    File.ReadAllText(fullPath, Encoding.UTF8));
+                if (previous != null && previous.SavedAtUtc != DateTime.MinValue)
+                    savedAtUtc = previous.SavedAtUtc;
+            }
+        }
+        catch
+        {
+        }
+        return savedAtUtc;
     }
 
     public static bool Load<T>(string dir, string name, out List<T> messages)

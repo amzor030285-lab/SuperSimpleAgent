@@ -537,8 +537,11 @@ namespace SimpleLLMChatCLI
                 // Keep the last session always available: after every completed turn
                 // the current conversation is mirrored into a reserved "lastsession"
                 // file so closing the app / starting a new chat never loses it.
+                // The mirror is size-capped (oldest messages dropped first) so the
+                // file cannot grow without bound in long chats.
                 if (conversation != null && conversation.Count > 0)
-                    SessionStore.Save(sessionsDir, "lastsession", conversation, out _);
+                    SessionStore.SaveCapped(sessionsDir, "lastsession", conversation,
+                        SessionStore.MaxLastSessionBytes, out _);
             }
         }
     }
