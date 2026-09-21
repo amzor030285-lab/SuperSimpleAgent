@@ -9,7 +9,7 @@ if not defined MSBUILD (echo ERROR: MSBuild not found. & exit /b 1)
 
 :: Build solution
 echo Building solution ...
-"%MSBUILD%" "%ROOT%SimpleLLMChat.sln" /p:Configuration=Release /m /v:minimal || exit /b %ERRORLEVEL%
+"%MSBUILD%" "%ROOT%SimpleLLMChat.sln" /p:Configuration=Release /m /nodeReuse:false /v:minimal || exit /b %ERRORLEVEL%
 echo.
 
 :: Stage output
@@ -35,6 +35,7 @@ call :CopyIfExists "%ROOT%deps\7za.exe" "%OUT%\tools\FileTools\7za.exe"
 call :CopyIfExists "%ROOT%deps\curl.exe" "%OUT%\tools\WebTools\curl.exe"
 call :CopyIfExists "%ROOT%deps\curl.exe" "%OUT%\curl.exe"
 call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%OUT%\tools\WebTools\curl-ca-bundle.crt"
+call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%OUT%\curl-ca-bundle.crt"
 call :CopyIfExists "%ROOT%deps\yt-dlp.exe" "%OUT%\tools\WebTools\yt-dlp.exe"
 
 echo.

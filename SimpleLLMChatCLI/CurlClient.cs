@@ -131,6 +131,7 @@ namespace SimpleLLMChatCLI
             {
                 string args = "-s"
                     + (noBuffer ? " -N" : "")
+                    + TlsCurlFallback.CacertFlag()
                     + " -X POST"
                     + " -H \"Content-Type: application/json\""
                     + (string.IsNullOrEmpty(apiKey) ? "" : " -H \"Authorization: Bearer " + apiKey + "\"")

@@ -12,6 +12,21 @@ public static class TlsCurlFallback
         get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "curl.exe"); }
     }
 
+    public static string DefaultCacertPath
+    {
+        get { return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "curl-ca-bundle.crt"); }
+    }
+
+    /// <summary>
+    /// The bundled curl.exe carries a stale compiled-in CA store; when a fresh
+    /// bundle sits beside it, pin it so certificate validation stays current.
+    /// Returns an empty string when no bundle is present.
+    /// </summary>
+    public static string CacertFlag()
+    {
+        return File.Exists(DefaultCacertPath) ? " --cacert \"" + DefaultCacertPath + "\" " : "";
+    }
+
     /// <summary>
     /// True when the URL is HTTPS, curl.exe is present beside the app, and the failure
     /// looks like a TLS/connection issue curl may work around — not ordinary HTTP API errors.

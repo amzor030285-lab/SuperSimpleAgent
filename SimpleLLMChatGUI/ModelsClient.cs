@@ -131,6 +131,7 @@ namespace SimpleLLMChatGUI
                 {
                     FileName = TlsCurlFallback.DefaultCurlPath,
                     Arguments = "-s -X GET"
+                        + TlsCurlFallback.CacertFlag()
                         + " -H \"Accept: application/json\""
                         + authHeader
                         + " \"" + fullUrl + "\"",

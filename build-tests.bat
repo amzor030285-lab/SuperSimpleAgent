@@ -20,7 +20,7 @@ if not defined MSBUILD (echo ERROR: MSBuild not found. & exit /b 1)
 
 echo === Building product solution (Release) ===
 
-"%MSBUILD%" "%ROOT%SimpleLLMChat.sln" /p:Configuration=Release /m /v:minimal || exit /b %ERRORLEVEL%
+"%MSBUILD%" "%ROOT%SimpleLLMChat.sln" /p:Configuration=Release /m /nodeReuse:false /v:minimal || exit /b %ERRORLEVEL%
 
 echo.
 
@@ -108,6 +108,10 @@ copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\Si
 
 call :CopyIfExists "%ROOT%deps\curl.exe" "%TESTBUILD%\SimpleLLMChatCLI.Tests\curl.exe"
 
+call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%TESTBUILD%\SimpleLLMChatCLI.Tests\curl-ca-bundle.crt"
+
+call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%TESTBUILD%\SimpleLLMChatGUI.Tests\curl-ca-bundle.crt"
+
 
 
 copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\SimpleLLMChatGUI.exe" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
@@ -135,7 +139,7 @@ exit /b 0
 
 echo Building %~1 ...
 
-"%MSBUILD%" "%~1" /p:Configuration=Release /v:minimal
+    "%MSBUILD%" "%~1" /p:Configuration=Release /nodeReuse:false /v:minimal
 
 exit /b %ERRORLEVEL%
 
