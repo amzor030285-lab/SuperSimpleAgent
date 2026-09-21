@@ -836,6 +836,13 @@ public sealed class FakeOpenAiServer : IDisposable
     public bool RejectImageRequests { get; set; }
 
     /// <summary>
+    /// When true, chat requests whose payload contains no "user" role message are
+    /// rejected with the 400 LM Studio's Jinja templates return
+    /// ("No user query found in messages").
+    /// </summary>
+    public bool RejectPayloadsWithoutUserMessage { get; set; }
+
+    /// <summary>
     /// When > 0, the first chat request sends headers + one SSE chunk, flushes, then
     /// stalls (keeps the connection open, sends nothing) for this many milliseconds —
     /// simulating a frozen model mid-generation.
@@ -942,6 +949,34 @@ public sealed class FakeOpenAiServer : IDisposable
     private void WriteSseChat(HttpListenerContext ctx)
     {
         _turn++;
+
+        if (RejectPayloadsWithoutUserMessage)
+        {
+            bool hasUser = false;
+            try
+            {
+                JArray msgArray = (JArray)JObject.Parse(LastBody)["messages"];
+                if (msgArray != null)
+                {
+                    foreach (JToken token in msgArray)
+                    {
+                        if ((string)token["role"] == "user")
+                        {
+                            hasUser = true;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            if (!hasUser)
+            {
+                WriteJson(ctx, 400,
+                    "{\"error\":{\"code\":400,\"message\":\"No user query found in messages.\",\"type\":\"invalid_request_error\"}}");
+                return;
+            }
+        }
 
         if (RejectImageRequests &&
             LastBody.IndexOf("image_url", StringComparison.OrdinalIgnoreCase) >= 0)

@@ -646,6 +646,78 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.truncation_keeps_user_message", () =>
+            {
+                string fileToolsDir = Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "FileTools", "bin", "Release");
+                string fileToolsExe = Path.Combine(fileToolsDir, "FileTools.exe");
+                if (!File.Exists(fileToolsExe))
+                {
+                    TestRunner.Skip("FileTools.exe not built: " + fileToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // LM Studio-style server: its Jinja chat template raises
+                    // "No user query found in messages" (400) when the payload
+                    // carries no "user" role. Twelve tool rounds reading the
+                    // first 8000 chars of the file each (read_file's limit) keep
+                    // the two newest groups at ~16k chars (~5.4k tokens) - past
+                    // the 95% band of the 5000 window even after micro-compact,
+                    // so the 30% oldest-first truncate loop must chew toward
+                    // the front, where the single user message sits. Dropping
+                    // it used to leave a user-less payload and the 400.
+                    server.RejectPayloadsWithoutUserMessage = true;
+                    server.ToolCallRoundsRemaining = 12;
+                    server.ToolCallName = "read_file";
+                    server.StreamDelayMs = 5;
+                    server.StreamChunkChars = 64;
+
+                    string bigFile = Path.Combine(ws.Path, "big.txt");
+                    StringBuilder big = new StringBuilder();
+                    for (int i = 0; i < 280; i++)
+                        big.AppendLine("padding line " + i + " to make the tool output ~17k chars");
+                    File.WriteAllText(bigFile, big.ToString(), Encoding.UTF8);
+
+                    var args = new JObject();
+                    args["filename"] = bigFile;
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(fileToolsExe, Path.Combine(toolsDir, "FileTools.exe"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "FileTools.json"), Path.Combine(toolsDir, "FileTools.json"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 5000, tools: "read_file");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("read the big file");
+                        CliRunner.WaitForText(cli, "[tool output]", 30000);
+                        // The usage ladder fires mid-turn: micro-compact drops old
+                        // groups, then the 30% truncate loop eats toward the front.
+                        CliRunner.WaitForText(cli, "[Context usage high - truncated", 30000);
+                        // The turn must survive: the outgoing payload kept its
+                        // "user" role so the template accepted it.
+                        CliRunner.WaitForText(cli, server.FixedReply, 60000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        TestAssert.True(
+                            !cli.Stdout.Contains("No user query found in messages"),
+                            "payload must always contain a user message");
+                        TestAssert.True(
+                            !cli.Stdout.Contains("Request to LLM Failed"),
+                            "turn must survive the truncation loop");
+                    }
+                }
+            });
+
             TestRunner.Run("cli.token_calibration_usage", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
@@ -765,9 +837,11 @@ namespace SimpleLLMChatCLI.Tests
                         CliRunner.WaitForText(cli, "You:", 15000);
 
                         // Turn 3 starts at ~92%: silent summarize fires, fails (500),
-                        // and the CLI falls back to truncation.
+                        // and the CLI falls back to truncation. The failure reason
+                        // is now printed in the notice.
                         cli.WriteLine("third message");
-                        CliRunner.WaitForText(cli, "[Context usage high - summary failed, truncated", 30000);
+                        CliRunner.WaitForText(cli, "[Context usage high - summary failed (", 30000);
+                        CliRunner.WaitForText(cli, "truncated", 15000);
 
                         // The main request still succeeds. It is the server's 4th chat
                         // request (#3 was the failed summary), so it is labeled turn 4.

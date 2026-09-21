@@ -607,14 +607,16 @@ public class LLMClient
 
         string summary;
         List<ChatMessage> recentTail;
+        string summaryError = null;
         try
         {
             summary = SummarizeHead(conversation, out recentTail);
         }
-        catch
+        catch (Exception ex)
         {
             summary = null;
             recentTail = null;
+            summaryError = ex.Message;
         }
 
         if (string.IsNullOrEmpty(summary))
@@ -622,10 +624,11 @@ public class LLMClient
             // The summarize pass failed (model stalled / request error): fall back to a
             // hard truncation so the turn can continue with a reduced context.
             int removed = TruncateOldestFraction(conversation, TokenEstimator.TruncateFraction);
+            string errorNote = summaryError != null ? " (" + summaryError + ")" : "";
             if (!outputOnly)
                 ChatOutput.WriteLine(printSummary
-                    ? "[Compaction failed - truncated " + removed + " oldest messages]"
-                    : "[Context usage high - summary failed, truncated " + removed + " oldest messages]");
+                    ? "[Compaction failed" + errorNote + " - truncated " + removed + " oldest messages]"
+                    : "[Context usage high - summary failed" + errorNote + ", truncated " + removed + " oldest messages]");
             PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
             return;
         }
@@ -726,7 +729,10 @@ public class LLMClient
 
     /// <summary>
     /// Hard-truncates the oldest messages, removing whole tool groups when they are
-    /// hit and never wiping the conversation entirely. Returns messages removed.
+    /// hit, never wiping the conversation entirely, and never removing "user"
+    /// messages (the user's query anchors the conversation, and some servers -
+    /// e.g. LM Studio's Jinja templates - reject a payload with no "user" role at
+    /// all). Returns messages removed.
     /// </summary>
     internal static int TruncateOldestFraction(List<ChatMessage> conversation, double fraction)
     {
@@ -783,6 +789,15 @@ public class LLMClient
                     }
                 }
             }
+        }
+
+        // Never drop "user" messages: the user's query anchors the conversation,
+        // and a payload with no "user" role at all is rejected by some servers
+        // (LM Studio's Jinja templates raise "No user query found in messages").
+        for (int i = 0; i < conversation.Count; i++)
+        {
+            if (conversation[i].Role == "user")
+                removeIndexes.Remove(i);
         }
 
         int removed = removeIndexes.Count;
@@ -971,6 +986,28 @@ public class LLMClient
         foreach (var msg in conversation)
             messages.Add(BuildMessageObject(msg));
 
+        // Some servers (LM Studio's Jinja templates) reject a payload with no
+        // "user" role at all; guarantee one so restored or pathological
+        // histories still send.
+        bool hasUserMessage = false;
+        foreach (JToken token in messages)
+        {
+            JObject msg = token as JObject;
+            if (msg != null && (string)msg["role"] == "user")
+            {
+                hasUserMessage = true;
+                break;
+            }
+        }
+        if (!hasUserMessage)
+        {
+            messages.Insert(1, new JObject
+            {
+                ["role"] = "user",
+                ["content"] = "[No user message in history - continue from the context above.]"
+            });
+        }
+
         payload["messages"] = messages;
 
         int toolsChars = 0;
@@ -1043,9 +1080,6 @@ public class LLMClient
     /// (opencode's TOOL_OUTPUT_MAX_CHARS).
     /// </summary>
     private const int SummaryToolOutputMaxChars = 2000;
-
-    /// <summary>Summary output cap in tokens (opencode's SUMMARY_OUTPUT_TOKENS).</summary>
-    private const int SummaryMaxTokens = 4096;
 
     /// <summary>
     /// Minimum character mass of the head (excluding the prior summary) worth an
@@ -1244,15 +1278,24 @@ public class LLMClient
                 new JObject { ["role"] = "system", ["content"] = systemPrompt },
                 new JObject { ["role"] = "user", ["content"] = userPrompt }
             },
-            ["stream"] = true,
-            ["max_tokens"] = SummaryMaxTokens
+            ["stream"] = true
         };
         if (!string.IsNullOrEmpty(ReasoningEffort))
             payload["reasoning_effort"] = ReasoningEffort;
 
+        // No max_tokens: a hard output cap that exceeds a small-context model's
+        // remaining window makes the server reject the whole request (the
+        // pre-opencode summary path never sent one either). The system prompt's
+        // "one short bullet per line" template bounds the length instead.
         LLMCompletionResponse response = SendHttpRequest(payload);
         if (response.FinishReason == "request_failed" || response.FinishReason == "aborted")
-            throw new Exception("summary request failed: " + response.FinishReason);
+        {
+            // SendHttpRequest puts the real reason (HTTP status / timeout text) in Content.
+            string detail = string.IsNullOrEmpty(response.Content)
+                ? response.FinishReason
+                : response.Content;
+            throw new Exception("summary request failed: " + detail);
+        }
         return response.Content ?? string.Empty;
     }
 
