@@ -1,4 +1,5 @@
 using Newtonsoft.Json.Linq;
+using SimpleLLMChatCLI;
 using SimpleLLMChatCLI.RAG;
 using System;
 using System.Collections.Generic;
@@ -108,6 +109,68 @@ namespace SimpleLLMChatCLI.Tests
                     ConfigHandler cfg = new ConfigHandler(path);
                     TestAssert.Equal("k", cfg.GetConfigValue("apikey"), "apikey");
                     TestAssert.Equal("m", cfg.GetConfigValue("model"), "model");
+                }
+            });
+
+            TestRunner.Run("ToolRegistry.stdin_payload_scoped", () =>
+            {
+                string fileToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "FileTools"));
+                string webToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "WebTools"));
+                if (!File.Exists(Path.Combine(fileToolsDir, "FileTools.json"))
+                    || !File.Exists(Path.Combine(webToolsDir, "WebTools.json")))
+                {
+                    TestRunner.Skip("tool manifests not found next to the test output");
+                    return;
+                }
+
+                using (TempWorkspace ws = new TempWorkspace("cli-toolcfg"))
+                {
+                    // A config with secrets that must never reach a tool's stdin,
+                    // plus declared options that must.
+                    string ini = ws.Combine("LLMSettings.ini");
+                    File.WriteAllText(ini,
+                        "[System]\r\n" +
+                        "apikey=super-secret-key\r\n" +
+                        "embeddingsapikey=another-secret\r\n" +
+                        "firecrawlapikey=fire-secret\r\n" +
+                        "llmserver=http://127.0.0.1:9\r\n" +
+                        "model=m\r\n" +
+                        "sysprompt=\"secret prompt\"\r\n" +
+                        "maxFileContentLength=1234\r\n",
+                        Encoding.UTF8);
+
+                    ConfigHandler cfg = new ConfigHandler(ini);
+                    ToolRegistry registry = new ToolRegistry(cfg);
+                    registry.LoadToolsFromDirectory(fileToolsDir);
+
+                    // FileTools declares maxFileContentLength and outputEncoding, and
+                    // nothing else: its stdin must carry exactly those (current
+                    // value for the first, manifest default for the second).
+                    JObject root = JObject.Parse(registry.BuildStdinPayload(
+                        Path.Combine(fileToolsDir, "FileTools.exe"), "{}"));
+                    JObject cfgObj = root["config"] as JObject;
+                    TestAssert.True(cfgObj != null, "config object present");
+                    TestAssert.True(!HasConfigKey(cfgObj, "apikey"), "apikey not forwarded");
+                    TestAssert.True(!HasConfigKey(cfgObj, "embeddingsapikey"), "embeddingsapikey not forwarded");
+                    TestAssert.True(!HasConfigKey(cfgObj, "firecrawlapikey"), "undeclared firecrawlapikey not forwarded");
+                    TestAssert.True(!HasConfigKey(cfgObj, "llmserver"), "llmserver not forwarded");
+                    TestAssert.True(!HasConfigKey(cfgObj, "sysprompt"), "sysprompt not forwarded");
+                    TestAssert.True(HasConfigKey(cfgObj, "maxFileContentLength"), "declared option forwarded");
+                    TestAssert.Equal("1234", cfgObj["maxFileContentLength"].ToString(), "current value wins");
+                    TestAssert.Equal("auto", cfgObj["outputEncoding"].ToString(), "manifest default when unset");
+
+                    // WebTools declares FirecrawlApiKey: a secret it declares must
+                    // still reach its own package, while apikey must not.
+                    registry.LoadToolsFromDirectory(webToolsDir);
+                    JObject webRoot = JObject.Parse(registry.BuildStdinPayload(
+                        Path.Combine(webToolsDir, "WebTools.exe"), "{}"));
+                    JObject webCfg = webRoot["config"] as JObject;
+                    TestAssert.True(cfgObj != null && webCfg != null, "web config object present");
+                    TestAssert.True(HasConfigKey(webCfg, "firecrawlapikey"), "declared secret reaches its own package");
+                    TestAssert.Equal("fire-secret", webCfg["FirecrawlApiKey"].ToString(), "declared secret value");
+                    TestAssert.True(!HasConfigKey(webCfg, "apikey"), "llm apikey not forwarded to web tools");
                 }
             });
 
@@ -857,6 +920,16 @@ namespace SimpleLLMChatCLI.Tests
                     }
                 }
             });
+        }
+
+        static bool HasConfigKey(JObject cfgObj, string name)
+        {
+            foreach (JProperty prop in cfgObj.Properties())
+            {
+                if (prop.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
         }
 
         static TempWorkspace PackageCliWorkspace()

@@ -47,8 +47,11 @@ namespace SimpleLLMChatCLI
         // Context injectors declared by manifests via the "context_injector" field (executablePath -> commandName).
         private readonly Dictionary<string, string> contextInjectorsByExecutable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-        // Default values for options declared in manifests, keyed by lowercase name
-        private readonly Dictionary<string, string> optionDefaults = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        // Default values for options declared in manifests, keyed by executable
+        // path then by option name. Per-package scoping so a tool process only
+        // ever receives the config keys its own manifest declares.
+        private readonly Dictionary<string, Dictionary<string, string>> optionDefaultsByExecutable =
+            new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
 
         // Config values to pass to tool executables
         private readonly ConfigHandler config;
@@ -65,7 +68,7 @@ namespace SimpleLLMChatCLI
         {
             Tools.Clear();
             contextInjectorsByExecutable.Clear();
-            optionDefaults.Clear();
+            optionDefaultsByExecutable.Clear();
         }
 
         /// <summary>
@@ -131,16 +134,23 @@ namespace SimpleLLMChatCLI
             if (toolsArray == null)
                 return;
 
-            // Load option defaults from manifest
+            // Load option defaults from manifest (scoped to this executable so a
+            // tool only receives the config keys its own package declares).
             JArray optionsArray = manifest["options"] as JArray;
             if (optionsArray != null)
             {
+                Dictionary<string, string> perExecutable = null;
+                if (!optionDefaultsByExecutable.TryGetValue(executablePath, out perExecutable))
+                {
+                    perExecutable = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    optionDefaultsByExecutable[executablePath] = perExecutable;
+                }
                 foreach (JObject optObj in optionsArray)
                 {
                     string optName = (string)optObj["name"];
                     string optDefault = (string)optObj["default"];
                     if (!string.IsNullOrEmpty(optName) && optDefault != null)
-                        optionDefaults[optName] = optDefault;
+                        perExecutable[optName] = optDefault;
                 }
             }
 
@@ -272,7 +282,7 @@ namespace SimpleLLMChatCLI
         {
             try
             {
-                string stdinData = BuildStdinPayload(null);
+                string stdinData = BuildStdinPayload(executablePath, null);
 
                 ProcessStartInfo psi = new ProcessStartInfo
                 {
@@ -311,9 +321,13 @@ namespace SimpleLLMChatCLI
 
         /// <summary>
         /// Builds the stdin JSON shared by tool calls and context injectors:
-        /// <c>{ "arguments": ..., "config": { optionDefaults + settings } }</c>.
+        /// <c>{ "arguments": ..., "config": { declared options } }</c>.
+        /// Only the option names declared in the package's manifest are passed
+        /// (current config value, or the manifest default when unset), so API
+        /// keys, server URLs, prompts and other unrelated settings never reach
+        /// tool processes.
         /// </summary>
-        private string BuildStdinPayload(string argumentsJson)
+        internal string BuildStdinPayload(string executablePath, string argumentsJson)
         {
             JObject stdinPayload = new JObject();
             stdinPayload["arguments"] = string.IsNullOrWhiteSpace(argumentsJson)
@@ -321,10 +335,16 @@ namespace SimpleLLMChatCLI
                 : JToken.Parse(argumentsJson);
 
             JObject configObj = new JObject();
-            foreach (var kvp in optionDefaults)
-                configObj[kvp.Key] = kvp.Value;
-            foreach (var kvp in config.GetAllValues())
-                configObj[kvp.Key] = kvp.Value;
+            Dictionary<string, string> declared = null;
+            if (executablePath != null
+                && optionDefaultsByExecutable.TryGetValue(executablePath, out declared))
+            {
+                foreach (var kvp in declared)
+                {
+                    string value = config.GetConfigValue(kvp.Key);
+                    configObj[kvp.Key] = string.IsNullOrEmpty(value) ? kvp.Value : value;
+                }
+            }
             stdinPayload["config"] = configObj;
 
             return stdinPayload.ToString(Newtonsoft.Json.Formatting.None);
@@ -352,7 +372,7 @@ namespace SimpleLLMChatCLI
 
             try
             {
-                string stdinData = BuildStdinPayload(arguments);
+                string stdinData = BuildStdinPayload(def.ExecutablePath, arguments);
 
                 ProcessStartInfo psi = new ProcessStartInfo
                 {

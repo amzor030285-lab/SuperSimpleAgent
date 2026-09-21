@@ -74,6 +74,15 @@
     <Compile Include="..\..\SimpleLLMChatCLI\RAG\VectorStore.cs">
       <Link>CLI\VectorStore.cs</Link>
     </Compile>
+    <Compile Include="..\..\SimpleLLMChatCLI\ToolRegistry.cs">
+      <Link>CLI\ToolRegistry.cs</Link>
+    </Compile>
+    <Compile Include="..\..\SimpleLLMChatCLI\AbortSupport.cs">
+      <Link>CLI\AbortSupport.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\ManifestScanner.cs">
+      <Link>Shared\ManifestScanner.cs</Link>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

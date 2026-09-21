@@ -85,12 +85,4 @@ public class ConfigHandler
         // Unescape all C-style escape sequences (\n, \t, \r, \\, etc.)
         return Regex.Unescape(storedPrompt);
     }
-
-    /// <summary>
-    /// Returns all config key-value pairs. Used by ToolRegistry to forward config to tool processes.
-    /// </summary>
-    public Dictionary<string, string> GetAllValues()
-    {
-        return new Dictionary<string, string>(configMap, StringComparer.OrdinalIgnoreCase);
-    }
 }
