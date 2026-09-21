@@ -54,6 +54,56 @@ namespace FileTools.Tests
                     TestAssert.Equal("one 2 three", File.ReadAllText(path, Encoding.UTF8), "disk");
                 });
 
+                TestRunner.Run("edit_file.preserves_crlf_bom", () =>
+                {
+                    string path = ws.Combine("crlf_bom.txt");
+                    File.WriteAllText(path, "line1\r\nline2\r\nline3", new UTF8Encoding(true));
+                    JArray edits = new JArray
+                    {
+                        new JObject { ["old_string"] = "line2", ["new_string"] = "L2" }
+                    };
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "edit_file",
+                        new JObject { ["filename"] = path, ["edits"] = edits });
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    byte[] disk = File.ReadAllBytes(path);
+                    TestAssert.True(disk.Length >= 3
+                        && disk[0] == 0xEF && disk[1] == 0xBB && disk[2] == 0xBF, "BOM preserved");
+                    TestAssert.Equal("line1\r\nL2\r\nline3", File.ReadAllText(path, Encoding.UTF8), "CRLF preserved");
+                });
+
+                TestRunner.Run("edit_file.lf_pattern_matches_crlf_file", () =>
+                {
+                    string path = ws.Combine("lf_match_crlf.txt");
+                    File.WriteAllText(path, "alpha\r\nbeta\r\ngamma", Encoding.UTF8);
+                    JArray edits = new JArray
+                    {
+                        new JObject { ["old_string"] = "alpha\nbeta", ["new_string"] = "A\nB" }
+                    };
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "edit_file",
+                        new JObject { ["filename"] = path, ["edits"] = edits });
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    TestAssert.Equal("A\r\nB\r\ngamma", File.ReadAllText(path, Encoding.UTF8),
+                        "LF pattern applied to CRLF file, CRLF kept");
+                });
+
+                TestRunner.Run("edit_file.preserves_lf_no_bom", () =>
+                {
+                    string path = ws.Combine("lf_no_bom.txt");
+                    // .NET Framework Encoding.UTF8 emits a BOM, so opt out explicitly.
+                    File.WriteAllText(path, "x1\nx2\nx3", new UTF8Encoding(false));
+                    JArray edits = new JArray
+                    {
+                        new JObject { ["old_string"] = "x2", ["new_string"] = "X2" }
+                    };
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "edit_file",
+                        new JObject { ["filename"] = path, ["edits"] = edits });
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    byte[] disk = File.ReadAllBytes(path);
+                    TestAssert.True(disk.Length < 3
+                        || !(disk[0] == 0xEF && disk[1] == 0xBB && disk[2] == 0xBF), "no BOM added");
+                    TestAssert.Equal("x1\nX2\nx3", File.ReadAllText(path, Encoding.UTF8), "LF preserved");
+                });
+
                 TestRunner.Run("copy_move_delete_list", () =>
                 {
                     string src = ws.Combine("src.txt");

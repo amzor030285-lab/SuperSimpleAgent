@@ -40,8 +40,13 @@ namespace FileTools
                     return "No edits provided. Provide at least one edit with old_string and new_string.";
                 }
 
-                string original = TextNormalization.NormalizeLineEndings(
-                    File.ReadAllText(expandedPath, Encoding.UTF8));
+                byte[] rawBytes = File.ReadAllBytes(expandedPath);
+                bool hadBom = rawBytes.Length >= 3
+                    && rawBytes[0] == 0xEF && rawBytes[1] == 0xBB && rawBytes[2] == 0xBF;
+                string rawText = File.ReadAllText(expandedPath, Encoding.UTF8);
+                bool wasCrlf = rawText.IndexOf("\r\n", StringComparison.Ordinal) >= 0;
+
+                string original = TextNormalization.NormalizeLineEndings(rawText);
 
                 List<string> errors;
                 string newContent;
@@ -61,7 +66,12 @@ namespace FileTools
                     return "No changes were necessary (file already matches).";
                 }
 
-                File.WriteAllText(expandedPath, newContent, Encoding.UTF8);
+                // Preserve the file's original line-ending style and BOM: matching
+                // happens on LF-normalized text, but the on-disk result must keep
+                // whatever CRLF/BOM the file started with (otherwise every edit
+                // rewrites the whole file and diffs explode on CRLF repos).
+                string finalContent = wasCrlf ? newContent.Replace("\n", "\r\n") : newContent;
+                File.WriteAllText(expandedPath, finalContent, new UTF8Encoding(hadBom));
 
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("Applied " + appliedCount + " edit(s).");
