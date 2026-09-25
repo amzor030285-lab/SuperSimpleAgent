@@ -186,30 +186,12 @@ namespace SimpleLLMChatGUI
             _roleHeader.SetResourceReference(TextBlock.ForegroundProperty, "RoleLabelBrush");
             _roleHeader.FontSize = FontHandler.GetFontSize() * RoleLabelScale;
 
-            _copyButton = new Button
-            {
-                Content = "Copy",
-                MinWidth = 55,
-                MinHeight = 22,
-                Margin = new Thickness(8, 0, 0, 2),
-                VerticalAlignment = VerticalAlignment.Center,
-                Focusable = false
-            };
-            AutomationProperties.SetAutomationId(_copyButton, "copyButton");
             ChatTurn turn = Turn;
-            var copyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
-            copyTimer.Tick += (s, e) =>
-            {
-                _copyButton.Content = "Copy";
-                copyTimer.Stop();
-            };
-            _copyButton.Click += (s, e) =>
+            _copyButton = CopyButtonFactory.Create("copyButton", delegate
             {
                 try { Clipboard.SetText(turn.SourceText); } catch { }
-                _copyButton.Content = "Copied";
-                copyTimer.Stop();
-                copyTimer.Start();
-            };
+            });
+            _copyButton.Margin = new Thickness(8, 0, 0, 2);
 
             var headerRow = new Grid();
             headerRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });

@@ -343,6 +343,7 @@ namespace SimpleLLMChatGUI.Tests
                         TestAssert.Contains(text, "python", "language label rendered");
                         TestAssert.Contains(text, "Done.", "text after code block preserved");
                         TestAssert.True(!text.Contains("```"), "fence markers consumed");
+                        TestAssert.True(!text.Contains("Copy"), "copy buttons are icons, not text labels");
 
                         gui.ClearClipboard();
                         gui.ClickMainButton("codeCopyButton");

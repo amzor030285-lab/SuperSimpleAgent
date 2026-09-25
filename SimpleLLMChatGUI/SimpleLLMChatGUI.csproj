@@ -71,6 +71,7 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="ColorHelper.cs" />
+    <Compile Include="CopyButtonFactory.cs" />
     <Compile Include="FontHandler.cs" />
     <Compile Include="ImageHandler.cs" />
     <Compile Include="SettingsIniWriter.cs" />

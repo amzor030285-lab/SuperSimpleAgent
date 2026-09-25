@@ -266,29 +266,11 @@ namespace SimpleLLMChatGUI
             };
             labelArea.SetResourceReference(Border.BackgroundProperty, "CodeBlockHeaderBrush");
 
-            var copyButton = new Button
-            {
-                Content = "Copy",
-                MinWidth = 55,
-                MinHeight = 22,
-                Margin = new Thickness(6, 2, 2, 2),
-                VerticalAlignment = VerticalAlignment.Center,
-                Focusable = false
-            };
-            AutomationProperties.SetAutomationId(copyButton, "codeCopyButton");
-            var copyTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.2) };
-            copyTimer.Tick += (s, e) =>
-            {
-                copyButton.Content = "Copy";
-                copyTimer.Stop();
-            };
-            copyButton.Click += (s, e) =>
+            var copyButton = CopyButtonFactory.Create("codeCopyButton", delegate
             {
                 try { Clipboard.SetText(codeText); } catch { }
-                copyButton.Content = "Copied";
-                copyTimer.Stop();
-                copyTimer.Start();
-            };
+            });
+            copyButton.Margin = new Thickness(6, 2, 2, 2);
 
             var headerRow = new StackPanel { Orientation = Orientation.Horizontal };
             headerRow.Children.Add(labelArea);
