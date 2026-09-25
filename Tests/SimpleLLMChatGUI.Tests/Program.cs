@@ -110,6 +110,37 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("gui.approval_mode_button", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    // The bottom-left button shows the current tool-approval mode and
+                    // cycles config -> ask -> auto; each click sends /approval <mode>
+                    // to the CLI. With no approvalmode in the INI the default is config.
+                    server.FixedReply = "ok";
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+
+                        TestAssert.Equal("config", gui.MainButtonName("approvalModeButton"), "default mode");
+                        gui.ClickMainButton("approvalModeButton");
+                        TestAssert.Equal("ask", gui.MainButtonName("approvalModeButton"), "after first click");
+                        gui.ClickMainButton("approvalModeButton");
+                        TestAssert.Equal("auto", gui.MainButtonName("approvalModeButton"), "after second click");
+                        gui.ClickMainButton("approvalModeButton");
+                        TestAssert.Equal("config", gui.MainButtonName("approvalModeButton"), "cycles back");
+
+                        // The CLI must have received the mode (a shell tool call in
+                        // config mode would otherwise open the approval dialog).
+                        gui.SendTurn("what is your approval mode", 30000);
+                        TestAssert.Equal("Send", gui.SendButtonName(), "turn completed");
+                    }
+                }
+            });
+
             TestRunner.Run("gui.reply_contains_you_prompt", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

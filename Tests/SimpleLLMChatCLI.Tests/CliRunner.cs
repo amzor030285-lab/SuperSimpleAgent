@@ -42,12 +42,12 @@ namespace SimpleLLMChatCLI.Tests
             public object Lock;
         }
 
-        public CliRunner(string exePath, string workingDirectory)
+        public CliRunner(string exePath, string workingDirectory, string extraArguments = null)
         {
             ProcessStartInfo psi = new ProcessStartInfo
             {
                 FileName = exePath,
-                Arguments = "--no-banners",
+                Arguments = string.IsNullOrEmpty(extraArguments) ? "--no-banners" : "--no-banners " + extraArguments,
                 WorkingDirectory = workingDirectory,
                 UseShellExecute = false,
                 RedirectStandardInput = true,

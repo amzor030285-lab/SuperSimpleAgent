@@ -22,6 +22,7 @@ namespace SimpleLLMChatCLI
         {
             ChatOutput.WriteLine("================== SimpleLLMChat ==================");
             ChatOutput.WriteLine("| Commands:                                       |");
+            ChatOutput.WriteLine("| /approval [ask|auto|config]: Tool approval mode |");
             ChatOutput.WriteLine("| /buildindex: Reconcile knowledge index          |");
             ChatOutput.WriteLine("| /clear: Clear chat context                      |");
             ChatOutput.WriteLine("| /clearindex: Clear knowledge index              |");
@@ -172,6 +173,11 @@ namespace SimpleLLMChatCLI
             List<string> toolsRequiringApproval = Config.GetConfigList(
                 "toolsrequiringapproval", AppConstants.DefaultToolsRequiringApproval);
 
+            // Tool approval mode: ask (confirm every call), auto (never confirm),
+            // config (confirm only the tools listed above).
+            client.ApprovalMode = ToolApproval.NormalizeMode(Config.GetConfigValue("approvalmode"))
+                ?? AppConstants.DefaultApprovalMode;
+
             string assistantName = Config.GetConfigValue("assistantname");
             if (string.IsNullOrWhiteSpace(assistantName))
                 assistantName = AppConstants.DefaultAssistantName;
@@ -241,6 +247,25 @@ namespace SimpleLLMChatCLI
                         }
 
                         client.ReasoningEffort = effort;
+                        continue;
+                    }
+
+                    if (arg == "--approval")
+                    {
+                        if (i + 1 >= args.Length)
+                        {
+                            Console.Error.WriteLine("Error: --approval flag requires a value.");
+                            return;
+                        }
+
+                        string mode = ToolApproval.NormalizeMode(args[++i]);
+                        if (mode == null)
+                        {
+                            Console.Error.WriteLine("Error: Invalid approval mode. Valid values: ask, auto, config.");
+                            return;
+                        }
+
+                        client.ApprovalMode = mode;
                         continue;
                     }
 
@@ -344,6 +369,8 @@ namespace SimpleLLMChatCLI
                     enabledTools = Config.GetConfigList("tools");
                     toolsRequiringApproval = Config.GetConfigList(
                         "toolsrequiringapproval", AppConstants.DefaultToolsRequiringApproval);
+                    client.ApprovalMode = ToolApproval.NormalizeMode(Config.GetConfigValue("approvalmode"))
+                        ?? AppConstants.DefaultApprovalMode;
                     assistantName = Config.GetConfigValue("assistantname");
                     if (string.IsNullOrWhiteSpace(assistantName))
                         assistantName = AppConstants.DefaultAssistantName;
@@ -383,6 +410,26 @@ namespace SimpleLLMChatCLI
 
                     // Silent command (the GUI sends this programmatically): produce no
                     // stdout, and don't pad the re-prompt with a separator newline.
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
+
+                if (userInput == "/approval" || userInput.StartsWith("/approval "))
+                {
+                    string requestedMode = userInput.Length > 9 ? userInput.Substring(9).Trim() : string.Empty;
+                    if (string.IsNullOrEmpty(requestedMode))
+                    {
+                        ChatOutput.WriteLine("Approval mode: " + client.ApprovalMode);
+                    }
+                    else
+                    {
+                        string mode = ToolApproval.NormalizeMode(requestedMode);
+                        if (mode == null)
+                            Console.Error.WriteLine("Error: Invalid approval mode. Valid values: ask, auto, config.");
+                        else
+                            client.ApprovalMode = mode;
+                    }
+
                     ChatOutput.MarkSeparated();
                     continue;
                 }

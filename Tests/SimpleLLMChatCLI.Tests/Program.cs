@@ -607,6 +607,104 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.approval_mode_auto", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // --approval auto must run a tool call with no prompt at all:
+                    // the CLI would otherwise block on stdin waiting for Y/N.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var autoArgs = new JObject();
+                    autoArgs["command"] = "echo approval-auto-ok";
+                    server.ToolCallArguments = autoArgs.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, "approval-auto-ok", 60000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        TestAssert.True(
+                            cli.Stdout.IndexOf(ToolApproval.ApprovalPrompt, StringComparison.Ordinal) < 0,
+                            "auto mode shows no approval prompt");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.approval_mode_ask", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // --approval ask prompts for every tool call, including a tool
+                    // that is not in the (empty) toolsRequiringApproval list, and N
+                    // must cancel the call without running the command.
+                    string sideEffect = Path.Combine(ws.Path, "ask-mode-must-not-exist.txt");
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var askArgs = new JObject();
+                    askArgs["command"] = "echo hi > \"" + sideEffect + "\"";
+                    server.ToolCallArguments = askArgs.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval ask"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 60000);
+                        cli.WriteLine("N");
+                        CliRunner.WaitForText(cli, "cancelled by the user", 30000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+
+                        TestAssert.True(!File.Exists(sideEffect),
+                            "declined tool call never ran the command");
+                    }
+                }
+            });
+
             TestRunner.Run("cli.tool_cancelled_by_user", () =>
             {
                 string shellToolsDir = Path.GetFullPath(Path.Combine(

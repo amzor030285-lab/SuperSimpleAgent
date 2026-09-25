@@ -16,6 +16,8 @@ namespace SimpleLLMChatGUI
         private ProcessHandler processHandler;
         private readonly ImageHandler imageHandler;
         private string _reasoningEffort = "";
+
+        private string _approvalMode = AppConstants.DefaultApprovalMode;
         private TokenTracker tokenTracker;
         private ContextMenu reasoningEffortMenu;
         private bool _isGenerating;
@@ -96,6 +98,11 @@ namespace SimpleLLMChatGUI
             LoadAndApplyFontSize();
             LoadAndApplyColors();
             UpdateReasoningEffortLabel();
+            string configuredMode = App.Config == null ? null : App.Config.GetConfigValue("approvalmode");
+            string normalizedApprovalMode = ToolApproval.NormalizeMode(configuredMode);
+            if (normalizedApprovalMode != null)
+                _approvalMode = normalizedApprovalMode;
+            UpdateApprovalModeButton();
             BuildReasoningEffortMenu();
             tokenTracker = new TokenTracker(tokenStatusText);
 
@@ -112,6 +119,33 @@ namespace SimpleLLMChatGUI
                 AutoRestoreLastSession();
             };
             ContentRendered += onRendered;
+        }
+
+        private void UpdateApprovalModeButton()
+        {
+            approvalModeButton.Content = _approvalMode;
+        }
+
+        private void approvalModeButton_Click(object sender, RoutedEventArgs e)
+        {
+            string nextMode = string.Equals(_approvalMode, ToolApproval.ModeAsk, StringComparison.OrdinalIgnoreCase)
+                ? ToolApproval.ModeAuto
+                : string.Equals(_approvalMode, ToolApproval.ModeAuto, StringComparison.OrdinalIgnoreCase)
+                    ? ToolApproval.ModeConfig
+                    : ToolApproval.ModeAsk;
+            SetApprovalMode(nextMode);
+        }
+
+        private void SetApprovalMode(string mode)
+        {
+            string normalizedMode = ToolApproval.NormalizeMode(mode);
+            if (normalizedMode == null)
+                return;
+
+            _approvalMode = normalizedMode;
+            UpdateApprovalModeButton();
+            if (processHandler != null && processHandler.IsProcessRunning)
+                processHandler.SendInput("/approval " + normalizedMode);
         }
 
         private void UpdateReasoningEffortLabel()
@@ -196,6 +230,8 @@ namespace SimpleLLMChatGUI
 
             if (!string.IsNullOrEmpty(_reasoningEffort))
                 processHandler.SendReasoningEffort(_reasoningEffort);
+
+            processHandler.SendInput("/approval " + _approvalMode);
 
             SetInputControlsEnabled(true);
             chatInput.Focus();

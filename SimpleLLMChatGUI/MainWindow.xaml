@@ -203,17 +203,29 @@
             </local:ChatListBox.ItemTemplate>
         </local:ChatListBox>
 
-        <!-- Bottom bar: attach + input + stop tool + send -->
+        <!-- Bottom bar: approval mode + attach + input + stop tool + send -->
         <Grid Grid.Row="2" Margin="0,0,0,2">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
 
+            <Button Name="approvalModeButton"
+                    AutomationProperties.AutomationId="approvalModeButton"
+                    Grid.Column="0"
+                    Content="config"
+                    MinWidth="72"
+                    MinHeight="40"
+                    Margin="0,0,5,0"
+                    VerticalAlignment="Stretch"
+                    ToolTip="Tool approval mode. ask = confirm every tool call, auto = never confirm, config = confirm only the tools listed in toolsRequiringApproval. Click to switch."
+                    Click="approvalModeButton_Click" />
+
             <ToggleButton Name="attachButton"
-                          Grid.Column="0"
+                          Grid.Column="1"
                           MinWidth="45"
                           MinHeight="40"
                           Margin="0,0,5,0"
@@ -227,7 +239,7 @@
 
             <TextBox Name="chatInput"
                      AutomationProperties.AutomationId="chatInput"
-                     Grid.Column="1"
+                     Grid.Column="2"
                      MinHeight="40"
                      MaxHeight="100"
                      VerticalAlignment="Stretch"
@@ -240,7 +252,7 @@
 
             <Button Name="stopToolButton"
                     AutomationProperties.AutomationId="stopToolButton"
-                    Grid.Column="2"
+                    Grid.Column="3"
                     Content="Stop tool"
                     MinWidth="75"
                     MinHeight="40"
@@ -252,7 +264,7 @@
 
             <Button Name="sendButton"
                     AutomationProperties.AutomationId="sendButton"
-                    Grid.Column="3"
+                    Grid.Column="4"
                     Content="Send"
                     MinWidth="60"
                     MinHeight="40"

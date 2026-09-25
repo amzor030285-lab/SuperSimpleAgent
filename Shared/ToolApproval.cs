@@ -70,4 +70,25 @@ public static class ToolApproval
         arguments = rest.TrimEnd('\r', '\n', ' ');
         return true;
     }
+
+    public const string ModeAsk = "ask";
+    public const string ModeAuto = "auto";
+    public const string ModeConfig = "config";
+
+    /// <summary>
+    /// Validates a tool-approval mode name: ask = confirm every tool call,
+    /// auto = never confirm, config = confirm only the toolsRequiringApproval tools.
+    /// </summary>
+    public static bool IsValidMode(string mode)
+    {
+        return string.Equals(mode, ModeAsk, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, ModeAuto, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, ModeConfig, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Canonical lowercase mode name, or null when the input is not a mode.</summary>
+    public static string NormalizeMode(string mode)
+    {
+        return IsValidMode(mode) ? mode.ToLowerInvariant() : null;
+    }
 }

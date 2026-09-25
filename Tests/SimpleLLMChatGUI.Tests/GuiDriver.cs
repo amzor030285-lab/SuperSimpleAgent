@@ -288,6 +288,21 @@ namespace SimpleLLMChatGUI.Tests
             invoke.Invoke();
         }
 
+        /// <summary>Accessible name (label) of the n-th button in the main window by automation id.</summary>
+        public string MainButtonName(string automationId, int index = 0)
+        {
+            if (_window == null)
+                throw new TestFailureException("Main-window button not found: " + automationId);
+
+            AutomationElementCollection els = _window.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.AutomationIdProperty, automationId));
+            if (index < 0 || index >= els.Count)
+                throw new TestFailureException(
+                    "Main-window button not found: " + automationId + " (index " + index + " of " + els.Count + ")");
+
+            return els[index].Current.Name;
+        }
+
         /// <summary>Clipboard APIs require an STA thread; the test host is MTA.</summary>
         private static void RunOnStaThread(Action action)
         {

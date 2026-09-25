@@ -21,10 +21,14 @@ public class LLMClient
 
     public string ReasoningEffort { get; set; }
 
+    /// <summary>ask = confirm every tool call, auto = never confirm, config = confirm the listed tools.</summary>
+    public string ApprovalMode { get; set; }
+
     public LLMClient(ConfigHandler config, ToolRegistry registry)
     {
         this.registry = registry;
         this.config = config;
+        ApprovalMode = AppConstants.DefaultApprovalMode;
     }
 
     // Struct for chat messages
@@ -272,7 +276,11 @@ public class LLMClient
                 for (int i = 0; i < response.ToolCalls.Count; i++)
                 {
                     ToolRegistry.ToolCall call = response.ToolCalls[i];
-                    bool needsApproval = approvalSet.Contains(call.Name);
+                    string approvalMode = ApprovalMode ?? AppConstants.DefaultApprovalMode;
+                    bool needsApproval = string.Equals(approvalMode, ToolApproval.ModeAuto, StringComparison.OrdinalIgnoreCase)
+                        ? false
+                        : string.Equals(approvalMode, ToolApproval.ModeAsk, StringComparison.OrdinalIgnoreCase)
+                            || approvalSet.Contains(call.Name);
 
                     if (needsApproval && outputOnly)
                     {
