@@ -22,7 +22,8 @@ public class ConfigHandler
 
     public string GetConfigValue(string key, string defaultValue = "")
     {
-        return configMap.ContainsKey(key) ? configMap[key] : defaultValue;
+        string value = configMap.ContainsKey(key) ? configMap[key] : defaultValue;
+        return SecretProtector.IsSecretKey(key) ? SecretProtector.Unprotect(value) : value;
     }
 
     public int GetConfigInt(string key, int defaultValue)

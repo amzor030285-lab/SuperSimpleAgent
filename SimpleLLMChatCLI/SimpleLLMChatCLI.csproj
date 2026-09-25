@@ -41,6 +41,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Security" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ChatOutput.cs" />
@@ -75,6 +76,9 @@
     </Compile>
     <Compile Include="..\Shared\ConfigHandler.cs">
       <Link>Shared\ConfigHandler.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\SecretProtector.cs">
+      <Link>Shared\SecretProtector.cs</Link>
     </Compile>
     <Compile Include="..\Shared\ChatBlockDisplayMode.cs">
       <Link>Shared\ChatBlockDisplayMode.cs</Link>

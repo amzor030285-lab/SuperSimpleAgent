@@ -498,7 +498,7 @@ namespace SimpleLLMChatGUI
                     "ragallowedextensions=" + RagExtensionList.FormatForStorage(RagAllowedExtensions),
                     "indexchunkoverlap=" + IndexChunkOverlap,
                     "indexchunklines=" + IndexChunkLines,
-                    "embeddingsapikey=" + (EmbeddingsApiKey ?? string.Empty),
+                    "embeddingsapikey=" + SecretProtector.Protect(EmbeddingsApiKey),
                     "embeddingsendpoint=" + (EmbeddingsEndpoint ?? string.Empty),
                     "embeddingsmodel=" + (EmbeddingsModel ?? string.Empty),
                     "ragknowledgepath=" + (RagKnowledgePath ?? string.Empty),

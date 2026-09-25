@@ -76,7 +76,7 @@ namespace SimpleLLMChatGUI
         {
             return new List<string>
             {
-                "apikey=" + (apiKey ?? string.Empty),
+                "apikey=" + SecretProtector.Protect(apiKey),
                 "contextWindowSize=" + contextWindowSize,
                 "llmserver=" + (llmServer ?? string.Empty),
                 "model=" + (model ?? string.Empty),

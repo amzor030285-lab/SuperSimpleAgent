@@ -48,6 +48,7 @@
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
+    <Reference Include="System.Security" />
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xaml">
       <RequiredTargetFramework>4.0</RequiredTargetFramework>
@@ -87,6 +88,9 @@
     </Compile>
     <Compile Include="..\Shared\ConfigHandler.cs">
       <Link>Shared\ConfigHandler.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\SecretProtector.cs">
+      <Link>Shared\SecretProtector.cs</Link>
     </Compile>
     <Compile Include="..\Shared\ChatBlockDisplayMode.cs">
       <Link>Shared\ChatBlockDisplayMode.cs</Link>

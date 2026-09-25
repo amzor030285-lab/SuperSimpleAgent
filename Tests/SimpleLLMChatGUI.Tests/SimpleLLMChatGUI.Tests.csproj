@@ -38,6 +38,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
+    <Reference Include="System.Security" />
     <Reference Include="PresentationCore" />
     <Reference Include="UIAutomationClient" />
     <Reference Include="UIAutomationTypes" />
@@ -72,6 +73,9 @@
     </Compile>
     <Compile Include="..\..\Shared\ConfigHandler.cs">
       <Link>Shared\ConfigHandler.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\SecretProtector.cs">
+      <Link>Shared\SecretProtector.cs</Link>
     </Compile>
     <Compile Include="..\..\Shared\ChatBlockDisplayMode.cs">
       <Link>Shared\ChatBlockDisplayMode.cs</Link>

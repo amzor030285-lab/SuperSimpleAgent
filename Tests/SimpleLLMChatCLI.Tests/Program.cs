@@ -142,6 +142,32 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("Ini.secret_protection", () =>
+            {
+                string protectedKey = SecretProtector.Protect("sk-secret-123");
+                TestAssert.True(SecretProtector.IsProtected(protectedKey), "prefixed");
+                TestAssert.Equal("sk-secret-123", SecretProtector.Unprotect(protectedKey), "round trip");
+                TestAssert.Equal(protectedKey, SecretProtector.Protect(protectedKey), "protect is idempotent");
+                TestAssert.Equal("plain-key", SecretProtector.Unprotect("plain-key"), "plaintext passes through");
+                TestAssert.Equal("dpapi:not-base64!", SecretProtector.Unprotect("dpapi:not-base64!"),
+                    "undecryptable value is kept so the key can be re-entered");
+                TestAssert.True(SecretProtector.IsSecretKey("apiKey"), "apikey is a secret");
+                TestAssert.True(!SecretProtector.IsSecretKey("sysprompt"), "sysprompt is not a secret");
+
+                using (TempWorkspace ws = new TempWorkspace("cli-secret"))
+                {
+                    string path = ws.Combine("LLMSettings.ini");
+                    File.WriteAllText(path, "[System]\r\napikey=" + protectedKey + "\r\n", Encoding.UTF8);
+                    TestAssert.Equal("sk-secret-123", new ConfigHandler(path).GetConfigValue("apikey"),
+                        "protected config value decrypts");
+
+                    string legacy = ws.Combine("legacy.ini");
+                    File.WriteAllText(legacy, "[System]\r\napikey=legacy-plain\r\n", Encoding.UTF8);
+                    TestAssert.Equal("legacy-plain", new ConfigHandler(legacy).GetConfigValue("apikey"),
+                        "legacy plaintext config still works");
+                }
+            });
+
             TestRunner.Run("ToolRegistry.stdin_payload_scoped", () =>
             {
                 string fileToolsDir = Path.GetFullPath(Path.Combine(

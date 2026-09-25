@@ -37,6 +37,9 @@ namespace SimpleLLMChatGUI.Tests
                     TestAssert.Contains(text, "llmserver=http://127.0.0.1:9", "server");
                     TestAssert.Contains(text, "model=test-model", "model");
                     TestAssert.Contains(text, "toolsrequiringapproval=run_shell_command,download_file", "default approval tools");
+                    TestAssert.Contains(text, "apikey=dpapi:", "api key encrypted on disk");
+                    TestAssert.True(!text.Contains("apikey=key"), "api key not in plaintext");
+                    TestAssert.Equal("key", new ConfigHandler(path).GetConfigValue("apikey"), "api key decrypts on read");
                 }
             });
 
