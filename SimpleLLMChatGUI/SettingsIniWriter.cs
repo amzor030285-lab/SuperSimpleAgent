@@ -123,7 +123,7 @@ namespace SimpleLLMChatGUI
             return new List<string>
             {
                 "tools=",
-                "toolsrequiringapproval=",
+                "toolsrequiringapproval=" + AppConstants.DefaultToolsRequiringApproval,
             };
         }
     }

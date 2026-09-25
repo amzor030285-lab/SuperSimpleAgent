@@ -169,7 +169,8 @@ namespace SimpleLLMChatCLI
             List<string> enabledTools = Config.GetConfigList("tools");
 
             // Get tools requiring approval
-            List<string> toolsRequiringApproval = Config.GetConfigList("toolsrequiringapproval");
+            List<string> toolsRequiringApproval = Config.GetConfigList(
+                "toolsrequiringapproval", AppConstants.DefaultToolsRequiringApproval);
 
             string assistantName = Config.GetConfigValue("assistantname");
             if (string.IsNullOrWhiteSpace(assistantName))
@@ -341,7 +342,8 @@ namespace SimpleLLMChatCLI
                     registry.Clear();
                     registry.LoadToolsFromDirectory(toolsDir);
                     enabledTools = Config.GetConfigList("tools");
-                    toolsRequiringApproval = Config.GetConfigList("toolsrequiringapproval");
+                    toolsRequiringApproval = Config.GetConfigList(
+                        "toolsrequiringapproval", AppConstants.DefaultToolsRequiringApproval);
                     assistantName = Config.GetConfigValue("assistantname");
                     if (string.IsNullOrWhiteSpace(assistantName))
                         assistantName = AppConstants.DefaultAssistantName;

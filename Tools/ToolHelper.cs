@@ -198,6 +198,7 @@ public static class ToolHelper
     public const int MaxProcessOutputChars = 20000;
     private const int ProcessOutputHeadChars = 12000;
     private const int ProcessOutputTailChars = 6000;
+    private const int ProcessOutputReadCeilingChars = 2000000;
 
     /// <summary>
     /// Saves the full uncapped output to %TEMP%\webtools-offload so the model
@@ -249,6 +250,23 @@ public static class ToolHelper
             + tail;
     }
 
+    private static long ReadBounded(TextReader reader, StringBuilder sink, int ceiling)
+    {
+        char[] buffer = new char[4096];
+        long total = 0;
+        while (true)
+        {
+            int read = reader.Read(buffer, 0, buffer.Length);
+            if (read <= 0)
+                break;
+            total += read;
+            int room = ceiling - sink.Length;
+            if (room > 0)
+                sink.Append(buffer, 0, Math.Min(room, read));
+        }
+        return total;
+    }
+
     /// <summary>
     /// Runs a process and returns its (optionally capped) output. capOutput=false
     /// is for intermediate artifacts (e.g. raw HTML fetched for parsing) where
@@ -273,16 +291,30 @@ public static class ToolHelper
 
             using (Process process = Process.Start(psi))
             {
-                string output = "";
-                string error = "";
+                StringBuilder outBuffer = new StringBuilder();
+                StringBuilder errBuffer = new StringBuilder();
+                long outTotal = 0;
+                long errTotal = 0;
                 Thread outThread = new Thread(() =>
                 {
-                    try { output = process.StandardOutput.ReadToEnd(); }
+                    try
+                    {
+                        if (capOutput)
+                            outTotal = ReadBounded(process.StandardOutput, outBuffer, ProcessOutputReadCeilingChars);
+                        else
+                            outTotal = outBuffer.Append(process.StandardOutput.ReadToEnd()).Length;
+                    }
                     catch { }
                 });
                 Thread errThread = new Thread(() =>
                 {
-                    try { error = process.StandardError.ReadToEnd(); }
+                    try
+                    {
+                        if (capOutput)
+                            errTotal = ReadBounded(process.StandardError, errBuffer, ProcessOutputReadCeilingChars);
+                        else
+                            errTotal = errBuffer.Append(process.StandardError.ReadToEnd()).Length;
+                    }
                     catch { }
                 });
                 outThread.IsBackground = true;
@@ -304,11 +336,23 @@ public static class ToolHelper
                 outThread.Join(PipeCloseJoinTimeoutMs);
                 errThread.Join(PipeCloseJoinTimeoutMs);
 
-                string combined = combineErrorOutput && !string.IsNullOrEmpty(error)
-                    ? output + error
-                    : output;
+                string combined = combineErrorOutput && errBuffer.Length > 0
+                    ? outBuffer.ToString() + errBuffer.ToString()
+                    : outBuffer.ToString();
                 if (!capOutput)
                     return combined;
+
+                long totalChars = outTotal + errTotal;
+                if (totalChars > ProcessOutputReadCeilingChars)
+                {
+                    string boundedHead = combined.Length > ProcessOutputHeadChars
+                        ? combined.Substring(0, ProcessOutputHeadChars)
+                        : combined;
+                    return boundedHead
+                        + "\n[... " + (totalChars - combined.Length) + " more characters omitted: process output exceeded the "
+                        + ProcessOutputReadCeilingChars + " character read limit; only the beginning of the output is shown.]\n";
+                }
+
                 return CapProcessOutput(combined, SafeFileToken(Path.GetFileNameWithoutExtension(fileName)));
             }
         }

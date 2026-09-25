@@ -80,6 +80,58 @@ namespace ShellTools.Tests
                     TestAssert.Contains(r.Text, "oops", "stderr combined into text");
                 });
 
+                TestRunner.Run("output.capped_and_offloaded", () =>
+                {
+                    StringBuilder big = new StringBuilder();
+                    for (int i = 0; i < 5000; i++)
+                        big.Append("0123456789");
+                    string bigPath = ws.Combine("capped-50k.txt");
+                    File.WriteAllText(bigPath, big.ToString(), new UTF8Encoding(false));
+
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "run_shell_command",
+                        new JObject { ["command"] = "type \"" + bigPath + "\"" });
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    TestAssert.Contains(r.Text, "characters omitted: output exceeded the 20000 character limit", "cap marker");
+                    TestAssert.Contains(r.Text, "Full output saved to", "offload hint");
+
+                    const string savedMarker = "Full output saved to ";
+                    int start = r.Text.IndexOf(savedMarker, StringComparison.Ordinal);
+                    int end = r.Text.IndexOf(" - read it in parts", start, StringComparison.Ordinal);
+                    TestAssert.True(start >= 0 && end > start, "offload path present");
+
+                    string offloadPath = r.Text.Substring(start + savedMarker.Length, end - start - savedMarker.Length);
+                    try
+                    {
+                        string offloaded = File.ReadAllText(offloadPath);
+                        TestAssert.Equal(big.Length, offloaded.Length, "offloaded char count");
+                        TestAssert.Equal(
+                            big.ToString().Substring(big.Length - 20),
+                            offloaded.Substring(offloaded.Length - 20),
+                            "offloaded tail");
+                    }
+                    finally
+                    {
+                        try { File.Delete(offloadPath); } catch { }
+                    }
+                });
+
+                TestRunner.Run("output.read_ceiling", () =>
+                {
+                    StringBuilder huge = new StringBuilder();
+                    for (int i = 0; i < 300000; i++)
+                        huge.Append("0123456789");
+                    string hugePath = ws.Combine("capped-3m.txt");
+                    File.WriteAllText(hugePath, huge.ToString(), new UTF8Encoding(false));
+
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "run_shell_command",
+                        new JObject { ["command"] = "type \"" + hugePath + "\"" }, null, 30000);
+                    TestAssert.True(!r.TimedOut, "not timed out");
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    TestAssert.Contains(r.Text, "character read limit", "read ceiling marker");
+                    TestAssert.True(r.Text.Length < 30000, "result bounded, chars: " + r.Text.Length);
+                    TestAssert.True(!r.Text.Contains("Full output saved to"), "no offload after a truncated read");
+                });
+
                 TestRunner.Run("missing.command", () =>
                 {
                     ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "run_shell_command",

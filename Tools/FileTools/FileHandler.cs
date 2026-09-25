@@ -21,29 +21,52 @@ namespace FileTools
                     return $"File not found: {filename}";
                 }
 
-                string content = File.ReadAllText(filename, Encoding.UTF8);
-                int totalLength = content.Length;
-
                 // Validate offset
                 if (offset < 0)
                     offset = 0;
-                if (offset >= totalLength)
-                {
-                    exitCode = 1;
-                    return $"File length = {totalLength} characters. Offset {offset} exceeds file length.";
-                }
 
-                // Always read up to MAX_CONTENT_LENGTH characters (or until EOF)
-                int endPos = Math.Min(offset + maxContentLength, totalLength);
-                string excerpt = content.Substring(offset, endPos - offset);
+                // Stream the requested window only: a huge file must never be
+                // loaded whole, and the total size comes from the file metadata.
+                long fileLength = new FileInfo(filename).Length;
+                StringBuilder excerpt = new StringBuilder();
+                char[] buffer = new char[4096];
+                int endPos = offset;
+                bool truncated;
+
+                using (StreamReader reader = new StreamReader(filename, Encoding.UTF8, true))
+                {
+                    int toSkip = offset;
+                    while (toSkip > 0)
+                    {
+                        int read = reader.Read(buffer, 0, Math.Min(buffer.Length, toSkip));
+                        if (read <= 0)
+                        {
+                            exitCode = 1;
+                            return $"File length = {fileLength} bytes. Offset {offset} exceeds file length.";
+                        }
+                        toSkip -= read;
+                    }
+
+                    // Always read up to MAX_CONTENT_LENGTH characters (or until EOF)
+                    while (excerpt.Length < maxContentLength)
+                    {
+                        int read = reader.Read(buffer, 0, Math.Min(buffer.Length, maxContentLength - excerpt.Length));
+                        if (read <= 0)
+                            break;
+                        excerpt.Append(buffer, 0, read);
+                        endPos += read;
+                    }
+
+                    truncated = reader.Read() >= 0;
+                }
 
                 // Build result with header
                 StringBuilder result = new StringBuilder();
-                result.AppendLine($"File length = {totalLength} characters, reading chars {offset}-{endPos - 1}");
+                result.AppendLine($"File length = {fileLength} bytes, reading chars {offset}-{endPos - 1}");
                 result.AppendLine("---");
                 result.Append(excerpt);
 
-                if (endPos < totalLength)
+                if (truncated)
                 {
                     result.AppendLine("\n...[truncated]");
                 }

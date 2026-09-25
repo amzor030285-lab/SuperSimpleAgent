@@ -390,7 +390,7 @@ namespace SimpleLLMChatGUI
             ApplyToolSelectionToListBox(ToolsListBox, config.GetConfigList("tools"));
             ApplyToolSelectionToListBox(
                 ToolsRequiringApprovalListBox,
-                config.GetConfigList("toolsrequiringapproval"));
+                config.GetConfigList("toolsrequiringapproval", AppConstants.DefaultToolsRequiringApproval));
         }
 
         private void Options_Closed(object sender, EventArgs e)

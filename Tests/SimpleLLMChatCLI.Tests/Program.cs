@@ -119,6 +119,29 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("Ini.approval_default", () =>
+            {
+                using (TempWorkspace ws = new TempWorkspace("cli-approval"))
+                {
+                    // Key absent: the tools that can run commands or write files
+                    // fall back to requiring approval.
+                    string absent = ws.Combine("absent.ini");
+                    File.WriteAllText(absent, "[System]\r\napikey=k\r\n", Encoding.UTF8);
+                    List<string> defaults = new ConfigHandler(absent).GetConfigList(
+                        "toolsrequiringapproval", AppConstants.DefaultToolsRequiringApproval);
+                    TestAssert.Equal(2, defaults.Count, "default count");
+                    TestAssert.Equal("run_shell_command", defaults[0], "run_shell_command default");
+                    TestAssert.Equal("download_file", defaults[1], "download_file default");
+
+                    // Key present but empty: the user opted out, so no default applies.
+                    string optedOut = ws.Combine("opted-out.ini");
+                    File.WriteAllText(optedOut, "[System]\r\ntoolsrequiringapproval=\r\n", Encoding.UTF8);
+                    TestAssert.Equal(0, new ConfigHandler(optedOut).GetConfigList(
+                        "toolsrequiringapproval", AppConstants.DefaultToolsRequiringApproval).Count,
+                        "explicit empty stays empty");
+                }
+            });
+
             TestRunner.Run("ToolRegistry.stdin_payload_scoped", () =>
             {
                 string fileToolsDir = Path.GetFullPath(Path.Combine(

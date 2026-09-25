@@ -39,12 +39,21 @@ public class ConfigHandler
         return defaultValue;
     }
 
-    public List<string> GetConfigList(string key)
+    public List<string> GetConfigList(string key, string defaultValue = "")
     {
         var list = new List<string>();
 
         if (!configMap.ContainsKey(key))
+        {
+            string[] defaultTokens = (defaultValue ?? "").Split(',');
+            foreach (string defaultToken in defaultTokens)
+            {
+                string trimmedDefault = defaultToken.Trim();
+                if (!string.IsNullOrEmpty(trimmedDefault))
+                    list.Add(trimmedDefault);
+            }
             return list;
+        }
 
         string value = configMap[key];
         var tokens = value.Split(',');

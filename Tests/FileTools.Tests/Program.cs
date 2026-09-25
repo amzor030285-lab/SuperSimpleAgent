@@ -133,6 +133,36 @@ namespace FileTools.Tests
                     TestAssert.True(!File.Exists(moved), "deleted");
                 });
 
+                TestRunner.Run("read_file.bounded_excerpt", () =>
+                {
+                    string path = ws.Combine("big.txt");
+                    StringBuilder body = new StringBuilder();
+                    for (int i = 0; i < 10000; i++)
+                        body.Append((char)('a' + (i % 26)));
+                    File.WriteAllText(path, body.ToString(), new UTF8Encoding(false));
+
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "read_file",
+                        new JObject { ["filename"] = path, ["offset"] = "100" },
+                        new JObject { ["maxFileContentLength"] = "5000" });
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    TestAssert.Contains(r.Text, "File length = 10000 bytes", "full size reported");
+                    TestAssert.Contains(r.Text, "reading chars 100-5099", "window header");
+                    TestAssert.Contains(r.Text, body.ToString().Substring(100, 5000), "excerpt content");
+                    TestAssert.Contains(r.Text, "...[truncated]", "truncation marker");
+                    TestAssert.True(r.Text.Length < 6000, "output bounded, got " + r.Text.Length);
+                });
+
+                TestRunner.Run("read_file.offset_beyond_eof", () =>
+                {
+                    string path = ws.Combine("short.txt");
+                    File.WriteAllText(path, "short", new UTF8Encoding(false));
+
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "read_file",
+                        new JObject { ["filename"] = path, ["offset"] = "50" });
+                    TestAssert.Equal(1, r.ExitCode, "non-zero exit");
+                    TestAssert.Contains(r.Text, "exceeds file length", "message");
+                });
+
                 TestRunner.Run("read_file.missing", () =>
                 {
                     ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "read_file",

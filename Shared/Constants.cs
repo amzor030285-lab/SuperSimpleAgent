@@ -6,6 +6,9 @@ public static class AppConstants
     public const int DefaultChatFontSize = 14;
     public const string DefaultAssistantName = "LLM";
 
+    /// <summary>Tools that ask for manual approval when toolsRequiringApproval is unset.</summary>
+    public const string DefaultToolsRequiringApproval = "run_shell_command,download_file";
+
     /// <summary>Default comma-separated knowledge-file extensions when ragAllowedExtensions is unset.</summary>
     public const string DefaultRagAllowedExtensions =
         ".md,.markdown,.txt,.rst,"

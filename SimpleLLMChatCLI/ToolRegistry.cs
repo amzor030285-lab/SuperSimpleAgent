@@ -304,6 +304,7 @@ namespace SimpleLLMChatCLI
                     process.StandardInput.Close();
 
                     var stdoutTask = Task.Factory.StartNew(() => process.StandardOutput.ReadToEnd());
+                    Task.Factory.StartNew(() => process.StandardError.ReadToEnd());
                     process.WaitForExit();
                     string raw = stdoutTask.Result;
                     string text;
