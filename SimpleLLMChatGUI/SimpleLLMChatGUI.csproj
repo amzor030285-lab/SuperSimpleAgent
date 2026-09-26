@@ -123,6 +123,9 @@
     <Compile Include="..\Shared\StatusPipe\StatusPipe.RunningTool.cs">
       <Link>Shared\StatusPipe\StatusPipe.RunningTool.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\StatusPipe\StatusPipe.Ready.cs">
+      <Link>Shared\StatusPipe\StatusPipe.Ready.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\ControlPipe\ControlPipe.cs">
       <Link>Shared\ControlPipe\ControlPipe.cs</Link>
     </Compile>

@@ -212,6 +212,7 @@ namespace SimpleLLMChatCLI
                 bool outputOnly = false;
                 // String to store image
                 string base64Image = null;
+                string base64ImageMime = null;
 
                 // Loop over each command-line argument
                 for (int i = 0; i < args.Length; i++)
@@ -283,7 +284,7 @@ namespace SimpleLLMChatCLI
 
                         try
                         {
-                            base64Image = ImageEncoder.ImageFileToBase64(imagePath);
+                            base64Image = ImageEncoder.ImageFileToBase64(imagePath, out base64ImageMime);
                         }
                         catch (Exception e)
                         {
@@ -307,6 +308,7 @@ namespace SimpleLLMChatCLI
                         conversation,
                         textPrompt,
                         base64Image,
+                        base64ImageMime,
                         assistantName,
                         enabledTools,
                         toolsRequiringApproval,
@@ -326,6 +328,8 @@ namespace SimpleLLMChatCLI
                 // how the previous turn's output ended.
                 ChatOutput.StartBlock();
                 ChatOutput.Write("You: ");
+                if (StatusPipe != null)
+                    StatusPipe.PublishReady();
                 string userInput = Console.ReadLine();
                 ChatOutput.EndInputLine();
 
@@ -555,13 +559,14 @@ namespace SimpleLLMChatCLI
 
                 string textPrompt = null;
                 string imageBase64 = null;
+                string imageBase64Mime = null;
 
                 string imagePath;
                 if (TryParseImageCommand(userInput, out imagePath, out textPrompt))
                 {
                     try
                     {
-                        imageBase64 = ImageEncoder.ImageFileToBase64(imagePath);
+                        imageBase64 = ImageEncoder.ImageFileToBase64(imagePath, out imageBase64Mime);
                     }
                     catch (Exception e)
                     {
@@ -578,6 +583,7 @@ namespace SimpleLLMChatCLI
                 client.ProcessConversation(conversation,
                                 textPrompt,
                                 imageBase64,
+                                imageBase64Mime,
                                 assistantName,
                                 enabledTools,
                                 toolsRequiringApproval,

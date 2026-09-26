@@ -82,9 +82,12 @@ namespace SimpleLLMChatCLI
                 {
                     LoadManifest(jsonFile);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Skip malformed manifests
+                    // Skip malformed manifests, but say which one and why: a silent
+                    // skip looks exactly like "the tool does not exist".
+                    Console.Error.WriteLine(
+                        "Skipping tool manifest '" + jsonFile + "': " + ex.Message);
                 }
             }
         }
@@ -310,7 +313,11 @@ namespace SimpleLLMChatCLI
                         process.StandardInput.Close();
 
                         var stdoutTask = Task.Factory.StartNew(() => process.StandardOutput.ReadToEnd());
-                        Task.Factory.StartNew(() => process.StandardError.ReadToEnd());
+                        // Drain stderr too, but the context provider's diagnostics
+                        // are not part of the injected context: the task is kept so
+                        // the read is not collected mid-flight, and its output is
+                        // discarded.
+                        var stderrDrain = Task.Factory.StartNew(() => process.StandardError.ReadToEnd());
                         process.WaitForExit();
 
                         string raw = stdoutTask.Result;
@@ -326,8 +333,10 @@ namespace SimpleLLMChatCLI
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Console.Error.WriteLine(
+                    "Context provider '" + commandName + "' failed: " + ex.Message);
                 return null;
             }
         }

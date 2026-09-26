@@ -75,6 +75,12 @@
     <Compile Include="..\..\SimpleLLMChatCLI\ToolResultParser.cs">
       <Link>CLI\ToolResultParser.cs</Link>
     </Compile>
+    <Compile Include="..\..\SimpleLLMChatCLI\ImageEncoder.cs">
+      <Link>CLI\ImageEncoder.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\StatusPipe\StatusPipe.Ready.cs">
+      <Link>Shared\StatusPipe\StatusPipe.Ready.cs</Link>
+    </Compile>
     <Compile Include="..\..\SimpleLLMChatCLI\RAG\VectorStore.cs">
       <Link>CLI\VectorStore.cs</Link>
     </Compile>

@@ -218,6 +218,7 @@ namespace SimpleLLMChatGUI
             processHandler.ApprovalRequested += OnApprovalRequested;
             processHandler.StatusReceived += OnStatusReceived;
             processHandler.RunningToolReceived += OnRunningToolReceived;
+            processHandler.ReadyReceived += OnReadyReceived;
 
             tokenTracker.Reset();
 
@@ -255,6 +256,19 @@ namespace SimpleLLMChatGUI
         private void OnRunningToolReceived(string toolName)
         {
             OnUiBackground(() => stopToolButton.IsEnabled = !string.IsNullOrEmpty(toolName));
+        }
+
+        /// <summary>
+        /// The CLI published "STATUS ready": it printed its prompt and is parked
+        /// on ReadLine, so no generation is in flight and there is no tool to stop.
+        /// </summary>
+        private void OnReadyReceived()
+        {
+            OnUiBackground(() =>
+            {
+                SetInputControlsEnabled(true);
+                stopToolButton.IsEnabled = false;
+            });
         }
 
         private void OnOutputReceived(string text)

@@ -192,6 +192,100 @@ namespace FileTools.Tests
                         new JObject { ["archive_path"] = archive, ["destination_path"] = dest });
                     TestAssert.Equal(0, r.ExitCode, "extract exit");
                 });
+
+                TestRunner.Run("grep_search.matches", () =>
+                {
+                    if (!ToolClient.ProductExists("grep.exe"))
+                        TestRunner.Skip("grep.exe not packaged beside test EXE");
+
+                    string root = ws.Combine("greproot");
+                    Directory.CreateDirectory(root);
+                    File.WriteAllText(Path.Combine(root, "a.txt"), "alpha\nneedle here\n", new UTF8Encoding(false));
+                    File.WriteAllText(Path.Combine(root, "b.md"), "no match in here\n", new UTF8Encoding(false));
+
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "grep_search",
+                        new JObject { ["pattern"] = "needle", ["directory_path"] = root });
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    TestAssert.Contains(r.Text, "a.txt", "matched file reported");
+                    TestAssert.Contains(r.Text, "needle here", "matched line reported");
+                    TestAssert.True(r.Text.IndexOf("b.md", StringComparison.Ordinal) < 0,
+                        "unmatched file must not appear, got: " + r.Text);
+                });
+
+                TestRunner.Run("grep_search.file_pattern", () =>
+                {
+                    if (!ToolClient.ProductExists("grep.exe"))
+                        TestRunner.Skip("grep.exe not packaged beside test EXE");
+
+                    string root = ws.Combine("grepfilt");
+                    Directory.CreateDirectory(root);
+                    File.WriteAllText(Path.Combine(root, "keep.cs"), "token-cs\n", new UTF8Encoding(false));
+                    File.WriteAllText(Path.Combine(root, "skip.txt"), "token-txt\n", new UTF8Encoding(false));
+
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "grep_search",
+                        new JObject { ["pattern"] = "token", ["directory_path"] = root, ["file_pattern"] = "*.cs" });
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    TestAssert.Contains(r.Text, "keep.cs", "included file reported");
+                    TestAssert.True(r.Text.IndexOf("skip.txt", StringComparison.Ordinal) < 0,
+                        "filtered file must not appear, got: " + r.Text);
+                });
+
+                TestRunner.Run("grep_search.case_insensitive", () =>
+                {
+                    if (!ToolClient.ProductExists("grep.exe"))
+                        TestRunner.Skip("grep.exe not packaged beside test EXE");
+
+                    string root = ws.Combine("grepcase");
+                    Directory.CreateDirectory(root);
+                    File.WriteAllText(Path.Combine(root, "c.txt"), "MixedCase Token\n", new UTF8Encoding(false));
+
+                    ToolInvokeResult sensitive = ToolClient.InvokeProduct(Exe, "grep_search",
+                        new JObject { ["pattern"] = "mixedcase", ["directory_path"] = root });
+                    TestAssert.Contains(sensitive.Text, "No matches found", "case-sensitive default");
+
+                    ToolInvokeResult insensitive = ToolClient.InvokeProduct(Exe, "grep_search",
+                        new JObject { ["pattern"] = "mixedcase", ["directory_path"] = root, ["case_insensitive"] = "true" });
+                    TestAssert.Equal(0, insensitive.ExitCode, "exit");
+                    TestAssert.Contains(insensitive.Text, "MixedCase Token", "case-insensitive match");
+                });
+
+                TestRunner.Run("grep_search.regex", () =>
+                {
+                    if (!ToolClient.ProductExists("grep.exe"))
+                        TestRunner.Skip("grep.exe not packaged beside test EXE");
+
+                    string root = ws.Combine("grepregex");
+                    Directory.CreateDirectory(root);
+                    File.WriteAllText(Path.Combine(root, "r.txt"), "value=42\nvalue=7\n", new UTF8Encoding(false));
+
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "grep_search",
+                        new JObject { ["pattern"] = "value=[0-9]+", ["directory_path"] = root });
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    TestAssert.Contains(r.Text, "value=42", "first match");
+                    TestAssert.Contains(r.Text, "value=7", "second match");
+                });
+
+                TestRunner.Run("grep_search.no_match_is_success", () =>
+                {
+                    if (!ToolClient.ProductExists("grep.exe"))
+                        TestRunner.Skip("grep.exe not packaged beside test EXE");
+
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "grep_search",
+                        new JObject { ["pattern"] = "zzz-no-such-token-zzz", ["directory_path"] = ws.Path });
+                    TestAssert.Equal(0, r.ExitCode, "no match is not an error");
+                    TestAssert.Contains(r.Text, "No matches found", "message");
+                });
+
+                TestRunner.Run("grep_search.missing_directory", () =>
+                {
+                    if (!ToolClient.ProductExists("grep.exe"))
+                        TestRunner.Skip("grep.exe not packaged beside test EXE");
+
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "grep_search",
+                        new JObject { ["pattern"] = "x", ["directory_path"] = ws.Combine("no-such-dir") });
+                    TestAssert.Equal(1, r.ExitCode, "non-zero exit");
+                    TestAssert.ContainsIgnoreCase(r.Text, "not found", "message");
+                });
             }
         }
     }

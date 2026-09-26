@@ -72,6 +72,7 @@ public class LLMClient
         List<ChatMessage> conversation,
         string userMessage,
         string image,
+        string imageMime,
         string assistantName,
         List<string> enabledTools,
         List<string> toolsRequiringApproval,
@@ -116,7 +117,8 @@ public class LLMClient
         {
             Role = "user",
             Content = contentForLlm,
-            Image = image
+            Image = image,
+            ImageMime = string.IsNullOrEmpty(imageMime) ? null : imageMime
         });
 
         // Context injectors (memory/skills summaries) are fetched once per user message

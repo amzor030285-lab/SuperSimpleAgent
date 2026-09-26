@@ -5,6 +5,7 @@ using System.Globalization;
 /// Named-pipe status channel: CLI hosts SimpleLLMChat.Status.{pid}; GUI connects by child PID.
 /// Wire format lines (UTF-8, one per message):
 ///   STATUS tokens=1234
+///   STATUS ready
 ///   STATUS running_tool=read_website
 ///   STATUS running_tool=
 ///   STATUS indexing=start total=42

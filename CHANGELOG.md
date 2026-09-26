@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.0.0] - 2026-09-26
 
 First tagged release of this repository. Verified on Windows 10/11 (x64) and Windows XP SP3 (x86):
-CLI suite 40 pass, GUI suite 16 pass.
+FileTools suite 18 pass, CLI suite 42 pass, GUI suite 16 pass.
 
 ### Added
 
@@ -47,8 +47,24 @@ CLI suite 40 pass, GUI suite 16 pass.
 - **Release packaging** - `build-and-test.bat` chains build, test build and all suites;
   `THIRD_PARTY_LICENSES/` ships with the release; a fresh CA bundle is packaged beside the
   bundled XP cURL.
+- **`grep_search`** - recursive regular-expression search over files, taken from upstream v1.5:
+  `pattern`, `directory_path`, `file_pattern` (passed through as `--include`) and
+  `case_insensitive`; it runs the bundled GNU grep and skips VCS, build and dependency
+  directories as well as binaries, so a search does not drown in build output. The release ships
+  `grep.exe` with the four DLLs it needs.
+- **CLI readiness signal** - the CLI publishes `STATUS ready` on the status pipe when it prints
+  its prompt, so the GUI can tell an idle CLI from a busy one without waiting for the whole turn
+  to end.
+- **Default data folders** - the staged release now contains `knowledge\`,
+  `tools\SkillTools\skills\` and `tools\MemoryTools\memories\`, so a fresh unpack works
+  without creating them by hand.
 
 ### Fixed
+
+- Image attachments were uploaded as `image/png` whatever the file was; JPEG, GIF, WebP, BMP and
+  TIFF now go out with their own MIME type instead of being mislabelled.
+- A malformed tool manifest and a failing context provider are reported on stderr instead of
+  being skipped in silence, which made a broken tool look like a missing one.
 
 - Context loss without compaction: the ladder used to chew the oldest 30% of messages in a loop
   before attempting a summary, so a single large tool result could wipe a long session. Summarizing

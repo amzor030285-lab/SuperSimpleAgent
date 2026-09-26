@@ -21,6 +21,7 @@ namespace SimpleLLMChatGUI
         public event Func<string, string, bool> ApprovalRequested;
         public event Action<int> StatusReceived;
         public event Action<string> RunningToolReceived;
+        public event Action ReadyReceived;
 
         private readonly StringBuilder streamBuffer = new StringBuilder();
         private readonly char[] charBuffer = new char[256];
@@ -86,6 +87,7 @@ namespace SimpleLLMChatGUI
                 statusPipeClient.StatusReceived += OnStatusPipeReceived;
                 statusPipeClient.IndexingStatusReceived += OnIndexingStatusPipeReceived;
                 statusPipeClient.RunningToolReceived += OnRunningToolPipeReceived;
+                statusPipeClient.ReadyReceived += OnReadyPipeReceived;
                 statusPipeClient.Start();
 
                 ReadOutputLoop();
@@ -114,6 +116,11 @@ namespace SimpleLLMChatGUI
             RunningToolReceived?.Invoke(toolName);
         }
 
+        private void OnReadyPipeReceived()
+        {
+            ReadyReceived?.Invoke();
+        }
+
         private void DisposeStatusPipeClient()
         {
             if (statusPipeClient != null)
@@ -121,6 +128,7 @@ namespace SimpleLLMChatGUI
                 statusPipeClient.StatusReceived -= OnStatusPipeReceived;
                 statusPipeClient.IndexingStatusReceived -= OnIndexingStatusPipeReceived;
                 statusPipeClient.RunningToolReceived -= OnRunningToolPipeReceived;
+                statusPipeClient.ReadyReceived -= OnReadyPipeReceived;
                 statusPipeClient.Dispose();
                 statusPipeClient = null;
             }
@@ -495,6 +503,8 @@ namespace SimpleLLMChatGUI
             GenerationComplete = null;
             ApprovalRequested = null;
             StatusReceived = null;
+            RunningToolReceived = null;
+            ReadyReceived = null;
             if (llmProcess != null && !llmProcess.HasExited)
             {
                 try { llmProcess.Kill(); }

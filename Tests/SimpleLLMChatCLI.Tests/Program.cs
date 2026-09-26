@@ -84,6 +84,28 @@ namespace SimpleLLMChatCLI.Tests
                 TestAssert.Equal("image/png", mime, "mime");
             });
 
+            TestRunner.Run("ImageEncoder.mime", () =>
+            {
+                TestAssert.Equal("image/jpeg", ImageEncoder.GuessMime("photo.JPG"), "jpeg");
+                TestAssert.Equal("image/jpeg", ImageEncoder.GuessMime("x.jpeg"), "jpeg long");
+                TestAssert.Equal("image/png", ImageEncoder.GuessMime("shot.PNG"), "png");
+                TestAssert.Equal("image/gif", ImageEncoder.GuessMime("a.gif"), "gif");
+                TestAssert.Equal("image/webp", ImageEncoder.GuessMime("a.webp"), "webp");
+                TestAssert.Equal("image/bmp", ImageEncoder.GuessMime("a.bmp"), "bmp");
+                TestAssert.Equal("image/tiff", ImageEncoder.GuessMime("a.tiff"), "tiff");
+                TestAssert.Equal("image/png", ImageEncoder.GuessMime("unknown.bin"), "default");
+                TestAssert.Equal("image/png", ImageEncoder.GuessMime(null), "null");
+            });
+
+            TestRunner.Run("StatusPipe.ready_line", () =>
+            {
+                TestAssert.True(StatusPipe.TryParseReadyLine("STATUS ready"), "exact");
+                TestAssert.True(StatusPipe.TryParseReadyLine("  STATUS ready  "), "trimmed");
+                TestAssert.True(!StatusPipe.TryParseReadyLine("STATUS tokens=42"), "not ready");
+                TestAssert.True(!StatusPipe.TryParseReadyLine(""), "empty");
+                TestAssert.True(!StatusPipe.TryParseReadyLine(null), "null");
+            });
+
             TestRunner.Run("VectorStore.search", () =>
             {
                 VectorStore store = new VectorStore();
