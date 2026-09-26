@@ -240,6 +240,29 @@ SimpleLLMChat includes the following 7 tool packages:
 
 Third-party tools can be installed by extracting them into the `tools` folder. For more information on developing/distributing custom tools, see [SimpleLLMChat-Tool-SDK](https://github.com/randomNinja64/SimpleLLMChat-Tool-SDK)
 
+## License
+
+SimpleLLMChat itself is licensed under the [MIT License](LICENSE).
+
+## Third-party components
+
+The tools shell out to external programs that are **not** covered by the MIT license above. They are redistributed unmodified, each with its license text in [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) (shipped in the release ZIP as well):
+
+| Component | Bundled as | License |
+| --- | --- | --- |
+| [Markdig](https://github.com/xoofx/markdig) | `Markdig.dll` | BSD-3-Clause |
+| [Newtonsoft.Json](https://www.newtonsoft.com/json) | `Newtonsoft.Json.dll` | MIT |
+| [cURL](https://curl.se/) (XP builds by LoRd\_MuldeR) | `curl.exe` | curl license |
+| [cURL CA bundle](https://curl.se/docs/ca-bundle.html) | `curl-ca-bundle.crt` | MPL-2.0 |
+| [7-Zip](https://www.7-zip.org/) | `7za.exe` | 7-Zip license (LGPL-2.1-or-later plus the unRAR restriction) |
+| [GNU grep](https://www.gnu.org/software/grep/) 2.5.3, GnuWin32 port | `grep.exe`, `libiconv2.dll`, `libintl3.dll`, `pcre3.dll`, `regex2.dll` | GPL-3.0-or-later |
+| [YT-DLP](https://github.com/yt-dlp/yt-dlp) (XP builds by nicolaasjan) | `yt-dlp.exe` | The Unlicense (public domain) |
+| OpenSSL, libpsl, libidn2, zlib | linked into the bundled cURL build | Apache-2.0, MIT, LGPL-3.0-or-later, zlib |
+
+Every one of these stays a separate, unmodified executable: the tools start them as child processes and never link against their code, so the MIT terms above cover SimpleLLMChat only and no GPL obligation extends to it. Keep it that way - do not patch these binaries or build their code into the tools, since that would create a combined work with different licensing consequences. The `grep.txt` notice also carries the GPL-3 Section 6 source offer for GNU grep.
+
+When adding or removing a bundled binary, keep `deps\`, `build.bat` and `THIRD_PARTY_LICENSES` in sync.
+
 ## Credits
 
 Thank you to the following for all of their contributions:
