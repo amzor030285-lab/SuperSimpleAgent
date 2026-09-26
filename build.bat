@@ -32,11 +32,20 @@ for %%T in (FileTools PythonTools ShellTools WebTools MemoryTools SkillTools Des
 :: Optional deps from deps\
 echo Packaging optional dependencies ...
 call :CopyIfExists "%ROOT%deps\7za.exe" "%OUT%\tools\FileTools\7za.exe"
+call :CopyIfExists "%ROOT%deps\grep.exe" "%OUT%\tools\FileTools\grep.exe"
+call :CopyIfExists "%ROOT%deps\libiconv2.dll" "%OUT%\tools\FileTools\libiconv2.dll"
+call :CopyIfExists "%ROOT%deps\libintl3.dll" "%OUT%\tools\FileTools\libintl3.dll"
+call :CopyIfExists "%ROOT%deps\pcre3.dll" "%OUT%\tools\FileTools\pcre3.dll"
+call :CopyIfExists "%ROOT%deps\regex2.dll" "%OUT%\tools\FileTools\regex2.dll"
 call :CopyIfExists "%ROOT%deps\curl.exe" "%OUT%\tools\WebTools\curl.exe"
 call :CopyIfExists "%ROOT%deps\curl.exe" "%OUT%\curl.exe"
 call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%OUT%\tools\WebTools\curl-ca-bundle.crt"
 call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%OUT%\curl-ca-bundle.crt"
 call :CopyIfExists "%ROOT%deps\yt-dlp.exe" "%OUT%\tools\WebTools\yt-dlp.exe"
+
+:: Docs that must travel with the binaries: the MIT license is required for
+:: redistribution, the rest tells a fresh user what they just unpacked.
+for %%D in (README.md LICENSE CHANGELOG.md SECURITY.md) do call :CopyIfExists "%ROOT%%%D" "%OUT%\%%D"
 
 :: Third-party license texts (curl, Markdig, Newtonsoft.Json, 7-Zip, ...)
 if exist "%ROOT%THIRD_PARTY_LICENSES" (
