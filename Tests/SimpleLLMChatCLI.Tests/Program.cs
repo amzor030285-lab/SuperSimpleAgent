@@ -3,6 +3,7 @@ using SimpleLLMChatCLI;
 using SimpleLLMChatCLI.RAG;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -797,6 +798,114 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.tool_tree_killed_on_timeout", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The tool runs `start /wait ping ...`, so its child ping
+                    // outlives the 5s tool timeout; the job must kill both.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var args = new JObject();
+                    args["command"] = "start /wait ping 127.0.0.1 -n 30 > nul";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
+                        toolTimeout: "run_shell_command=5");
+
+                    int baselinePings = CountProcesses("ping");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("sleep for a while");
+                        CliRunner.WaitForText(cli, "[running tool: run_shell_command", 30000);
+
+                        TestAssert.True(PollProcessCount("ping", c => c > baselinePings, 3000),
+                            "child ping never appeared while the tool ran; kill assertion is vacuous");
+
+                        CliRunner.WaitForText(cli, "timed out after 5 second(s)", 60000);
+
+                        TestAssert.True(PollProcessCount("ping", c => c == baselinePings, 5000),
+                            "child ping survived the tool timeout: the process tree was not killed");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.tool_tree_killed_on_abort", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // No per-tool timeout here: the STOPTOOL control-pipe
+                    // command must kill the tool and its child ping.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var args = new JObject();
+                    args["command"] = "start /wait ping 127.0.0.1 -n 30 > nul";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+
+                    int baselinePings = CountProcesses("ping");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("sleep for a while");
+                        CliRunner.WaitForText(cli, "[running tool: run_shell_command", 30000);
+
+                        TestAssert.True(PollProcessCount("ping", c => c > baselinePings, 3000),
+                            "child ping never appeared while the tool ran; kill assertion is vacuous");
+
+                        TestAssert.True(cli.SendStopTool(5000), "STOPTOOL delivered through the control pipe");
+                        CliRunner.WaitForText(cli, "cancelled by the user", 30000);
+
+                        TestAssert.True(PollProcessCount("ping", c => c == baselinePings, 5000),
+                            "child ping survived the tool abort: the process tree was not killed");
+
+                        CliRunner.WaitForTextAfter(cli, "cancelled by the user", "You: ", 30000);
+                    }
+                }
+            });
+
             TestRunner.Run("cli.clear_wipes_lastsession", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
@@ -1355,6 +1464,29 @@ namespace SimpleLLMChatCLI.Tests
             if (File.Exists(srcJson))
                 File.Copy(srcJson, Path.Combine(ws.Path, "Newtonsoft.Json.dll"), true);
             return ws;
+        }
+
+        static int CountProcesses(string processName)
+        {
+            Process[] processes = Process.GetProcessesByName(processName);
+            int count = processes.Length;
+            foreach (Process p in processes)
+                p.Dispose();
+            return count;
+        }
+
+        static bool PollProcessCount(string processName, Func<int, bool> predicate, int timeoutMs)
+        {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (true)
+            {
+                int count = CountProcesses(processName);
+                if (predicate(count))
+                    return true;
+                if (DateTime.UtcNow >= deadline)
+                    return false;
+                Thread.Sleep(150);
+            }
         }
 
         static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "",

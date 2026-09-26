@@ -298,20 +298,32 @@ namespace SimpleLLMChatCLI
                     StandardErrorEncoding = Encoding.UTF8
                 };
 
+                IntPtr job = IntPtr.Zero;
                 using (Process process = Process.Start(psi))
                 {
-                    process.StandardInput.Write(stdinData);
-                    process.StandardInput.Close();
+                    job = ProcessJob.CreateToolJob();
+                    ProcessJob.AssignToJob(job, process.Id);
 
-                    var stdoutTask = Task.Factory.StartNew(() => process.StandardOutput.ReadToEnd());
-                    Task.Factory.StartNew(() => process.StandardError.ReadToEnd());
-                    process.WaitForExit();
-                    string raw = stdoutTask.Result;
-                    string text;
-                    string imageBase64;
-                    string imageMime;
-                    ToolResultParser.Parse(raw, out text, out imageBase64, out imageMime);
-                    return text;
+                    try
+                    {
+                        process.StandardInput.Write(stdinData);
+                        process.StandardInput.Close();
+
+                        var stdoutTask = Task.Factory.StartNew(() => process.StandardOutput.ReadToEnd());
+                        Task.Factory.StartNew(() => process.StandardError.ReadToEnd());
+                        process.WaitForExit();
+
+                        string raw = stdoutTask.Result;
+                        string text;
+                        string imageBase64;
+                        string imageMime;
+                        ToolResultParser.Parse(raw, out text, out imageBase64, out imageMime);
+                        return text;
+                    }
+                    finally
+                    {
+                        ProcessJob.CloseJob(job);
+                    }
                 }
             }
             catch
@@ -395,8 +407,15 @@ namespace SimpleLLMChatCLI
                 int.TryParse(timeoutVal, out timeoutSecs);
                 int timeoutMs = timeoutSecs > 0 ? timeoutSecs * 1000 : 0;
 
+                IntPtr job = IntPtr.Zero;
                 using (Process process = Process.Start(psi))
                 {
+                    // Confine the tool and everything it spawns to a job so
+                    // cancel/timeout kills the whole tree (cmd, curl, 7za,
+                    // python), not just the tool process itself.
+                    job = ProcessJob.CreateToolJob();
+                    ProcessJob.AssignToJob(job, process.Id);
+
                     // Write arguments via stdin
                     process.StandardInput.Write(stdinData);
                     process.StandardInput.Close();
@@ -408,7 +427,7 @@ namespace SimpleLLMChatCLI
                     // Poll instead of blocking so the GUI's STOPTOOL (control pipe)
                     // can interrupt a hung tool; the deadline enforces the per-tool
                     // timeout when one is configured.
-                    AbortSupport.RegisterToolProcess(process);
+                    AbortSupport.RegisterToolProcess(process, job);
                     try
                     {
                         DateTime deadline = timeoutMs > 0
@@ -424,6 +443,7 @@ namespace SimpleLLMChatCLI
 
                         if (AbortSupport.ToolAbortRequested)
                         {
+                            ProcessJob.KillJobTree(job);
                             try { process.Kill(); } catch { }
                             toolContent = FormatCommandResult(toolName, "error: tool call was cancelled by the user.", -1);
                             exitCode = -1;
@@ -432,6 +452,7 @@ namespace SimpleLLMChatCLI
 
                         if (!process.HasExited)
                         {
+                            ProcessJob.KillJobTree(job);
                             try { process.Kill(); } catch { }
                             toolContent = FormatCommandResult(toolName, "error: tool call timed out after " + timeoutSecs + " second(s).", -1);
                             exitCode = -1;
@@ -453,6 +474,7 @@ namespace SimpleLLMChatCLI
                     finally
                     {
                         AbortSupport.UnregisterToolProcess();
+                        ProcessJob.CloseJob(job);
                     }
                 }
             }

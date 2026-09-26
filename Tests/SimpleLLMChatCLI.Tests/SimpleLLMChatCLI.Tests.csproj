@@ -84,6 +84,9 @@
     <Compile Include="..\..\SimpleLLMChatCLI\AbortSupport.cs">
       <Link>CLI\AbortSupport.cs</Link>
     </Compile>
+    <Compile Include="..\..\SimpleLLMChatCLI\ProcessJob.cs">
+      <Link>CLI\ProcessJob.cs</Link>
+    </Compile>
     <Compile Include="..\..\Shared\ManifestScanner.cs">
       <Link>Shared\ManifestScanner.cs</Link>
     </Compile>

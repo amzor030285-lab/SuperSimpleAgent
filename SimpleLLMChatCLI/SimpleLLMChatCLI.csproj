@@ -115,6 +115,7 @@
     </Compile>
     <Compile Include="AbortSupport.cs" />
     <Compile Include="ControlPipeServer.cs" />
+    <Compile Include="ProcessJob.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="app.config" />

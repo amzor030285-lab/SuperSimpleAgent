@@ -1,3 +1,4 @@
+using System;
 using System.Diagnostics;
 using System.Net;
 
@@ -21,6 +22,7 @@ namespace SimpleLLMChatCLI
 
         private static volatile HttpWebRequest currentRequest;
         private static volatile Process currentToolProcess;
+        private static volatile IntPtr currentToolJob;
 
         public static void RegisterRequest(HttpWebRequest request)
         {
@@ -34,25 +36,29 @@ namespace SimpleLLMChatCLI
         }
 
         /// <summary>
-        /// Registers the running tool process so RequestToolAbort can kill it.
+        /// Registers the running tool process (and its job, when one was
+        /// created) so RequestToolAbort can kill the whole process tree.
         /// An already-pending cancel is honored, not cleared.
         /// </summary>
-        public static void RegisterToolProcess(Process process)
+        public static void RegisterToolProcess(Process process, IntPtr job)
         {
             currentToolProcess = process;
+            currentToolJob = job;
         }
 
         /// <summary>Drops the registration and clears the one-shot cancel flag.</summary>
         public static void UnregisterToolProcess()
         {
             currentToolProcess = null;
+            currentToolJob = IntPtr.Zero;
             ToolAbortRequested = false;
         }
 
-        /// <summary>Requests cancellation of the running tool: one-shot flag plus kill of the process.</summary>
+        /// <summary>Requests cancellation of the running tool: one-shot flag plus kill of the process tree.</summary>
         public static void RequestToolAbort()
         {
             ToolAbortRequested = true;
+            ProcessJob.KillJobTree(currentToolJob);
             Process process = currentToolProcess;
             if (process != null)
             {
@@ -80,6 +86,7 @@ namespace SimpleLLMChatCLI
             ToolAbortRequested = false;
             currentRequest = null;
             currentToolProcess = null;
+            currentToolJob = IntPtr.Zero;
         }
     }
 }

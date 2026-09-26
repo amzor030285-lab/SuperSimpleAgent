@@ -6,3 +6,4 @@ Tests/logs/
 *.suo
 .vs/
 packages/
+XpProbe/
