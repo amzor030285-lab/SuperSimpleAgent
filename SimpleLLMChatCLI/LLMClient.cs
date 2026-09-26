@@ -949,7 +949,7 @@ public class LLMClient
     public void RefreshBaseCharacterOverhead(List<string> enabledTools)
     {
         List<string> contextInjections = registry.GetContextInjections(enabledTools);
-        string systemPrompt = BuildSystemPrompt(enabledTools, contextInjections);
+        string systemPrompt = BuildSystemPrompt();
         int toolsChars = 0;
         if (enabledTools.Count > 0)
         {
@@ -957,16 +957,12 @@ public class LLMClient
             if (toolsArray.Count > 0)
                 toolsChars = toolsArray.ToString(Formatting.None).Length;
         }
-        BaseOverheadChars = systemPrompt.Length + toolsChars;
+        BaseOverheadChars = systemPrompt.Length + toolsChars + ToolRegistry.BuildInjectionTail(contextInjections).Length;
     }
 
-    private string BuildSystemPrompt(List<string> enabledTools, List<string> contextInjections = null)
+    private string BuildSystemPrompt()
     {
         string sysprompt = ConfigHandler.DecodeStoredPrompt(config.GetConfigValue("sysprompt")) ?? "";
-
-        List<string> injections = contextInjections ?? registry.GetContextInjections(enabledTools);
-        foreach (string injection in injections)
-            sysprompt += "\n\n" + injection;
 
         string ragHint = RagHost.GetKnowledgePathHint(config);
         if (!string.IsNullOrEmpty(ragHint))
@@ -986,7 +982,7 @@ public class LLMClient
             ["model"] = config.GetConfigValue("model")
         };
 
-        string systemPrompt = BuildSystemPrompt(enabledTools, contextInjections);
+        string systemPrompt = BuildSystemPrompt();
 
         JArray messages = new JArray();
         messages.Add(new JObject
@@ -1020,6 +1016,8 @@ public class LLMClient
             });
         }
 
+        int injectionChars = ToolRegistry.AppendContextInjections(messages, contextInjections);
+
         payload["messages"] = messages;
 
         int toolsChars = 0;
@@ -1039,7 +1037,7 @@ public class LLMClient
             List<string> configuredTools = config.GetConfigList("tools");
             bool summarizationPass = enabledTools.Count == 0 && configuredTools.Count > 0;
             if (!summarizationPass)
-                BaseOverheadChars = systemPrompt.Length + toolsChars;
+                BaseOverheadChars = systemPrompt.Length + toolsChars + injectionChars;
         }
 
         payload["stream"] = true;

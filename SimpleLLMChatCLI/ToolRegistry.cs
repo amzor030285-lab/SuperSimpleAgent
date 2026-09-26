@@ -281,6 +281,61 @@ namespace SimpleLLMChatCLI
             return results;
         }
 
+        /// <summary>
+        /// Context injectors are volatile: the focused window and its control tree change
+        /// between turns. They are appended to the last user turn instead of the system
+        /// message, because a changed system message invalidates the provider's cached prompt
+        /// prefix on every turn. Returns the number of characters appended.
+        /// </summary>
+        public static int AppendContextInjections(JArray messages, List<string> contextInjections)
+        {
+            string tail = BuildInjectionTail(contextInjections);
+            if (tail.Length == 0)
+                return 0;
+
+            for (int i = messages.Count - 1; i >= 1; i--)
+            {
+                JObject msg = messages[i] as JObject;
+                if (msg == null || (string)msg["role"] != "user")
+                    continue;
+
+                JArray parts = msg["content"] as JArray;
+                if (parts != null)
+                {
+                    parts.Add(new JObject
+                    {
+                        ["type"] = "text",
+                        ["text"] = tail
+                    });
+                }
+                else
+                {
+                    string text = (string)msg["content"] ?? "";
+                    msg["content"] = text.Length > 0 ? text + "\n\n" + tail : tail;
+                }
+                return tail.Length + 2;
+            }
+
+            JObject system = messages.Count > 0 ? messages[0] as JObject : null;
+            if (system != null)
+                system["content"] = ((string)system["content"] ?? "") + "\n\n" + tail;
+            return tail.Length + 2;
+        }
+
+        public static string BuildInjectionTail(List<string> contextInjections)
+        {
+            if (contextInjections == null || contextInjections.Count == 0)
+                return "";
+
+            List<string> parts = new List<string>();
+            foreach (string injection in contextInjections)
+            {
+                if (!string.IsNullOrEmpty(injection))
+                    parts.Add(injection);
+            }
+            return string.Join("\n\n", parts.ToArray());
+        }
+
         private string InvokeContextProvider(string executablePath, string commandName)
         {
             try

@@ -6,6 +6,22 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.1] - 2026-09-27
+
+Bug-fix release. Feature set is identical to 1.0.0; verified on Windows 10/11 (x64) and
+Windows XP SP3 (x86): FileTools suite 18 pass, CLI suite 46 pass, GUI suite 16 pass.
+
+### Fixed
+
+- **The provider's prompt cache is no longer rebuilt on every turn.** Context injector output
+  (with DesktopTools enabled that is the live window/control tree from `get_desktop_context`)
+  was appended to the system prompt, which is the first message of the request, so its
+  per-turn changes invalidated the cached prompt prefix and made every turn re-process the
+  whole conversation. Injections are now appended to the last user turn: the system prompt
+  stays byte-identical between turns while the model still receives fresh injected context.
+  A user turn that carries an image (multimodal content) and a history without any user
+  message are both handled.
+
 ## [1.0.0] - 2026-09-26
 
 First tagged release of this repository. Verified on Windows 10/11 (x64) and Windows XP SP3 (x86):

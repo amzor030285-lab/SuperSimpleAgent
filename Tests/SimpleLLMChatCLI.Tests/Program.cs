@@ -253,6 +253,83 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            // A context injector returns a live snapshot (DesktopTools' get_desktop_context
+            // is the focused window's control tree), so it differs on every turn. Folding it
+            // into the system message changed the FIRST message of every request and made the
+            // provider rebuild its cached prompt prefix each turn; injections now go to the end.
+            TestRunner.Run("ToolRegistry.context_injection_cache_stable", () =>
+            {
+                JArray first = BuildSampleMessages();
+                JArray second = BuildSampleMessages();
+
+                int firstChars = ToolRegistry.AppendContextInjections(first, new List<string> { "DESKTOP TREE A" });
+                int secondChars = ToolRegistry.AppendContextInjections(second, new List<string> { "DESKTOP TREE B" });
+
+                TestAssert.Equal("You are helpful.", (string)first[0]["content"], "system message untouched");
+                TestAssert.Equal((string)first[0]["content"], (string)second[0]["content"], "system message identical across turns");
+                TestAssert.True(!((string)first[0]["content"]).Contains("DESKTOP TREE"), "system prompt never carries the injection");
+                TestAssert.Contains((string)second[3]["content"], "DESKTOP TREE B", "injection reaches the model on the last user turn");
+                TestAssert.Equal("DESKTOP TREE B".Length + 2, secondChars, "appended char count reported");
+                TestAssert.Equal("DESKTOP TREE A".Length + 2, firstChars, "appended char count reported (turn 1)");
+            });
+
+            TestRunner.Run("ToolRegistry.context_injection_multimodal", () =>
+            {
+                JArray messages = new JArray();
+
+                JObject systemMsg = new JObject();
+                systemMsg["role"] = "system";
+                systemMsg["content"] = "You are helpful.";
+                messages.Add(systemMsg);
+
+                JObject userMsg = new JObject();
+                userMsg["role"] = "user";
+                JArray parts = new JArray();
+                JObject textPart = new JObject();
+                textPart["type"] = "text";
+                textPart["text"] = "what is on my screen?";
+                parts.Add(textPart);
+                userMsg["content"] = parts;
+                messages.Add(userMsg);
+
+                ToolRegistry.AppendContextInjections(messages, new List<string> { "DESKTOP TREE" });
+
+                TestAssert.Equal("You are helpful.", (string)messages[0]["content"], "system message untouched");
+                JArray outParts = messages[1]["content"] as JArray;
+                TestAssert.True(outParts != null, "multimodal content stays an array");
+                TestAssert.Equal(2, outParts.Count, "text part appended after the existing parts");
+                TestAssert.Equal("DESKTOP TREE", (string)outParts[1]["text"], "injected text part");
+            });
+
+            TestRunner.Run("ToolRegistry.context_injection_no_user_turn", () =>
+            {
+                JArray messages = new JArray();
+
+                JObject systemMsg = new JObject();
+                systemMsg["role"] = "system";
+                systemMsg["content"] = "You are helpful.";
+                messages.Add(systemMsg);
+
+                JObject assistantMsg = new JObject();
+                assistantMsg["role"] = "assistant";
+                assistantMsg["content"] = "an answer";
+                messages.Add(assistantMsg);
+
+                int chars = ToolRegistry.AppendContextInjections(messages, new List<string> { "DESKTOP TREE" });
+
+                TestAssert.Equal("DESKTOP TREE".Length + 2, chars, "chars reported on the fallback path");
+                TestAssert.Contains((string)messages[0]["content"], "DESKTOP TREE", "falls back to the system message");
+                TestAssert.Equal("an answer", (string)messages[1]["content"], "assistant turn untouched");
+            });
+
+            TestRunner.Run("ToolRegistry.context_injection_tail", () =>
+            {
+                TestAssert.Equal("", ToolRegistry.BuildInjectionTail(null), "null list");
+                TestAssert.Equal("", ToolRegistry.BuildInjectionTail(new List<string>()), "empty list");
+                TestAssert.Equal("A", ToolRegistry.BuildInjectionTail(new List<string> { null, "", "A" }), "blank entries dropped");
+                TestAssert.Equal("A" + "\n\n" + "B", ToolRegistry.BuildInjectionTail(new List<string> { "A", "B" }), "joined with a blank line");
+            });
+
             TestRunner.Run("cli.bad_reasoning_effort", () =>
             {
                 using (TempWorkspace ws = PackageCliWorkspace())
@@ -1695,6 +1772,33 @@ namespace SimpleLLMChatCLI.Tests
 
         [DllImport("kernel32.dll")]
         static extern bool CloseHandle(IntPtr handle);
+
+        static JArray BuildSampleMessages()
+        {
+            JArray messages = new JArray();
+
+            JObject systemMsg = new JObject();
+            systemMsg["role"] = "system";
+            systemMsg["content"] = "You are helpful.";
+            messages.Add(systemMsg);
+
+            JObject firstUser = new JObject();
+            firstUser["role"] = "user";
+            firstUser["content"] = "first question";
+            messages.Add(firstUser);
+
+            JObject assistantMsg = new JObject();
+            assistantMsg["role"] = "assistant";
+            assistantMsg["content"] = "first answer";
+            messages.Add(assistantMsg);
+
+            JObject secondUser = new JObject();
+            secondUser["role"] = "user";
+            secondUser["content"] = "second question";
+            messages.Add(secondUser);
+
+            return messages;
+        }
 
         static bool HasConfigKey(JObject cfgObj, string name)
         {
