@@ -849,6 +849,12 @@ public sealed class FakeOpenAiServer : IDisposable
     /// </summary>
     public int StallFirstChatRequestMs { get; set; }
 
+    /// <summary>
+    /// Number of chat requests to answer normally before tool-call rounds start.
+    /// 0 = tool-call rounds start immediately (default).
+    /// </summary>
+    public int ToolCallSkipFirstRequests { get; set; }
+
     /// <summary>Tool name to emit while tool-call rounds remain.</summary>
     public string ToolCallName { get; set; }
 
@@ -1009,7 +1015,7 @@ public sealed class FakeOpenAiServer : IDisposable
             return;
         }
 
-        if (ToolCallRoundsRemaining > 0)
+        if (ToolCallRoundsRemaining > 0 && _turn > ToolCallSkipFirstRequests)
         {
             ToolCallRoundsRemaining--;
             WriteToolCallStream(ctx);

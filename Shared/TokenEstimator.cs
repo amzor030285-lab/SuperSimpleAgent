@@ -12,8 +12,8 @@ public static class TokenEstimator
     public const double MicroCompactThreshold = 0.80;
 
     /// <summary>
-    /// Critical usage: automatic compaction kicks in (repeated oldest-message
-    /// truncation, then, as a last resort, shrinking the biggest message contents).
+    /// Critical usage: a single oldest-message truncation runs (after the summarize
+    /// pass), then, as a last resort, shrinking the biggest message contents.
     /// </summary>
     public const double AskUserThreshold = 0.95;
 

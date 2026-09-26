@@ -388,10 +388,11 @@ public class LLMClient
     /// first request of a turn and again after each tool round:
     ///   &gt;= 80%  micro-compact: drop old assistant(tool_calls)+tool(tool_call_id) groups,
     ///            keeping the newest 2.
-    ///   &gt;= 95%  truncate the oldest ~30% of messages, repeated until below 95%
-    ///            (absorbs single-turn spikes that jump straight past the thresholds).
-    ///   &gt;= 90%  summarize the whole conversation into a compact recap (the summarize
-    ///            request itself falls back to a hard truncation if it fails).
+    ///   &gt;= 90%  summarize the older head into a compact recap (the recent tail stays
+    ///            verbatim). Runs before any history is destroyed, so a single-turn
+    ///            spike is absorbed by the recap instead of by deletion. The summarize
+    ///            request itself falls back to a hard truncation if it fails.
+    ///   &gt;= 95%  one bounded pass: truncate the oldest ~30% of messages.
     ///   &gt;= 95%  last resort: shrink the biggest message contents so the request fits.
     /// Compaction always happens when usage is high enough, and the chat continues.
     /// </summary>
@@ -418,19 +419,20 @@ public class LLMClient
         if (toolRemoved > 0)
             ChatOutput.WriteLine("[Context usage high - removed " + toolRemoved + " old tool messages]");
 
-        // Pass 2 (free): critical level - truncate oldest ~30% until below 95%.
-        int guard = 0;
-        while (UsageOf(conversation, contextWindowSize) >= TokenEstimator.AskUserThreshold && guard++ < 10)
-        {
-            int removed = TruncateOldestFraction(conversation, TokenEstimator.TruncateFraction);
-            if (removed <= 0)
-                break;
-            ChatOutput.WriteLine("[Context usage high - truncated " + removed + " oldest messages]");
-        }
-
-        // Pass 3 (one LLM call): still >= 90% after the free passes - summarize silently.
+        // Pass 2 (one LLM call): >= 90% - summarize the older head into a compact
+        // recap before any history is destroyed. This is what absorbs single-turn
+        // spikes: the recap keeps the task state, the recent tail stays verbatim.
         if (UsageOf(conversation, contextWindowSize) >= TokenEstimator.SummarizeThreshold)
             SummaryAndReplace(conversation, outputOnly, continueHint, false);
+
+        // Pass 3 (free): still critical - one bounded 30% oldest-first truncation
+        // (reached when the summary was skipped or failed).
+        if (UsageOf(conversation, contextWindowSize) >= TokenEstimator.AskUserThreshold)
+        {
+            int removed = TruncateOldestFraction(conversation, TokenEstimator.TruncateFraction);
+            if (removed > 0)
+                ChatOutput.WriteLine("[Context usage high - truncated " + removed + " oldest messages]");
+        }
 
         // Pass 4 (last resort): still critical - shrink the biggest message contents.
         if (UsageOf(conversation, contextWindowSize) >= TokenEstimator.AskUserThreshold)

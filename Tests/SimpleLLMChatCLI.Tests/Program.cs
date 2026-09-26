@@ -1180,7 +1180,7 @@ namespace SimpleLLMChatCLI.Tests
                     // first 8000 chars of the file each (read_file's limit) keep
                     // the two newest groups at ~16k chars (~5.4k tokens) - past
                     // the 95% band of the 5000 window even after micro-compact,
-                    // so the 30% oldest-first truncate loop must chew toward
+                    // so the bounded 30% oldest-first truncation must chew toward
                     // the front, where the single user message sits. Dropping
                     // it used to leave a user-less payload and the 400.
                     server.RejectPayloadsWithoutUserMessage = true;
@@ -1215,7 +1215,7 @@ namespace SimpleLLMChatCLI.Tests
                         cli.WriteLine("read the big file");
                         CliRunner.WaitForText(cli, "[tool output]", 30000);
                         // The usage ladder fires mid-turn: micro-compact drops old
-                        // groups, then the 30% truncate loop eats toward the front.
+                        // groups, then the bounded 30% truncation eats toward the front.
                         CliRunner.WaitForText(cli, "[Context usage high - truncated", 30000);
                         // The turn must survive: the outgoing payload kept its
                         // "user" role so the template accepted it.
@@ -1228,6 +1228,235 @@ namespace SimpleLLMChatCLI.Tests
                         TestAssert.True(
                             !cli.Stdout.Contains("Request to LLM Failed"),
                             "turn must survive the truncation loop");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.spike_summarized_before_truncate", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // Thirteen turns of ~2KB markdown (~27k chars) then one big tool
+                    // output (the 20k shell cap) puts the mid-turn spike far past
+                    // 95% of the 12000 window. The old ladder chewed the oldest
+                    // messages away in geometric 30% passes with no summary; the
+                    // summary pass must now absorb the spike (recap + verbatim
+                    // tail) and no destructive truncation must run at all.
+                    server.LongMarkdownReplies = true;
+                    server.StreamDelayMs = 5;
+                    server.StreamChunkChars = 64;
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallSkipFirstRequests = 13;
+                    server.ToolCallName = "run_shell_command";
+                    string bigPath = Path.Combine(ws.Path, "big.txt");
+                    StringBuilder big = new StringBuilder();
+                    for (int i = 0; i < 3000; i++)
+                        big.Append("0123456789");
+                    File.WriteAllText(bigPath, big.ToString(), Encoding.UTF8);
+                    var args = new JObject();
+                    args["command"] = "type " + bigPath;
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 12000, tools: "run_shell_command");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        for (int turn = 1; turn <= 13; turn++)
+                        {
+                            cli.WriteLine("message " + turn);
+                            CliRunner.WaitForText(cli, "# Reply turn " + turn, 30000);
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                        }
+
+                        cli.WriteLine("print the big file");
+                        CliRunner.WaitForText(cli, "characters omitted: output exceeded the 20000 character limit", 60000);
+
+                        // The spike must be absorbed by the summarize pass.
+                        CliRunner.WaitForText(cli, "[Context usage high - summarizing conversation...", 30000);
+                        CliRunner.WaitForText(cli, "[Conversation summarized - continuing...]", 30000);
+                        // Requests so far: 13 turns + tool call + summary = 15, so the
+                        // continued reply is turn 16.
+                        CliRunner.WaitForText(cli, "# Reply turn 16", 30000);
+                        CliRunner.WaitForText(cli, "You:", 30000);
+
+                        TestAssert.True(
+                            !cli.Stdout.Contains("[Context usage high - truncated"),
+                            "no destructive truncation: the spike was absorbed by the summary");
+                        TestAssert.True(
+                            !cli.Stdout.Contains("Request to LLM Failed"),
+                            "turn must survive the spike");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.truncate_after_summary_still_over", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The 6000 window is smaller than the 8k-token recent tail
+                    // (~24k chars at the default char ratio), so even a successful
+                    // summary leaves recap + tail far above 95%. The ladder must run
+                    // the bounded 30% truncation AFTER the summary, and - because one
+                    // 20k tool output dominates the tail - finish with the last-resort
+                    // shrink of the single biggest message.
+                    server.LongMarkdownReplies = true;
+                    server.StreamDelayMs = 5;
+                    server.StreamChunkChars = 64;
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallSkipFirstRequests = 6;
+                    server.ToolCallName = "run_shell_command";
+                    string bigPath = Path.Combine(ws.Path, "big.txt");
+                    StringBuilder big = new StringBuilder();
+                    for (int i = 0; i < 3000; i++)
+                        big.Append("0123456789");
+                    File.WriteAllText(bigPath, big.ToString(), Encoding.UTF8);
+                    var args = new JObject();
+                    args["command"] = "type " + bigPath;
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 6000, tools: "run_shell_command");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        for (int turn = 1; turn <= 6; turn++)
+                        {
+                            cli.WriteLine("message " + turn);
+                            CliRunner.WaitForText(cli, "# Reply turn " + turn, 30000);
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                        }
+
+                        cli.WriteLine("print the big file");
+                        CliRunner.WaitForText(cli, "characters omitted: output exceeded the 20000 character limit", 60000);
+
+                        // Pass 2: the spike is summarized first...
+                        CliRunner.WaitForText(cli, "[Context usage high - summarizing conversation...", 30000);
+                        CliRunner.WaitForText(cli, "[Conversation summarized - continuing...]", 30000);
+                        // ...pass 3: the recap + tail is still above 95%, so the bounded
+                        // truncation runs AFTER the successful summary (oldest 30%
+                        // prefix, user messages protected).
+                        CliRunner.WaitForTextAfter(
+                            cli, "[Conversation summarized - continuing...]",
+                            "[Context usage high - truncated", 30000);
+                        // ...pass 4: the single 20k tool output still dominates the tail,
+                        // so the biggest message is shrunk to fit the window.
+                        CliRunner.WaitForTextAfter(
+                            cli, "[Context usage high - truncated",
+                            "[Context usage high - message content truncated to fit the context window]", 30000);
+                        // Requests so far: 6 turns + tool call + summary = 8, so the
+                        // continued reply is turn 9.
+                        CliRunner.WaitForText(cli, "# Reply turn 9", 30000);
+                        CliRunner.WaitForText(cli, "You:", 30000);
+
+                        TestAssert.True(
+                            !cli.Stdout.Contains("Request to LLM Failed"),
+                            "turn must survive the full ladder");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.resummarization_carries_prior_summary", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // Two manual /compactfull passes. Fifteen turns (~26k chars) push
+                    // the conversation past the ~24k keep window so the first
+                    // compaction actually summarizes the older head. The second one
+                    // then summarizes a conversation that already holds a [Previous
+                    // conversation summary] marker: ExtractPreviousSummary must lift
+                    // the first recap out and BuildSummaryPrompt must embed it in a
+                    // <prior-summary> block of the outgoing request.
+                    server.LongMarkdownReplies = true;
+                    server.StreamDelayMs = 5;
+                    server.StreamChunkChars = 64;
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        for (int turn = 1; turn <= 15; turn++)
+                        {
+                            cli.WriteLine("message " + turn);
+                            CliRunner.WaitForText(cli, "# Reply turn " + turn, 30000);
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                        }
+
+                        // First compaction: summary request #16 ("# Reply turn 16")
+                        // becomes the stored recap.
+                        cli.WriteLine("/compactfull");
+                        CliRunner.WaitForText(cli, "[Conversation compacted]", 30000);
+                        CliRunner.WaitForTextAfter(cli, "[Conversation compacted]", "# Reply turn 16", 30000);
+                        CliRunner.WaitForTextAfter(cli, "End of turn 16.", "You:", 15000);
+
+                        // Two more turns (requests #17 and #18).
+                        for (int turn = 16; turn <= 17; turn++)
+                        {
+                            cli.WriteLine("message " + turn);
+                            CliRunner.WaitForText(cli, "# Reply turn " + (turn + 1), 30000);
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                        }
+
+                        // Second compaction: summary request #19 must embed the
+                        // first recap in a <prior-summary> block.
+                        cli.WriteLine("/compactfull");
+                        CliRunner.WaitForTextAfter(cli, "# Reply turn 18", "[Conversation compacted]", 30000);
+                        CliRunner.WaitForTextAfter(cli, "[Conversation compacted]", "# Reply turn 19", 30000);
+                        CliRunner.WaitForTextAfter(cli, "End of turn 19.", "You:", 15000);
+
+                        TestAssert.Contains(
+                            server.LastBody, "<prior-summary>",
+                            "second summary request must carry the prior-summary block");
+                        TestAssert.Contains(
+                            server.LastBody, "# Reply turn 16",
+                            "second summary request must embed the first recap text");
+
+                        cli.WriteLine("continue");
+                        CliRunner.WaitForText(cli, "# Reply turn 20", 30000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        TestAssert.True(
+                            !cli.Stdout.Contains("Request to LLM Failed"),
+                            "chat must continue after the re-summarization");
                     }
                 }
             });
