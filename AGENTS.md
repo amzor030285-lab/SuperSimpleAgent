@@ -34,4 +34,4 @@ Optionally pass a suite name to run only that suite in step 3:
 
 ## Git
 - Staged release binaries are tracked: `SimpleLLMChat\SimpleLLMChatGUI.exe` and `SimpleLLMChat\SimpleLLMChatCLI.exe`. Commit them together with the source changes when they were rebuilt by `build.bat`.
-- Working branch in this session: `markdig-render`.
+- Working branch: `main`.
