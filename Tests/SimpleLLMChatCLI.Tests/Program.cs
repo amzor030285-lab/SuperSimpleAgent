@@ -812,12 +812,14 @@ namespace SimpleLLMChatCLI.Tests
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
                 using (TempWorkspace ws = PackageCliWorkspace())
                 {
-                    // The tool runs `start /wait ping ...`, so its child ping
+                    // The tool runs `start /b /wait ping ...`, so its child ping
                     // outlives the 5s tool timeout; the job must kill both.
+                    // /b keeps the extra process level the test needs but stops
+                    // `start` from flashing a console window on the desktop.
                     server.ToolCallRoundsRemaining = 1;
                     server.ToolCallName = "run_shell_command";
                     var args = new JObject();
-                    args["command"] = "start /wait ping 127.0.0.1 -n 30 > nul";
+                    args["command"] = "start /b /wait ping 127.0.0.1 -n 30 > nul";
                     server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
                     server.StreamDelayMs = 5;
 
@@ -870,7 +872,7 @@ namespace SimpleLLMChatCLI.Tests
                     server.ToolCallRoundsRemaining = 1;
                     server.ToolCallName = "run_shell_command";
                     var args = new JObject();
-                    args["command"] = "start /wait ping 127.0.0.1 -n 30 > nul";
+                    args["command"] = "start /b /wait ping 127.0.0.1 -n 30 > nul";
                     server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
                     server.StreamDelayMs = 5;
 

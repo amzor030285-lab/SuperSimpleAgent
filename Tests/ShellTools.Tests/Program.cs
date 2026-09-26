@@ -145,13 +145,21 @@ namespace ShellTools.Tests
                     // Snapshot existing notepad PIDs so we only kill ones we start.
                     System.Collections.Generic.HashSet<int> before = SnapshotPids("notepad");
 
+                    // Open a real file rather than a blank document: the window flashes on
+                    // the test author's desktop either way, and a marker makes it obvious
+                    // that it is a test artifact instead of a stray editor session.
+                    string marker = ws.Combine("launch-notepad-marker.txt");
+                    File.WriteAllText(marker,
+                        "This window was opened by the ShellTools test suite and is closed again automatically.\r\n",
+                        new UTF8Encoding(false));
+
                     // Use cmd's built-in `start` so this remains compatible with XP, where
                     // PowerShell is not installed by default. Redirect its standard streams
                     // to NUL; ToolHelper bounds draining of any other inherited pipe handles.
                     ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "run_shell_command",
                         new JObject
                         {
-                            ["command"] = "start \"\" notepad.exe >nul 2>&1"
+                            ["command"] = "start \"\" notepad.exe \"" + marker + "\" >nul 2>&1"
                         },
                         null,
                         15000);
