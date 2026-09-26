@@ -38,6 +38,12 @@ call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%OUT%\tools\WebTools\curl-ca
 call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%OUT%\curl-ca-bundle.crt"
 call :CopyIfExists "%ROOT%deps\yt-dlp.exe" "%OUT%\tools\WebTools\yt-dlp.exe"
 
+:: Third-party license texts (curl, Markdig, Newtonsoft.Json, 7-Zip, ...)
+if exist "%ROOT%THIRD_PARTY_LICENSES" (
+    xcopy /Y /E /I /Q "%ROOT%THIRD_PARTY_LICENSES" "%OUT%\THIRD_PARTY_LICENSES" >nul
+    echo   packaged THIRD_PARTY_LICENSES
+)
+
 echo.
 echo Done: %OUT%
 exit /b 0

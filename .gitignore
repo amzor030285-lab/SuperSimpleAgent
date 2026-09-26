@@ -7,3 +7,15 @@ Tests/logs/
 .vs/
 packages/
 XpProbe/
+
+# Runtime data written next to the executables (the staged SimpleLLMChat\
+# folder is tracked, so these must never be swept in by "git add -A")
+LLMSettings.ini
+sessions/
+knowledge/
+memories/
+*.log
+
+# OS files
+Thumbs.db
+desktop.ini
