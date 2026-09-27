@@ -50,11 +50,36 @@ namespace FileTools
                 foreach (string excludeGlob in GrepExcludeLists.ExcludedFileGlobs)
                     args.Append("--exclude=").Append(excludeGlob).Append(" ");
 
-                string escapedPattern = pattern.Replace("\"", "\\\"");
-                args.Append("\"" + escapedPattern + "\" ");
-                args.Append("\"" + searchPath + "\"");
+                // The pattern reaches grep through a file, never through the command
+                // line. Windows encodes argv with the ANSI code page, so a non-ASCII
+                // pattern (Cyrillic) arrives as mojibake bytes that cannot match the
+                // UTF-8 file contents. grep -f reads the pattern as raw bytes instead.
+                string patternFile = null;
+                string output;
+                try
+                {
+                    if (!string.IsNullOrEmpty(pattern))
+                    {
+                        patternFile = Path.GetTempFileName();
+                        File.WriteAllText(patternFile, pattern, new UTF8Encoding(false));
+                        args.Append("-f \"" + patternFile + "\" ");
+                    }
+                    else
+                    {
+                        args.Append("\"\" ");
+                    }
+                    args.Append("\"" + searchPath + "\"");
 
-                string output = ToolHelper.ExecuteProcess("grep.exe", args.ToString(), out exitCode, combineErrorOutput: false);
+                    output = ToolHelper.ExecuteProcess("grep.exe", args.ToString(), out exitCode, combineErrorOutput: false);
+                }
+                finally
+                {
+                    if (patternFile != null)
+                    {
+                        try { File.Delete(patternFile); }
+                        catch { }
+                    }
+                }
 
                 // GNU grep: 0 = matches, 1 = no matches, >=2 = error
                 if (exitCode == 1 || (exitCode == 0 && string.IsNullOrWhiteSpace(output)))

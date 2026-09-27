@@ -6,6 +6,25 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.2] - 2026-09-28
+
+Bug-fix release. Feature set is identical to 1.0.1; verified on Windows 10/11 (x64) and
+Windows XP SP3 (x86): FileTools suite 19 pass, CLI suite 46 pass, GUI suite 16 pass.
+
+### Fixed
+
+- **`grep_search` can match non-ASCII patterns again.** The pattern was passed to `grep.exe`
+  on the command line, and Windows encodes the command line with the ANSI code page, so a
+  Cyrillic pattern reached grep as mojibake bytes and never matched the UTF-8 file contents
+  (`No matches found` on files that clearly contained the word). The pattern is now written to
+  a temporary file in UTF-8 without a BOM and handed to grep with `-f`, which reads it as raw
+  bytes. Literal Cyrillic patterns and character classes now match; Latin patterns are
+  unaffected. Inherited from upstream, not a regression of this repository.
+
+  Known limitation, unchanged: the bundled GNU grep 2.5.4 matches bytes rather than
+  characters, so a metacharacter placed inside a non-ASCII word (`Арт.м`, `Арт[ёе]м`) still
+  does not match. Fixing that needs a grep build with a UTF-8 locale.
+
 ## [1.0.1] - 2026-09-27
 
 Bug-fix release. Feature set is identical to 1.0.0; verified on Windows 10/11 (x64) and

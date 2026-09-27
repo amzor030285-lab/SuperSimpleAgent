@@ -265,6 +265,28 @@ namespace FileTools.Tests
                     TestAssert.Contains(r.Text, "value=7", "second match");
                 });
 
+                TestRunner.Run("grep_search.utf8_pattern", () =>
+                {
+                    if (!ToolClient.ProductExists("grep.exe"))
+                        TestRunner.Skip("grep.exe not packaged beside test EXE");
+
+                    string root = ws.Combine("greputf8");
+                    Directory.CreateDirectory(root);
+                    File.WriteAllText(Path.Combine(root, "ru.txt"),
+                        "Привет мир\nАртём любит C#\n", new UTF8Encoding(false));
+
+                    ToolInvokeResult hit = ToolClient.InvokeProduct(Exe, "grep_search",
+                        new JObject { ["pattern"] = "Артём", ["directory_path"] = root });
+                    TestAssert.Equal(0, hit.ExitCode, "exit");
+                    TestAssert.Contains(hit.Text, "ru.txt", "matched file reported");
+                    TestAssert.Contains(hit.Text, "Артём любит C#", "matched line reported");
+
+                    ToolInvokeResult miss = ToolClient.InvokeProduct(Exe, "grep_search",
+                        new JObject { ["pattern"] = "Александр", ["directory_path"] = root });
+                    TestAssert.Equal(0, miss.ExitCode, "no match is not an error");
+                    TestAssert.Contains(miss.Text, "No matches found", "message");
+                });
+
                 TestRunner.Run("grep_search.no_match_is_success", () =>
                 {
                     if (!ToolClient.ProductExists("grep.exe"))
