@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -29,6 +30,11 @@ namespace SimpleLLMChatGUI
         private bool _compacting;
         private bool _summaryArrived;
         private string _compactTail = "";
+
+        // False when the user has wheeled or dragged the chat view up to read
+        // earlier text: autoscroll parks until they return to the bottom.
+        private bool _autoScroll = true;
+        private ScrollViewer _chatScrollViewer;
 
         /// <summary>
         /// Streamed stdout is buffered here and handed to the chat list on a timer
@@ -80,6 +86,12 @@ namespace SimpleLLMChatGUI
         public MainWindow()
         {
             InitializeComponent();
+
+            // Software rendering (Tier 0) on weak GPUs: GDI-style text metrics
+            // are markedly cheaper than the high-quality path and render
+            // sharper on XP, so fall back to them for the whole window.
+            if (RenderCapability.Tier >> 16 == 0)
+                TextOptions.SetTextFormattingMode(this, TextFormattingMode.Display);
 
             // Initialize image handler and centralize UI updates via events
             imageHandler = new ImageHandler();
@@ -332,6 +344,24 @@ namespace SimpleLLMChatGUI
 
             AppendStreamingText(pending);
             ScrollChatToEnd();
+            UpdateStreamFlushInterval();
+        }
+
+        /// <summary>
+        /// Slows the flush cadence down as the active turn grows: every flush
+        /// re-lays out the whole FlowDocument, so a fixed 50 ms interval costs
+        /// O(n^2) over a long turn. 50 ms at the start, 250 ms once the turn
+        /// is long enough to make the difference.
+        /// </summary>
+        private void UpdateStreamFlushInterval()
+        {
+            if (_streamFlushTimer == null)
+                return;
+
+            int length = _streamingTurn != null ? _streamingTurn.SourceText.Length : 0;
+            int ms = Math.Min(50 + length / 2000, 250);
+            if ((int)_streamFlushTimer.Interval.TotalMilliseconds != ms)
+                _streamFlushTimer.Interval = TimeSpan.FromMilliseconds(ms);
         }
 
         /// <summary>
@@ -558,15 +588,39 @@ namespace SimpleLLMChatGUI
             if (_chatTurns.Count == 0)
                 return;
 
+            ScrollViewer scrollViewer = FindScrollViewer(chatList);
+            if (scrollViewer == null)
+                return;
+
+            if (_chatScrollViewer != scrollViewer)
+            {
+                _chatScrollViewer = scrollViewer;
+                _chatScrollViewer.ScrollChanged += OnChatScrollChanged;
+            }
+
+            // The user is reading earlier text: leave the viewport alone.
+            if (!_autoScroll)
+                return;
+
             // Clear selection before forcing scroll — scrolling while text is
             // highlighted during streaming can freeze the UI thread.
             ClearChatSelection(chatList);
 
             chatList.ScrollIntoView(_chatTurns[_chatTurns.Count - 1]);
 
-            ScrollViewer scrollViewer = FindScrollViewer(chatList);
-            if (scrollViewer != null)
-                scrollViewer.ScrollToEnd();
+            scrollViewer.ScrollToEnd();
+        }
+
+        /// <summary>
+        /// Watches the chat ScrollViewer. A user-driven scroll (wheel or drag —
+        /// extent unchanged, offset changed) parks autoscroll; scrolling back
+        /// to the very bottom resumes it. Content growth changes the extent
+        /// and must not flip the flag.
+        /// </summary>
+        private void OnChatScrollChanged(object sender, ScrollChangedEventArgs e)
+        {
+            if (e.ExtentHeightChange == 0 && Math.Abs(e.VerticalChange) > 0.5)
+                _autoScroll = _chatScrollViewer.VerticalOffset >= _chatScrollViewer.ScrollableHeight - 24;
         }
 
         private static void ClearChatSelection(DependencyObject root)

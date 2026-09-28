@@ -6,6 +6,53 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.0.4] - 2026-09-29
+
+Cyrillic console output is decoded correctly, the chat stops yanking the viewport
+to the bottom while a long answer streams, and long turns no longer cost
+quadratically.
+
+### Fixed
+
+- **Cyrillic console output no longer arrives as mojibake.** `run_shell_command`
+  output written in the OEM (CP866) or ANSI (CP1251) code pages - `tasklist` on a
+  Russian system, Russian installers, legacy CLIs - came back as garbage. Strict
+  UTF-8 (BOM or not) is still detected first; everything else is now scored by the
+  bundled [Ude](https://github.com/nickg/IUde) (Universal Decoding Engine, MPL-1.1)
+  library against Russian letter and punctuation statistics, so CP866 and CP1251
+  output decodes to real Unicode instead of the old hand-rolled scorer misreading
+  it. An explicit `--encoding` argument still wins over detection.
+
+- **Scrolling up while the model streams no longer snaps back to the bottom.**
+  `ScrollChatToEnd` ran on every flush, so the viewport was forced to the bottom
+  ~20 times a second and earlier text could not be read mid-generation. A user
+  scroll now pauses autoscroll; it resumes automatically once the user scrolls back
+  to within 24 px of the bottom.
+
+### Performance
+
+- **Long turns stream cheaper.** Every flush re-lays out the whole `FlowDocument`,
+  so a fixed 50 ms flush interval cost quadratically over a long turn. The interval
+  now grows with the active turn's length from 50 ms up to a 250 ms cap and returns
+  to 50 ms for the next turn; short turns stream exactly as before.
+
+- **Software-rendered displays get GDI-style text metrics.** WPF pays for the
+  high-quality text path on every layout, which is brutal on GPUs without hardware
+  acceleration - the common case on XP. When `RenderCapability.Tier` reports
+  software rendering, the window switches to `TextFormattingMode.Display`, which is
+  markedly cheaper and renders sharper.
+
+### Tests
+
+- Four decoder unit tests plus a regression test that feeds a captured real CP866
+  `tasklist` header through the exact decode path the tool uses, and the CLI suite
+  now copies the bundled `Ude.dll` into its tool sandboxes like the build scripts do.
+  ShellTools grows from 13 to 27 tests.
+
+Tested on Windows 11 (x64): FileTools 19 pass, MemoryTools 3, SkillTools 2, ShellTools
+27, PythonTools 2, WebTools 4 pass + 1 skip, DesktopTools 30, CLI 59, GUI 18 - 164 pass,
+0 fail. Windows XP SP3 (x86) has not been re-checked for this release yet.
+
 ## [1.0.3] - 2026-09-28
 
 Two runaway-generation fixes, found when a model looped and the GUI stopped responding,

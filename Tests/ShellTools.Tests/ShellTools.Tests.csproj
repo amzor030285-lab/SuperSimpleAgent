@@ -35,11 +35,20 @@
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\..\packages\Newtonsoft.Json.13.0.4\lib\net40\Newtonsoft.Json.dll</HintPath>
     </Reference>
+    <Reference Include="Ude">
+      <HintPath>..\..\deps\Ude.dll</HintPath>
+    </Reference>
     <Reference Include="System" />
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="..\..\Tools\ToolHelper.cs">
+      <Link>ToolHelper.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Tools\ConsoleOutputDecoder.cs">
+      <Link>ConsoleOutputDecoder.cs</Link>
+    </Compile>
     <Compile Include="..\TestHelper.cs">
       <Link>TestHelper.cs</Link>
     </Compile>

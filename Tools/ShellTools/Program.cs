@@ -1,5 +1,4 @@
 using System;
-using System.Text;
 
 namespace ShellTools
 {
@@ -14,9 +13,16 @@ namespace ShellTools
                     case "run_shell_command":
                         {
                             string command = ToolHelper.GetRequiredArg(argumentsJson, "command");
-                            Encoding enc = ToolHelper.ResolveOutputEncoding();
+                            // The per-call "encoding" argument wins over the configured
+                            // outputEncoding option, which stays the default so existing
+                            // setups keep working.
+                            string requested = ToolHelper.GetOptionalArg(argumentsJson, "encoding");
+                            if (string.IsNullOrEmpty(requested))
+                                requested = ToolHelper.GetConfiguredOutputEncodingName();
+
                             int exitCode;
-                            string output = ToolHelper.ExecuteProcess("cmd.exe", "/s /c " + command, out exitCode, enc);
+                            string output = ToolHelper.ExecuteProcessDecoded(
+                                "cmd.exe", "/s /c " + command, requested, out exitCode);
                             return new ToolResult(output, exitCode);
                         }
 

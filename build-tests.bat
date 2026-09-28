@@ -101,6 +101,8 @@ call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%TESTBUILD%\WebTools.Tests\c
 
 call :CopyIfExists "%ROOT%deps\yt-dlp.exe" "%TESTBUILD%\WebTools.Tests\yt-dlp.exe"
 
+call :CopyIfExists "%ROOT%deps\Ude.dll" "%TESTBUILD%\ShellTools.Tests\Ude.dll"
+
 
 
 copy /Y "%TESTBUILD%\DesktopTools.Fixture\DesktopTools.Fixture.exe" "%TESTBUILD%\DesktopTools.Tests\" >nul

@@ -176,6 +176,252 @@ public static class ToolHelper
         catch { return Encoding.UTF8; }
     }
 
+    public static string GetConfiguredOutputEncodingName()
+    {
+        string key = GetConfigValue("outputEncoding");
+        return string.IsNullOrEmpty(key) ? "auto" : key.Trim();
+    }
+
+    public static string GetOptionalArg(string arguments, string argName)
+    {
+        string value = JsonExtractString(arguments, argName);
+        return string.IsNullOrEmpty(value) ? null : value.Trim();
+    }
+
+    /// <summary>
+    /// Reads a child process' output as bytes instead of text and decodes them with
+    /// the right code page afterwards. ProcessStartInfo can only hand back a
+    /// StreamReader, which decodes on the spot using one assumed page, and a shell
+    /// command's bytes are not guaranteed to be in it: cmd.exe writes the console
+    /// code page (866 on a Russian XP, 437 on an English one), a program that prints
+    /// UTF-8 writes UTF-8, and "chcp 65001" inside a command switches cmd over
+    /// mid-run. Guessing wrong turns any of those into mojibake, so the bytes are
+    /// collected untouched and the page is chosen from their content.
+    ///
+    /// The bytes come off process.StandardOutput.BaseStream, never off
+    /// process.StandardOutput: the StreamReader that ProcessStartInfo.StandardOutputEncoding
+    /// installs still sniffs for a byte order mark, overrides the encoding you asked
+    /// for, and decodes the rest as UTF-8. A UTF-8 BOM on a file echoed by "type"
+    /// then arrives as text, and every byte after it is gone.
+    /// </summary>
+    public static string ExecuteProcessDecoded(string fileName, string arguments,
+        string requestedEncoding, out int exitCode)
+    {
+        ProcessByteOutput raw = RunProcess(fileName, arguments, true);
+        exitCode = raw.ExitCode;
+        byte[] bytes = raw.Combined(true);
+        string decoded = DecodeProcessOutput(bytes, requestedEncoding);
+        return CapDecodedOutput(decoded, raw, fileName);
+    }
+
+    private sealed class ProcessByteOutput
+    {
+        public byte[] Standard = new byte[0];
+        public byte[] Error = new byte[0];
+        public long StandardTotal;
+        public long ErrorTotal;
+        public int ExitCode;
+
+        public byte[] Combined(bool combineErrorOutput)
+        {
+            if (!combineErrorOutput || Error.Length == 0)
+                return Standard;
+            byte[] both = new byte[Standard.Length + Error.Length];
+            Buffer.BlockCopy(Standard, 0, both, 0, Standard.Length);
+            Buffer.BlockCopy(Error, 0, both, Standard.Length, Error.Length);
+            return both;
+        }
+    }
+
+    private static long ReadBoundedBytes(Stream stream, MemoryStream sink, int ceiling)
+    {
+        byte[] buffer = new byte[8192];
+        long total = 0;
+        while (true)
+        {
+            int read = stream.Read(buffer, 0, buffer.Length);
+            if (read <= 0)
+                break;
+            total += read;
+            int room = ceiling - (int)sink.Length;
+            if (room > 0)
+                sink.Write(buffer, 0, Math.Min(room, read));
+        }
+        return total;
+    }
+
+    private static long DrainAllBytes(Stream stream, MemoryStream sink)
+    {
+        byte[] buffer = new byte[8192];
+        long total = 0;
+        while (true)
+        {
+            int read = stream.Read(buffer, 0, buffer.Length);
+            if (read <= 0)
+                break;
+            sink.Write(buffer, 0, read);
+            total += read;
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// Starts a process and collects its output as raw bytes, with the same bounded
+    /// reads, drain timeouts and teardown the string version had. Decoding is left to
+    /// the caller so the code page can be decided from the bytes.
+    /// </summary>
+    private static ProcessByteOutput RunProcess(string fileName, string arguments, bool capOutput)
+    {
+        ProcessByteOutput output = new ProcessByteOutput();
+        try
+        {
+            ProcessStartInfo psi = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using (Process process = Process.Start(psi))
+            {
+                MemoryStream outBuffer = new MemoryStream();
+                MemoryStream errBuffer = new MemoryStream();
+                long outTotal = 0;
+                long errTotal = 0;
+                Thread outThread = new Thread(() =>
+                {
+                    try
+                    {
+                        if (capOutput)
+                            outTotal = ReadBoundedBytes(process.StandardOutput.BaseStream, outBuffer, ProcessOutputReadCeilingChars);
+                        else
+                            outTotal = DrainAllBytes(process.StandardOutput.BaseStream, outBuffer);
+                    }
+                    catch { }
+                });
+                Thread errThread = new Thread(() =>
+                {
+                    try
+                    {
+                        if (capOutput)
+                            errTotal = ReadBoundedBytes(process.StandardError.BaseStream, errBuffer, ProcessOutputReadCeilingChars);
+                        else
+                            errTotal = DrainAllBytes(process.StandardError.BaseStream, errBuffer);
+                    }
+                    catch { }
+                });
+                outThread.IsBackground = true;
+                errThread.IsBackground = true;
+                outThread.Start();
+                errThread.Start();
+
+                process.WaitForExit();
+                output.ExitCode = process.ExitCode;
+
+                if (!outThread.Join(PipeDrainTimeoutMs))
+                {
+                    try { process.StandardOutput.Close(); } catch { }
+                }
+                if (!errThread.Join(PipeDrainTimeoutMs))
+                {
+                    try { process.StandardError.Close(); } catch { }
+                }
+                outThread.Join(PipeCloseJoinTimeoutMs);
+                errThread.Join(PipeCloseJoinTimeoutMs);
+
+                output.StandardTotal = outTotal;
+                output.ErrorTotal = errTotal;
+                output.Standard = outBuffer.ToArray();
+                output.Error = errBuffer.ToArray();
+                return output;
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException("Failed to execute " + fileName + ": " + ex.Message, ex);
+        }
+    }
+
+    private static string CapDecodedOutput(string combined, ProcessByteOutput raw, string fileName)
+    {
+        long totalBytes = raw.StandardTotal + raw.ErrorTotal;
+        if (totalBytes > ProcessOutputReadCeilingChars)
+        {
+            string boundedHead = combined.Length > ProcessOutputHeadChars
+                ? combined.Substring(0, ProcessOutputHeadChars)
+                : combined;
+            return boundedHead
+                + "\n[... " + (totalBytes - combined.Length) + " more characters omitted: process output exceeded the "
+                + ProcessOutputReadCeilingChars + " character read limit; only the beginning of the output is shown.]\n";
+        }
+
+        return CapProcessOutput(combined, SafeFileToken(Path.GetFileNameWithoutExtension(fileName)));
+    }
+
+    /// <summary>
+    /// Decodes bytes captured from a child process. A requestedEncoding of "auto"
+    /// (or empty) detects the page by content via ConsoleOutputDecoder: strict
+    /// UTF-8 first (deterministic), then the Ude statistical detector whenever it
+    /// is confident it named a console page, and finally a scored fallback between
+    /// the two Cyrillic Windows pages - CP866, what cmd writes to a pipe, and
+    /// CP1251, what C-stdio utilities (reg, ipconfig) write on a Russian system.
+    /// Naming a page ("utf-8", "866", "1251", "65001") always wins, for output that
+    /// no detection rule can settle.
+    /// </summary>
+    public static string DecodeProcessOutput(byte[] bytes, string requestedEncoding)
+    {
+        if (bytes == null || bytes.Length == 0)
+            return "";
+
+        if (!IsAutoEncodingName(requestedEncoding))
+        {
+            Encoding requested = EncodingByName(requestedEncoding);
+            if (requested != null)
+            {
+                // A UTF-8 BOM is not text, and leaving it in would prepend U+FEFF.
+                int start = 0;
+                if (bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+                    start = 3;
+                return requested.GetString(bytes, start, bytes.Length - start);
+            }
+        }
+
+        return ConsoleOutputDecoder.Decode(bytes);
+    }
+
+    private static bool IsAutoEncodingName(string name)
+    {
+        return string.IsNullOrEmpty(name) || name.Trim().Length == 0
+            || name.Trim().Equals("auto", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static Encoding EncodingByName(string name)
+    {
+        if (IsAutoEncodingName(name))
+            return null;
+
+        string trimmed = name.Trim();
+        if (trimmed.Equals("utf-8", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("utf8", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("65001", StringComparison.Ordinal))
+            return new UTF8Encoding(false);
+
+        int codePage;
+        if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out codePage))
+        {
+            try { return Encoding.GetEncoding(codePage); }
+            catch (ArgumentException) { return null; }
+            catch (NotSupportedException) { return null; }
+        }
+
+        try { return Encoding.GetEncoding(trimmed); }
+        catch (ArgumentException) { return null; }
+        catch (NotSupportedException) { return null; }
+    }
+
     public static string GetRequiredArg(string arguments, string argName)
     {
         string value = JsonExtractString(arguments, argName)?.Trim() ?? "";
@@ -250,117 +496,39 @@ public static class ToolHelper
             + tail;
     }
 
-    private static long ReadBounded(TextReader reader, StringBuilder sink, int ceiling)
-    {
-        char[] buffer = new char[4096];
-        long total = 0;
-        while (true)
-        {
-            int read = reader.Read(buffer, 0, buffer.Length);
-            if (read <= 0)
-                break;
-            total += read;
-            int room = ceiling - sink.Length;
-            if (room > 0)
-                sink.Append(buffer, 0, Math.Min(room, read));
-        }
-        return total;
-    }
-
     /// <summary>
-    /// Runs a process and returns its (optionally capped) output. capOutput=false
-    /// is for intermediate artifacts (e.g. raw HTML fetched for parsing) where
-    /// the caller caps the final parsed result instead.
+    /// Runs a process and returns its (optionally capped) output decoded as text.
+    /// capOutput=false is for intermediate artifacts (e.g. raw HTML fetched for
+    /// parsing) where the caller caps the final parsed result instead.
     /// </summary>
     public static string ExecuteProcess(string fileName, string arguments, out int exitCode, bool combineErrorOutput = true, Encoding outputEncoding = null, bool capOutput = true)
     {
         Encoding enc = outputEncoding ?? Encoding.UTF8;
-        try
-        {
-            ProcessStartInfo psi = new ProcessStartInfo
-            {
-                FileName = fileName,
-                Arguments = arguments,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                StandardOutputEncoding = enc,
-                StandardErrorEncoding = enc
-            };
+        ProcessByteOutput raw = RunProcess(fileName, arguments, capOutput);
+        exitCode = raw.ExitCode;
 
-            using (Process process = Process.Start(psi))
-            {
-                StringBuilder outBuffer = new StringBuilder();
-                StringBuilder errBuffer = new StringBuilder();
-                long outTotal = 0;
-                long errTotal = 0;
-                Thread outThread = new Thread(() =>
-                {
-                    try
-                    {
-                        if (capOutput)
-                            outTotal = ReadBounded(process.StandardOutput, outBuffer, ProcessOutputReadCeilingChars);
-                        else
-                            outTotal = outBuffer.Append(process.StandardOutput.ReadToEnd()).Length;
-                    }
-                    catch { }
-                });
-                Thread errThread = new Thread(() =>
-                {
-                    try
-                    {
-                        if (capOutput)
-                            errTotal = ReadBounded(process.StandardError, errBuffer, ProcessOutputReadCeilingChars);
-                        else
-                            errTotal = errBuffer.Append(process.StandardError.ReadToEnd()).Length;
-                    }
-                    catch { }
-                });
-                outThread.IsBackground = true;
-                errThread.IsBackground = true;
-                outThread.Start();
-                errThread.Start();
+        string combined = DecodeWithEncoding(enc, raw.Combined(combineErrorOutput));
+        if (!capOutput)
+            return combined;
 
-                process.WaitForExit();
-                exitCode = process.ExitCode;
+        return CapDecodedOutput(combined, raw, fileName);
+    }
 
-                if (!outThread.Join(PipeDrainTimeoutMs))
-                {
-                    try { process.StandardOutput.Close(); } catch { }
-                }
-                if (!errThread.Join(PipeDrainTimeoutMs))
-                {
-                    try { process.StandardError.Close(); } catch { }
-                }
-                outThread.Join(PipeCloseJoinTimeoutMs);
-                errThread.Join(PipeCloseJoinTimeoutMs);
+    /// <summary>
+    /// Decodes with a known page. A UTF-8 byte order mark is dropped, which is what
+    /// the StreamReader this replaced used to do on its own.
+    /// </summary>
+    private static string DecodeWithEncoding(Encoding enc, byte[] bytes)
+    {
+        if (bytes.Length == 0)
+            return "";
 
-                string combined = combineErrorOutput && errBuffer.Length > 0
-                    ? outBuffer.ToString() + errBuffer.ToString()
-                    : outBuffer.ToString();
-                if (!capOutput)
-                    return combined;
+        int start = 0;
+        if (enc.CodePage == 65001 && bytes.Length >= 3
+            && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+            start = 3;
 
-                long totalChars = outTotal + errTotal;
-                if (totalChars > ProcessOutputReadCeilingChars)
-                {
-                    string boundedHead = combined.Length > ProcessOutputHeadChars
-                        ? combined.Substring(0, ProcessOutputHeadChars)
-                        : combined;
-                    return boundedHead
-                        + "\n[... " + (totalChars - combined.Length) + " more characters omitted: process output exceeded the "
-                        + ProcessOutputReadCeilingChars + " character read limit; only the beginning of the output is shown.]\n";
-                }
-
-                return CapProcessOutput(combined, SafeFileToken(Path.GetFileNameWithoutExtension(fileName)));
-            }
-        }
-        catch (Exception ex)
-        {
-            exitCode = -1;
-            throw new InvalidOperationException("Failed to execute " + fileName + ": " + ex.Message, ex);
-        }
+        return enc.GetString(bytes, start, bytes.Length - start);
     }
 
     public static string ExecuteProcess(string fileName, string arguments, out int exitCode, Encoding outputEncoding)

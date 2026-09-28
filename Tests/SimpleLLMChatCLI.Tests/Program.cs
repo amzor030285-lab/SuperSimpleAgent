@@ -597,9 +597,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
 
@@ -1054,9 +1055,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
 
@@ -1099,9 +1101,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
 
@@ -1149,9 +1152,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
 
@@ -1198,9 +1202,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
 
@@ -1245,9 +1250,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
                         toolTimeout: "run_shell_command=2");
@@ -1291,9 +1297,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
                         toolTimeout: "run_shell_command=5");
@@ -1344,9 +1351,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
 
@@ -1737,9 +1745,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 12000, tools: "run_shell_command");
 
@@ -1813,9 +1822,10 @@ namespace SimpleLLMChatCLI.Tests
 
                     string toolsDir = Path.Combine(ws.Path, "tools");
                     Directory.CreateDirectory(toolsDir);
-                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
-                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
 
                     WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 6000, tools: "run_shell_command");
 

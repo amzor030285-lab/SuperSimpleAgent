@@ -47,6 +47,7 @@ call :CopyIfExists "%ROOT%deps\curl.exe" "%OUT%\curl.exe"
 call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%OUT%\tools\WebTools\curl-ca-bundle.crt"
 call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%OUT%\curl-ca-bundle.crt"
 call :CopyIfExists "%ROOT%deps\yt-dlp.exe" "%OUT%\tools\WebTools\yt-dlp.exe"
+call :CopyIfExists "%ROOT%deps\Ude.dll" "%OUT%\tools\ShellTools\Ude.dll"
 
 :: Docs that must travel with the binaries: the MIT license is required for
 :: redistribution, the rest tells a fresh user what they just unpacked.
