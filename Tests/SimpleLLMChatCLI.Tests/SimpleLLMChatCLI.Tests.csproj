@@ -48,6 +48,9 @@
     <Compile Include="..\..\Shared\TokenEstimator.cs">
       <Link>Shared\TokenEstimator.cs</Link>
     </Compile>
+    <Compile Include="..\..\Shared\RepetitionGuard.cs">
+      <Link>Shared\RepetitionGuard.cs</Link>
+    </Compile>
     <Compile Include="..\..\Shared\SessionStore.cs">
       <Link>Shared\SessionStore.cs</Link>
     </Compile>

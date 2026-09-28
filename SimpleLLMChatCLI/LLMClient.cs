@@ -259,7 +259,12 @@ public class LLMClient
                 if (!outputOnly)
                 {
                     ChatOutput.StartBlock();
-                    ChatOutput.WriteLine("[Generation stopped by user]");
+                    // A degenerate loop reuses the abort path but is not a user stop,
+                    // so report the real cause instead of blaming the user.
+                    if (AbortSupport.RepetitionAbortRequested)
+                        ChatOutput.WriteLine("[Generation stopped: the model was repeating the same block in a loop]");
+                    else
+                        ChatOutput.WriteLine("[Generation stopped by user]");
                 }
                 break;
             }
@@ -1440,6 +1445,35 @@ public class LLMClient
             }
         }
 
+        // A model that loops on the same block streams data continuously, so the
+        // stall watchdog never fires and, with no output cap sent, nothing bounds
+        // the response. The guard keeps a fixed window of the tail and tests it once
+        // per ~128 streamed characters; a period that fails the anchor test costs
+        // three comparisons, so the added work stays small next to the per-token
+        // parsing already happening here. Only content is guarded: reasoning is kept
+        // out of the window so unrelated thinking text cannot look like a content loop.
+        Action<string> guardedOutput = outputCallback;
+        if (outputCallback != null && config.GetConfigInt("repetitionguard", 1) != 0)
+        {
+            RepetitionGuard guard = new RepetitionGuard();
+            guardedOutput = delegate (string chunk)
+            {
+                // Swallow the rest of the stream once tripped: the request is
+                // already being aborted, so nothing more should be rendered.
+                if (guard.Tripped)
+                    return;
+
+                guard.Append(chunk);
+                if (guard.Tripped)
+                {
+                    AbortSupport.RequestRepetitionAbort();
+                    return;
+                }
+
+                outputCallback(chunk);
+            };
+        }
+
         HttpWebRequest request = null;
         StreamActivity activity = new StreamActivity();
         int stallSeconds = config.GetConfigInt("streamstalltimeout", 120);
@@ -1492,7 +1526,7 @@ public class LLMClient
             using (var responseStream = httpResponse.GetResponseStream())
             using (var reader = new ActivityReader(new StreamReader(responseStream, Encoding.UTF8), activity))
             {
-                LLMCompletionResponse result = SseStreamParser.Parse(reader, outputCallback, onReasoningChunk, onReasoningSummary, toolCallCallback, onContentStart, startBlock);
+                LLMCompletionResponse result = SseStreamParser.Parse(reader, guardedOutput, onReasoningChunk, onReasoningSummary, toolCallCallback, onContentStart, startBlock);
                 AbortSupport.UnregisterRequest(request);
                 return result;
             }
@@ -1530,7 +1564,7 @@ public class LLMClient
             // Try curl fallback for HTTPS connection errors
             string serverUrl = config.GetConfigValue("llmserver") ?? "";
             if (CurlClient.CanFallback(serverUrl, ex))
-                return CurlClient.SendRequest(serverUrl, config.GetConfigValue("apikey"), payload, outputCallback, onReasoningChunk, onReasoningSummary, requestTimeoutMs / 1000, stallSeconds, toolCallCallback, onContentStart, startBlock);
+                return CurlClient.SendRequest(serverUrl, config.GetConfigValue("apikey"), payload, guardedOutput, onReasoningChunk, onReasoningSummary, requestTimeoutMs / 1000, stallSeconds, toolCallCallback, onContentStart, startBlock);
 
             return new LLMCompletionResponse(reason, null, "request_failed");
         }

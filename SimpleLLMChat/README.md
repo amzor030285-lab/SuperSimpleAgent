@@ -100,6 +100,7 @@ On first use, if `LLMSettings.ini` does not exist, the GUI setup wizard creates 
 -   `sysprompt`: System prompt for the LLM
 -   `contextWindowSize`: If known, can be set here to enable automatic context management when context fills
 -   `approvalmode`: Tool approval mode (`ask`, `auto`, or `config`; default `config`)
+-   `repetitionguard`: Stop a generation that has degenerated into repeating the same block of text (default `1`; set `0` to disable)
 
 **Tools**
 

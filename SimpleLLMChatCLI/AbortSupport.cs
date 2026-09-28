@@ -20,6 +20,12 @@ namespace SimpleLLMChatCLI
         public static volatile bool AbortRequested;
         public static volatile bool ToolAbortRequested;
 
+        /// <summary>
+        /// Set when the repetition guard aborted the request. Distinguishes a
+        /// degenerate model loop from a user stop, so the reported reason is accurate.
+        /// </summary>
+        public static volatile bool RepetitionAbortRequested;
+
         private static volatile HttpWebRequest currentRequest;
         private static volatile Process currentToolProcess;
         private static volatile IntPtr currentToolJob;
@@ -79,11 +85,23 @@ namespace SimpleLLMChatCLI
             }
         }
 
+        /// <summary>
+        /// Aborts the in-flight request because the response degenerated into a loop.
+        /// AbortRequested is raised as well so the curl fallback transport kills its
+        /// process too; RepetitionAbortRequested records the real cause.
+        /// </summary>
+        public static void RequestRepetitionAbort()
+        {
+            RepetitionAbortRequested = true;
+            RequestAbort();
+        }
+
         /// <summary>Clears the abort state at the start of a new user turn.</summary>
         public static void Reset()
         {
             AbortRequested = false;
             ToolAbortRequested = false;
+            RepetitionAbortRequested = false;
             currentRequest = null;
             currentToolProcess = null;
             currentToolJob = IntPtr.Zero;

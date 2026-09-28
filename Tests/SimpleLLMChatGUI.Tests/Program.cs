@@ -15,8 +15,18 @@ namespace SimpleLLMChatGUI.Tests
             return SuiteMain.Run("SimpleLLMChatGUI", args, Run);
         }
 
-        static void Run()
-        {
+      // The reply keeps streaming for several seconds after the marker, so the
+      // check has a real window in which the text must already be on screen. A
+      // flush that only happened at the end of the turn would miss it.
+      const string SlowPrefix = "progressive-render-check-part-one-";
+      const string SlowSuffix =
+          "-part-two-continues-streaming-for-a-while-so-the-marker-must-appear-early-" +
+          "not-at-the-end-third-section-of-the-same-reply-keeps-coming-and-coming-" +
+          "and-still-coming-so-the-turn-is-unambiguously-still-running-when-the-" +
+          "marker-is-found-on-screen-fourth-and-final-section-of-the-long-reply.";
+
+      static void Run()
+      {
             TestRunner.Run("SettingsIniWriter.escape", () =>
             {
                 string escaped = SettingsIniWriter.EscapePromptForStorage("a\\b\nc\td");
@@ -165,7 +175,107 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
-            TestRunner.Run("gui.reply_you_colon_no_space", () =>
+              TestRunner.Run("gui.streamed_text_is_not_lost_in_batching", () =>
+              {
+                  using (FakeOpenAiServer server = new FakeOpenAiServer())
+                  using (TempWorkspace ws = PackageGuiWorkspace())
+                  {
+                      // Streamed text is now buffered and flushed on a timer instead of
+                      // rendered per chunk. Two things can go wrong that way: the tail
+                      // of a turn can be lost if the buffer is not flushed at the
+                      // boundary, and characters can be dropped when the reader thread
+                      // and the flush timer touch the buffer at the same time. The reply
+                      // ends in a marker and has no internal newlines, so a lost
+                      // character shows up as a mismatch against the exact string.
+                      StringBuilder reply = new StringBuilder();
+                      for (int i = 0; i < 120; i++)
+                          reply.Append("chunk" + i + " ");
+                      reply.Append("END-OF-REPLY");
+                      server.FixedReply = reply.ToString();
+                      server.StreamDelayMs = 1;
+                      server.StreamChunkChars = 7;
+                      WriteGuiIni(ws.Path, server.BaseUrl);
+
+                      using (GuiDriver gui = new GuiDriver(ws.Path))
+                      {
+                          gui.WaitUntilReady(30000);
+                          gui.SendTurn("stream a long reply", 30000);
+
+                          string text = gui.GetAllText();
+                          TestAssert.Contains(text, "END-OF-REPLY",
+                              "last streamed chunk flushed at the turn boundary");
+                          TestAssert.Contains(text, "chunk0 ", "first chunk rendered");
+                          TestAssert.Contains(text, "chunk119 ", "last numbered chunk rendered");
+
+                          // Every chunk must survive intact and in order; the reader
+                          // thread and the UI flush share the buffer under a lock.
+                          int expected = 0;
+                          for (int i = 0; i < 120; i++)
+                          {
+                              int at = text.IndexOf("chunk" + i + " ", StringComparison.Ordinal);
+                              TestAssert.True(at >= 0, "chunk" + i + " present");
+                              if (at >= 0 && expected >= 0)
+                                  TestAssert.True(at > expected, "chunk" + i + " in order");
+                              expected = at;
+                          }
+
+                          TestAssert.Equal("Send", gui.SendButtonName(), "idle after the turn");
+                      }
+                  }
+              });
+
+              TestRunner.Run("gui.second_turn_still_streams", () =>
+              {
+                  using (FakeOpenAiServer server = new FakeOpenAiServer())
+                  using (TempWorkspace ws = PackageGuiWorkspace())
+                  {
+                      // The flush timer is parked at every turn boundary, so the
+                      // second turn is the one that proves it gets started again.
+                      // The symptom to catch is the reply arriving in one lump at the
+                      // end instead of progressively: the marker is only reachable
+                      // while the turn is still streaming, so it can never be found by
+                      // a final flush.
+                      server.StreamDelayMs = 60;
+                      server.StreamChunkChars = 8;
+                      WriteGuiIni(ws.Path, server.BaseUrl);
+
+                      using (GuiDriver gui = new GuiDriver(ws.Path))
+                      {
+                          gui.WaitUntilReady(30000);
+
+                          server.FixedReply = "FIRST-TURN-MARKER-END";
+                          gui.SendTurn("first question", 30000);
+                          TestAssert.Contains(gui.GetAllText(), "FIRST-TURN-MARKER-END", "first turn rendered");
+
+                          server.FixedReply = SlowPrefix + "SECOND-STREAMING-MARKER" + SlowSuffix;
+                          gui.StartTurn("second question", 30000);
+
+                          // Must already be on screen while the turn is still running:
+                          // finding it only after the turn ended would just mean the
+                          // end-of-turn flush worked, which it always does.
+                          Stopwatch sw = Stopwatch.StartNew();
+                          bool seenWhileStreaming = false;
+                          while (sw.ElapsedMilliseconds < 30000)
+                          {
+                              if (gui.GetAllText().Contains("SECOND-STREAMING-MARKER"))
+                              {
+                                  seenWhileStreaming = gui.SendButtonName() == "Stop";
+                                  break;
+                              }
+                              Thread.Sleep(100);
+                          }
+
+                          TestAssert.True(seenWhileStreaming,
+                              "second turn rendered progressively, not only at the end");
+
+                          gui.WaitUntilIdle(30000);
+                          TestAssert.Contains(gui.GetAllText(), "SECOND-STREAMING-MARKER", "marker persisted");
+                          TestAssert.Equal("Send", gui.SendButtonName(), "idle after the second turn");
+                      }
+                  }
+              });
+
+              TestRunner.Run("gui.reply_you_colon_no_space", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
                 using (TempWorkspace ws = PackageGuiWorkspace())

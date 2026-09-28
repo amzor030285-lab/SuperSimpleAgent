@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 
 namespace SimpleLLMChatGUI
 {
@@ -28,6 +29,18 @@ namespace SimpleLLMChatGUI
         private bool _compacting;
         private bool _summaryArrived;
         private string _compactTail = "";
+
+        /// <summary>
+        /// Streamed stdout is buffered here and handed to the chat list on a timer
+        /// instead of once per chunk. Appending to the turn document invalidates the
+        /// whole FlowDocument layout, and the autoscroll measures it again, so one
+        /// layout pass per streamed token makes a long turn cost O(n^2) and saturates
+        /// the UI thread on a fast model. Batching at StreamFlushIntervalMs collapses
+        /// hundreds of dispatcher operations per second into ~20.
+        /// </summary>
+        private const int StreamFlushIntervalMs = 50;
+        private readonly StringBuilder _pendingStreamText = new StringBuilder();
+        private DispatcherTimer _streamFlushTimer;
 
         private const double ChatTurnGapMin = 8;
         private const double ChatTurnGapMax = 24;
@@ -266,6 +279,8 @@ namespace SimpleLLMChatGUI
         {
             OnUiBackground(() =>
             {
+                // The CLI is parked on ReadLine: no further stream output is coming.
+                FlushStreamText();
                 SetInputControlsEnabled(true);
                 stopToolButton.IsEnabled = false;
             });
@@ -273,13 +288,64 @@ namespace SimpleLLMChatGUI
 
         private void OnOutputReceived(string text)
         {
-            // Queue on the dispatcher so stdout reading is not gated behind UI
-            // paint/scroll work.
-            OnUi(() =>
+            // Called on the stdout reader thread: only accumulate here. The UI work
+            // (document append + autoscroll) happens on the flush timer instead of
+            // once per chunk, which is what kept the UI thread saturated.
+            lock (_pendingStreamText)
+                _pendingStreamText.Append(text);
+
+            EnsureStreamFlushTimer();
+        }
+
+        private void EnsureStreamFlushTimer()
+        {
+            if (_streamFlushTimer == null)
             {
-                AppendStreamingText(text);
-                ScrollChatToEnd();
-            });
+                _streamFlushTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+                {
+                    Interval = TimeSpan.FromMilliseconds(StreamFlushIntervalMs)
+                };
+                _streamFlushTimer.Tick += (s, e) => FlushStreamText();
+            }
+
+            // The previous turn parked this timer at its boundary, so it has to be
+            // started again. Without this the second turn would buffer everything
+            // and only render at its end, which looks exactly like a hung GUI.
+            if (!_streamFlushTimer.IsEnabled)
+                _streamFlushTimer.Start();
+        }
+
+        /// <summary>
+        /// Hands everything buffered so far to the chat list in a single append.
+        /// Must run on the UI thread. Safe to call when the buffer is empty.
+        /// </summary>
+        private void FlushStreamText()
+        {
+            string pending;
+            lock (_pendingStreamText)
+            {
+                if (_pendingStreamText.Length == 0)
+                    return;
+                pending = _pendingStreamText.ToString();
+                _pendingStreamText.Clear();
+            }
+
+            AppendStreamingText(pending);
+            ScrollChatToEnd();
+        }
+
+        /// <summary>
+        /// Flushes buffered stream text and parks the timer. Called at the turn
+        /// boundary so the last chunk is never left sitting in the buffer.
+        /// </summary>
+        private void FlushAndStopStreamTimer()
+        {
+            FlushStreamText();
+
+            if (_streamFlushTimer != null)
+            {
+                _streamFlushTimer.Stop();
+            }
         }
 
         /// <summary>
@@ -344,6 +410,11 @@ namespace SimpleLLMChatGUI
             // separator can be removed before the (hidden) GUI prompt is shown.
             Dispatcher.Invoke(System.Windows.Threading.DispatcherPriority.Background, (Action)(() =>
             {
+                // Streamed text is flushed on a timer, so the last chunk may still be
+                // buffered when the tool approval arrives. Render it first: the block
+                // separator below is trimmed against what is already on screen.
+                FlushStreamText();
+
                 if (_streamingTurn != null)
                 {
                     _streamingTurn.TrimTrailingBlankParagraphs();
@@ -368,6 +439,10 @@ namespace SimpleLLMChatGUI
         {
             OnUi(() =>
             {
+                // Buffered stream text belongs to the turn that is ending now, so it
+                // must reach the chat list before the turn is closed.
+                FlushAndStopStreamTimer();
+
                 // The CLI emits its initial "You:" prompt right after start; that
                 // first completion signal is not a real generation finish and must
                 // not flip the button back to Send if a send was just issued.

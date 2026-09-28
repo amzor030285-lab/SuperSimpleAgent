@@ -6,6 +6,28 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+Two runaway-generation fixes, found when a model looped and the GUI stopped responding.
+
+### Fixed
+
+- **The GUI no longer burns a CPU core on a fast stream.** Every stdout chunk was queued
+  onto the dispatcher and appended to the chat document on its own, and each append
+  re-measures the whole `FlowDocument` plus a full autoscroll. A long turn therefore cost
+  quadratically, and a model streaming quickly saturated the UI thread badly enough to look
+  hung. Streamed text is now buffered and rendered in one append every 50 ms, and flushed
+  at every turn boundary (generation complete, ready, tool approval) so no tail is lost.
+
+- **A model that loops is stopped instead of streaming forever.** Repetition produced a
+  continuous stream, so the stall watchdog could not see it, and because no output cap is
+  sent to the server nothing else bounded the response: it ran until the 300 s request
+  timeout with an ever-growing conversation. A new guard detects a repeated block in the
+  tail of the response and aborts the request, reporting that the model was repeating
+  itself rather than blaming the user for pressing Stop. Set `repetitionguard=0` to turn
+  it off. The check keeps a fixed-size window rather than the whole response, so its cost
+  does not grow with the answer.
+
 ## [1.0.2] - 2026-09-28
 
 Bug-fix release. Feature set is identical to 1.0.1; verified on Windows 10/11 (x64) and

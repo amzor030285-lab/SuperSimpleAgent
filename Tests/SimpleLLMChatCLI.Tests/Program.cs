@@ -23,9 +23,121 @@ namespace SimpleLLMChatCLI.Tests
             return SuiteMain.Run("SimpleLLMChatCLI", args, Run);
         }
 
-        static void Run()
-        {
-            TestRunner.Run("TokenEstimator.basic", () =>
+      static void Run()
+      {
+          TestRunner.Run("RepetitionGuard.detects_degenerate_loop", () =>
+          {
+              RepetitionGuard guard = new RepetitionGuard();
+              // A model looping on a single sentence, streamed token by token.
+              for (int i = 0; i < 400; i++)
+                  guard.Append("the quick brown fox jumps ");
+
+              TestAssert.True(guard.CheckNow(), "loop must trip");
+              TestAssert.True(guard.Reason.Length > 0, "reason reported");
+          });
+
+          TestRunner.Run("RepetitionGuard.tolerates_normal_text", () =>
+          {
+              RepetitionGuard guard = new RepetitionGuard();
+              string prose = "Here is a list of the configuration keys I found in your file. "
+                  + "First, llmserver names the endpoint. Second, apikey holds the credential. "
+                  + "Third, streamstalltimeout bounds a silent stream. "
+                  + "Fourth, requesttimeout bounds the whole request. "
+                  + "Each key is documented in the README under configuration.";
+              for (int i = 0; i < 4; i++)
+                  guard.Append(prose);
+
+              TestAssert.True(!guard.CheckNow(), "prose must not trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.tolerates_structure_that_repeats", () =>
+          {
+              // A generated table or config legitimately repeats one row many times.
+              // 1600 characters of a 16-character row is a long, perfectly valid
+              // response, so the guard must not fire on repetition alone.
+              RepetitionGuard guard = new RepetitionGuard();
+              for (int i = 0; i < 100; i++)
+                  guard.Append("| cell | cell |\n");
+
+              TestAssert.True(!guard.CheckNow(), "repeated table rows must not trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.interruption_breaks_the_run", () =>
+          {
+              // Same repeating block, but something else lands in the middle often
+              // enough to keep every unbroken run short.
+              RepetitionGuard guard = new RepetitionGuard();
+              for (int i = 0; i < 100; i++)
+              {
+                  guard.Append("| cell | cell |\n");
+                  guard.Append("| " + i + " | value |\n");
+              }
+
+              TestAssert.True(!guard.CheckNow(), "interrupted repeats must not trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.ignores_empty_and_stops_after_trip", () =>
+          {
+              RepetitionGuard guard = new RepetitionGuard();
+              guard.Append("");
+              guard.Append(null);
+              TestAssert.True(!guard.CheckNow(), "empty input does not trip");
+
+              for (int i = 0; i < 400; i++)
+                  guard.Append("loop loop loop loop ");
+
+              TestAssert.True(guard.CheckNow(), "loop trips");
+              string reason = guard.Reason;
+              guard.Append("more content after the trip");
+              TestAssert.Equal(reason, guard.Reason, "reason frozen after trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.finds_period_not_in_any_fixed_list", () =>
+          {
+              // The block length is arbitrary, so the guard has to discover the
+              // period from the text rather than test a hard-coded set.
+              RepetitionGuard guard = new RepetitionGuard();
+              for (int i = 0; i < 800; i++)
+                  guard.Append("abcdefg ");
+
+              TestAssert.True(guard.CheckNow(), "8-char period found");
+          });
+
+          TestRunner.Run("RepetitionGuard.streams_trip_before_response_ends", () =>
+          {
+              // The guard has to trip on the way in, not only when the stream ends:
+              // the whole point is to cut a runaway response short.
+              RepetitionGuard guard = new RepetitionGuard();
+              int trippedAt = -1;
+              for (int i = 0; i < 800; i++)
+              {
+                  guard.Append("abcdefg ");
+                  if (guard.Tripped && trippedAt < 0)
+                      trippedAt = i;
+              }
+
+              TestAssert.True(trippedAt >= 0, "trips while streaming");
+              TestAssert.True(trippedAt < 800, "trips before the end of the stream");
+          });
+
+          TestRunner.Run("RepetitionGuard.cost_stays_flat_for_large_responses", () =>
+          {
+              // Append must not grow with the response: the guard keeps a fixed
+              // window, so a very long answer costs the same as a short one.
+              RepetitionGuard guard = new RepetitionGuard();
+              System.Diagnostics.Stopwatch watch = System.Diagnostics.Stopwatch.StartNew();
+              for (int i = 0; i < 20000; i++)
+                  guard.Append("chunk " + i + " of ordinary streamed content. ");
+              watch.Stop();
+
+              TestAssert.True(!guard.Tripped, "prose never trips");
+              // Generous ceiling: the point is that this is not quadratic, and that
+              // it is a small fraction of a millisecond per streamed character.
+              TestAssert.True(watch.ElapsedMilliseconds < 2000,
+                  "20k appends in " + watch.ElapsedMilliseconds + " ms");
+          });
+
+          TestRunner.Run("TokenEstimator.basic", () =>
             {
                 TestAssert.Equal(0, TokenEstimator.ApproximateTokens(0), "zero");
                 TestAssert.Equal(3, TokenEstimator.ApproximateTokens(10), "10/3");
@@ -395,6 +507,74 @@ namespace SimpleLLMChatCLI.Tests
                         TestAssert.True(
                             outText.IndexOf(new string('x', 600), StringComparison.Ordinal) < 0,
                             "reply truncated");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.repetition_guard_stops_degenerate_loop", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // A model that loops: the same sentence over and over, with no
+                    // stall and no end. Nothing else bounds this stream, which is
+                    // exactly the case the guard exists for.
+                    string loop = "The answer is always the same. ";
+                    server.FixedReply = Repeat(loop, 400);
+                    server.StreamDelayMs = 0;
+                    server.StreamChunkChars = 64;
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("tell me something");
+
+                        CliRunner.WaitForText(cli, "repeating the same block in a loop", 30000);
+
+                        string outText = cli.Stdout;
+                        TestAssert.True(
+                            outText.IndexOf("[Generation stopped by user]", StringComparison.Ordinal) < 0,
+                            "not reported as a user stop");
+
+                        // The stream was cut short, so most of the loop never rendered.
+                        int rendered = outText.Split(new string[] { loop }, StringSplitOptions.None).Length - 1;
+                        TestAssert.True(rendered < 300, "loop truncated, copies rendered=" + rendered);
+
+                        // And the CLI is back at its prompt, ready for the next turn.
+                        CliRunner.WaitForTextAfter(cli, "in a loop", "You: ", 15000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.repetition_guard_can_be_disabled", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    string loop = "The answer is always the same. ";
+                    server.FixedReply = Repeat(loop, 400);
+                    server.StreamDelayMs = 0;
+                    server.StreamChunkChars = 64;
+                    // repetitionguard=0 turns the check off, for anyone who has a
+                    // legitimate response it would otherwise cut short.
+                    WriteCliIni(ws.Path, server.BaseUrl, 0, "", 120, 300, "", 0);
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("tell me something");
+
+                        // Without the guard the whole loop streams through to its end,
+                        // so the reply eventually re-prompts instead of being cut short.
+                        CliRunner.WaitForTextAfter(cli, loop, "You: ", 60000);
+                        TestAssert.True(
+                            cli.Stdout.IndexOf("in a loop", StringComparison.Ordinal) < 0,
+                            "guard stayed off, no loop notice");
+                        int rendered = cli.Stdout.Split(new string[] { loop }, StringSplitOptions.None).Length - 1;
+                        TestAssert.True(rendered > 300, "loop streamed whole, copies rendered=" + rendered);
                     }
                 }
             });
@@ -1846,8 +2026,17 @@ namespace SimpleLLMChatCLI.Tests
             }
         }
 
+        static string Repeat(string text, int times)
+        {
+            StringBuilder sb = new StringBuilder(text.Length * times);
+            for (int i = 0; i < times; i++)
+                sb.Append(text);
+            return sb.ToString();
+        }
+
         static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "",
-            int streamStallTimeout = 120, int requestTimeout = 300, string toolTimeout = "")
+            int streamStallTimeout = 120, int requestTimeout = 300, string toolTimeout = "",
+            int repetitionGuard = -1)
         {
             string path = Path.Combine(dir, "LLMSettings.ini");
             File.WriteAllText(path,
@@ -1859,6 +2048,7 @@ namespace SimpleLLMChatCLI.Tests
                 "contextWindowSize=" + contextWindowSize + "\r\n" +
                 "streamstalltimeout=" + streamStallTimeout + "\r\n" +
                 "requesttimeout=" + requestTimeout + "\r\n" +
+                (repetitionGuard < 0 ? "" : "repetitionguard=" + repetitionGuard + "\r\n") +
                 "[Tools]\r\n" +
                 "tools=" + (tools ?? "") + "\r\n" +
                 "toolsrequiringapproval=\r\n" +
