@@ -41,6 +41,15 @@ public class LLMClient
         public List<ToolRegistry.ToolCall> ToolCalls;
         public string ToolCallId;
 
+        /// <summary>
+        /// The model's own thinking text for this turn, echoed back verbatim on the next
+        /// request. Servers reason before they answer, so the generated token stream is
+        /// "reasoning then content"; sending back only the content makes the stored
+        /// history diverge from the KV cache right after the user message. Empty when the
+        /// model returns no separate reasoning channel.
+        /// </summary>
+        public string ReasoningContent;
+
         public ChatMessage(string role, string content)
         {
             Role = role;
@@ -48,6 +57,7 @@ public class LLMClient
             ToolCallId = "";
             Image = null;
             ImageMime = null;
+            ReasoningContent = "";
             ToolCalls = new List<ToolRegistry.ToolCall>();
         }
     }
@@ -59,12 +69,16 @@ public class LLMClient
         public string FinishReason;
         public int PromptTokens;
 
+        /// <summary>Thinking text received on this response, or "" when there was none.</summary>
+        public string ReasoningContent;
+
         public LLMCompletionResponse(string content, List<ToolRegistry.ToolCall> toolCalls, string finishReason)
         {
             Content = content;
             ToolCalls = toolCalls ?? new List<ToolRegistry.ToolCall>();
             FinishReason = finishReason;
             PromptTokens = 0;
+            ReasoningContent = "";
         }
     }
 
@@ -113,6 +127,18 @@ public class LLMClient
             }
         }
 
+        // Context injectors (memory/skills summaries) are fetched once per user message
+        // and baked straight into the stored message. The snapshot is volatile, so every
+        // turn gets a fresh one - but the text of a message that was already sent must
+        // never change again, or the provider sees a prompt that is no longer a
+        // byte-for-byte extension of the previous one and rebuilds its cached prefix
+        // from the divergence onwards. Reused across agent-loop iterations (tool rounds)
+        // for this turn.
+        List<string> contextInjections = registry.GetContextInjections(enabledTools);
+        string injectionTail = ToolRegistry.BuildInjectionTail(contextInjections);
+        int injectionChars = injectionTail.Length > 0 ? injectionTail.Length + 2 : 0;
+        contentForLlm = ToolRegistry.BakeContextInjection(contentForLlm, contextInjections);
+
         conversation.Add(new ChatMessage
         {
             Role = "user",
@@ -120,10 +146,6 @@ public class LLMClient
             Image = image,
             ImageMime = string.IsNullOrEmpty(imageMime) ? null : imageMime
         });
-
-        // Context injectors (memory/skills summaries) are fetched once per user message
-        // and reused across agent-loop iterations (tool rounds) for this turn.
-        List<string> contextInjections = registry.GetContextInjections(enabledTools);
 
         // The assistant name is printed once per turn:
         //   "LLM: output"  when the response starts with plain output, or
@@ -205,7 +227,7 @@ public class LLMClient
                 };
             }
 
-            LLMCompletionResponse response = SendHttpRequest(BuildRequestPayload(conversation, enabledTools, contextInjections), ChatOutput.Write, toolCallStreamCallback, onContentStart, startBlock, outputOnly);
+            LLMCompletionResponse response = SendHttpRequest(BuildRequestPayload(conversation, enabledTools, injectionChars), ChatOutput.Write, toolCallStreamCallback, onContentStart, startBlock, outputOnly);
 
             // Calibrate the token estimator against the server's real tokenizer. The
             // conversation has not changed during the request, so the character count
@@ -276,6 +298,7 @@ public class LLMClient
                 {
                     Role = "assistant",
                     Content = string.Empty,
+                    ReasoningContent = response.ReasoningContent,
                     ToolCalls = response.ToolCalls
                 };
                 conversation.Add(assistantCall);
@@ -377,7 +400,8 @@ public class LLMClient
             ChatMessage assistantMsg = new ChatMessage
             {
                 Role = "assistant",
-                Content = response.Content
+                Content = response.Content,
+                ReasoningContent = response.ReasoningContent
             };
             conversation.Add(assistantMsg);
             PublishStatusTokens(GetConversationCharacterCount(conversation) + GetBaseCharacterOverhead());
@@ -923,6 +947,12 @@ public class LLMClient
             if (!string.IsNullOrEmpty(msg.Content))
                 count += msg.Content.Length;
 
+            // Echoed reasoning is sent to the model, so it occupies context just like
+            // the answer does. Leaving it out would under-report usage and let the
+            // compaction ladder run past the real window.
+            if (!string.IsNullOrEmpty(msg.ReasoningContent))
+                count += msg.ReasoningContent.Length;
+
             if (msg.ToolCalls != null)
             {
                 foreach (var toolCall in msg.ToolCalls)
@@ -980,7 +1010,7 @@ public class LLMClient
         return sysprompt;
     }
 
-    private JObject BuildRequestPayload(List<ChatMessage> conversation, List<string> enabledTools, List<string> contextInjections = null)
+    private JObject BuildRequestPayload(List<ChatMessage> conversation, List<string> enabledTools, int injectionChars = 0)
     {
         JObject payload = new JObject
         {
@@ -1021,8 +1051,9 @@ public class LLMClient
             });
         }
 
-        int injectionChars = ToolRegistry.AppendContextInjections(messages, contextInjections);
-
+        // The conversation is serialized verbatim: every message, including the baked
+        // context injection and the echoed reasoning, is already stored exactly as the
+        // model saw it, so nothing here may rewrite a message that was sent before.
         payload["messages"] = messages;
 
         int toolsChars = 0;
@@ -1350,6 +1381,12 @@ public class LLMClient
 
         if (!string.IsNullOrEmpty(msg.ToolCallId))
             msgObj["tool_call_id"] = msg.ToolCallId;
+
+        // Echoed back so the serialized history matches the token stream the server
+        // already holds. Servers that do not know the field ignore it, and it is only
+        // ever set when the model actually returned a separate reasoning channel.
+        if (!string.IsNullOrEmpty(msg.ReasoningContent))
+            msgObj["reasoning_content"] = msg.ReasoningContent;
 
         if (msg.ToolCalls != null && msg.ToolCalls.Count > 0)
         {

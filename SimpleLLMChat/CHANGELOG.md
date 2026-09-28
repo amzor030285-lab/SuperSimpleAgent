@@ -6,9 +6,10 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [1.0.3] - 2026-09-28
 
-Two runaway-generation fixes, found when a model looped and the GUI stopped responding.
+Two runaway-generation fixes, found when a model looped and the GUI stopped responding,
+plus two prompt-cache fixes, found by reading the server's own `prompt_tokens` counter.
 
 ### Fixed
 
@@ -27,6 +28,40 @@ Two runaway-generation fixes, found when a model looped and the GUI stopped resp
   itself rather than blaming the user for pressing Stop. Set `repetitionguard=0` to turn
   it off. The check keeps a fixed-size window rather than the whole response, so its cost
   does not grow with the answer.
+
+Both of these were unverifiable from a test run alone, so the cache fixes below were
+measured instead: a prompt is only served from the server's cache while it stays a
+byte-for-byte prefix of the previous one, and any change near its end invalidates all of it.
+Every number below is the server's reported `prompt_tokens` minus the tokens the server
+had cached, on a real 200k-context model.
+
+### Fixed
+
+- **A context injector no longer invalidates the cache on every turn.** When a tool package
+  declares a `context_injector`, its snapshot was re-fetched each turn and appended to the
+  serialized copy of the last user message, leaving the stored message untouched. The next
+  request therefore ended in a different final user turn, nothing before it was a prefix any
+  more, and the entire conversation was reprocessed. The snapshot is now baked into the
+  stored user message when the turn is created, so the same bytes are re-sent for the rest of
+  the conversation. Measured on a two-turn exchange: about 148 recomputed tokens where the
+  old code spent 46. The injector still runs once per user turn, so the context it reports is
+  no fresher than before; the conversation now keeps one snapshot per turn instead of only
+  the newest.
+
+- **A reasoning model's thinking is sent back to it instead of being thrown away.** A model
+  that thinks before answering streams that thinking as `reasoning_content`, and the server
+  caches the whole stream, not just the visible answer. Only the answer was kept, so the next
+  prompt diverged from the cached one immediately after the user message and the history was
+  reprocessed from there. The thinking is now accumulated even when the UI hides it, stored on
+  the assistant message (tool-call messages included, so an agent loop stays stable too) and
+  echoed back in the request; it also survives saving and reloading a session. Measured:
+  61-67 recomputed tokens per turn before, 24-25 after. `preserve_thinking` is deliberately
+  not asked of the server, since the model produced the thinking either way and the previous
+  code simply discarded it. The cost is context: the thinking stays in the conversation.
+
+Tested on Windows 10/11 (x64): FileTools 19 pass, MemoryTools 3, SkillTools 2, ShellTools 13,
+PythonTools 2, WebTools 4 pass + 1 skip, DesktopTools 30, CLI 59, GUI 18 - 150 pass, 0 fail.
+Windows XP SP3 (x86) has not been re-checked for this release yet.
 
 ## [1.0.2] - 2026-09-28
 

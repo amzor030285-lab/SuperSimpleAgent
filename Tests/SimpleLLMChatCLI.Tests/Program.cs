@@ -366,72 +366,78 @@ namespace SimpleLLMChatCLI.Tests
             });
 
             // A context injector returns a live snapshot (DesktopTools' get_desktop_context
-            // is the focused window's control tree), so it differs on every turn. Folding it
-            // into the system message changed the FIRST message of every request and made the
-            // provider rebuild its cached prompt prefix each turn; injections now go to the end.
-            TestRunner.Run("ToolRegistry.context_injection_cache_stable", () =>
+            // is the focused window's control tree), so it differs on every turn. Each turn
+            // therefore gets a fresh one, but it is BAKED into the stored user message:
+            // the text of a message that was already sent must never change again, or the
+            // provider no longer sees a byte-for-byte extension of the previous prompt and
+            // rebuilds its cached prefix from the divergence onwards.
+            TestRunner.Run("ToolRegistry.context_injection_baked_into_user_message", () =>
             {
-                JArray first = BuildSampleMessages();
-                JArray second = BuildSampleMessages();
+                string turnOne = ToolRegistry.BakeContextInjection("first question", new List<string> { "DESKTOP TREE A" });
 
-                int firstChars = ToolRegistry.AppendContextInjections(first, new List<string> { "DESKTOP TREE A" });
-                int secondChars = ToolRegistry.AppendContextInjections(second, new List<string> { "DESKTOP TREE B" });
+                TestAssert.Equal("first question" + "\n\n" + "DESKTOP TREE A", turnOne, "snapshot appended to the user text");
+                TestAssert.True(!turnOne.Contains("You are"), "no system text involved");
 
-                TestAssert.Equal("You are helpful.", (string)first[0]["content"], "system message untouched");
-                TestAssert.Equal((string)first[0]["content"], (string)second[0]["content"], "system message identical across turns");
-                TestAssert.True(!((string)first[0]["content"]).Contains("DESKTOP TREE"), "system prompt never carries the injection");
-                TestAssert.Contains((string)second[3]["content"], "DESKTOP TREE B", "injection reaches the model on the last user turn");
-                TestAssert.Equal("DESKTOP TREE B".Length + 2, secondChars, "appended char count reported");
-                TestAssert.Equal("DESKTOP TREE A".Length + 2, firstChars, "appended char count reported (turn 1)");
+                // Re-baking the same snapshot must not append it twice: the payload is
+                // rebuilt from the stored message on every request, tool rounds included.
+                string again = ToolRegistry.BakeContextInjection(turnOne, new List<string> { "DESKTOP TREE A" });
+                TestAssert.Equal(turnOne, again, "baking is idempotent");
+
+                // The next turn brings a different snapshot and lands on a different
+                // message; the turn-1 text is already stored and stays untouched.
+                string turnTwo = ToolRegistry.BakeContextInjection("second question", new List<string> { "DESKTOP TREE B" });
+                TestAssert.Equal("second question" + "\n\n" + "DESKTOP TREE B", turnTwo, "turn 2 gets its own snapshot");
+                TestAssert.Equal("first question" + "\n\n" + "DESKTOP TREE A", turnOne, "turn 1 message unchanged");
+
+                TestAssert.Equal("q", ToolRegistry.BakeContextInjection("q", new List<string>()), "no injectors, no change");
+                TestAssert.Equal("q", ToolRegistry.BakeContextInjection("q", null), "null list, no change");
+                TestAssert.Equal("SNAP", ToolRegistry.BakeContextInjection("", new List<string> { "SNAP" }), "empty user text takes the snapshot alone");
+                TestAssert.Equal("SNAP", ToolRegistry.BakeContextInjection(null, new List<string> { "SNAP" }), "null user text takes the snapshot alone");
             });
 
-            TestRunner.Run("ToolRegistry.context_injection_multimodal", () =>
+            // The condition a provider actually needs: the prompt sent on turn 2 must
+            // start with the exact text sent on turn 1. Baking is what makes this hold -
+            // the turn-1 user message keeps the snapshot it was sent with, so the history
+            // is only ever appended to, never rewritten in the middle.
+            TestRunner.Run("ToolRegistry.context_injection_multi_turn_prefix", () =>
             {
-                JArray messages = new JArray();
+                List<string> turnOneInjections = new List<string> { "DESKTOP TREE A" };
 
-                JObject systemMsg = new JObject();
-                systemMsg["role"] = "system";
-                systemMsg["content"] = "You are helpful.";
-                messages.Add(systemMsg);
+                // Turn 1: user message stored (and sent) with its snapshot baked in.
+                string turnOnePrompt =
+                    "You are helpful.\n" +
+                    ToolRegistry.BakeContextInjection("first question", turnOneInjections) + "\n";
 
-                JObject userMsg = new JObject();
-                userMsg["role"] = "user";
-                JArray parts = new JArray();
-                JObject textPart = new JObject();
-                textPart["type"] = "text";
-                textPart["text"] = "what is on my screen?";
-                parts.Add(textPart);
-                userMsg["content"] = parts;
-                messages.Add(userMsg);
+                // Turn 2: the answer lands, a NEW snapshot is fetched for a NEW message.
+                // The stored turn-1 message is re-serialized unchanged.
+                string storedTurnOne = ToolRegistry.BakeContextInjection("first question", turnOneInjections);
+                string turnTwoPrompt =
+                    "You are helpful.\n" +
+                    storedTurnOne + "\n" +
+                    "first answer\n" +
+                    ToolRegistry.BakeContextInjection("second question", new List<string> { "DESKTOP TREE B" }) + "\n";
 
-                ToolRegistry.AppendContextInjections(messages, new List<string> { "DESKTOP TREE" });
-
-                TestAssert.Equal("You are helpful.", (string)messages[0]["content"], "system message untouched");
-                JArray outParts = messages[1]["content"] as JArray;
-                TestAssert.True(outParts != null, "multimodal content stays an array");
-                TestAssert.Equal(2, outParts.Count, "text part appended after the existing parts");
-                TestAssert.Equal("DESKTOP TREE", (string)outParts[1]["text"], "injected text part");
+                TestAssert.True(turnTwoPrompt.StartsWith(turnOnePrompt, StringComparison.Ordinal),
+                    "turn 2 keeps turn 1 as a cacheable prefix"
+                    + "\n      sent on turn 1: " + turnOnePrompt.Replace("\n", "\\n")
+                    + "\n      sent on turn 2: " + turnTwoPrompt.Replace("\n", "\\n"));
             });
 
-            TestRunner.Run("ToolRegistry.context_injection_no_user_turn", () =>
+            // The regression this replaces: attaching the snapshot to the serialized copy
+            // of the last user turn left the stored turn-1 message without it, so the
+            // prefix diverged in the middle of the history.
+            TestRunner.Run("ToolRegistry.context_injection_prefix_stable_across_turns", () =>
             {
-                JArray messages = new JArray();
+                List<string> turnOneInjections = new List<string> { "DESKTOP TREE A" };
+                string stored = ToolRegistry.BakeContextInjection("first question", turnOneInjections);
 
-                JObject systemMsg = new JObject();
-                systemMsg["role"] = "system";
-                systemMsg["content"] = "You are helpful.";
-                messages.Add(systemMsg);
-
-                JObject assistantMsg = new JObject();
-                assistantMsg["role"] = "assistant";
-                assistantMsg["content"] = "an answer";
-                messages.Add(assistantMsg);
-
-                int chars = ToolRegistry.AppendContextInjections(messages, new List<string> { "DESKTOP TREE" });
-
-                TestAssert.Equal("DESKTOP TREE".Length + 2, chars, "chars reported on the fallback path");
-                TestAssert.Contains((string)messages[0]["content"], "DESKTOP TREE", "falls back to the system message");
-                TestAssert.Equal("an answer", (string)messages[1]["content"], "assistant turn untouched");
+                // Every request rebuilds the payload from the conversation, so what goes
+                // on the wire for turn 1 must be recoverable from storage on turn 2.
+                for (int turn = 2; turn <= 5; turn++)
+                {
+                    string sent = ToolRegistry.BakeContextInjection("first question", turnOneInjections);
+                    TestAssert.Equal(stored, sent, "turn " + turn + " re-serializes turn 1 byte-for-byte");
+                }
             });
 
             TestRunner.Run("ToolRegistry.context_injection_tail", () =>
@@ -440,6 +446,187 @@ namespace SimpleLLMChatCLI.Tests
                 TestAssert.Equal("", ToolRegistry.BuildInjectionTail(new List<string>()), "empty list");
                 TestAssert.Equal("A", ToolRegistry.BuildInjectionTail(new List<string> { null, "", "A" }), "blank entries dropped");
                 TestAssert.Equal("A" + "\n\n" + "B", ToolRegistry.BuildInjectionTail(new List<string> { "A", "B" }), "joined with a blank line");
+            });
+
+            // The bake fix in the shipped binary, not just in a unit test. DesktopTools
+            // declares a context injector, so every turn gets a fresh snapshot. The
+            // property that keeps the provider's cached prefix alive is that the FIRST
+            // user message is sent byte-for-byte identically on turn 2 as on turn 1 -
+            // whatever the snapshot happens to say. This fails if the snapshot is attached
+            // to the serialized copy of the last user turn instead of being stored.
+            TestRunner.Run("cli.context_injection_bake_keeps_prefix_stable", () =>
+            {
+                string desktopDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "DesktopTools", "bin", "Release"));
+                string desktopExe = Path.Combine(desktopDir, "DesktopTools.exe");
+                if (!File.Exists(desktopExe))
+                {
+                    TestRunner.Skip("DesktopTools.exe not built: " + desktopExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.FixedReply = "Turn one done.";
+                    server.StreamDelayMs = 0;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(desktopExe, Path.Combine(toolsDir, "DesktopTools.exe"), true);
+                    File.Copy(Path.Combine(desktopDir, "DesktopTools.json"), Path.Combine(toolsDir, "DesktopTools.json"), true);
+                    File.Copy(Path.Combine(desktopDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "list_windows");
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("first question");
+                        CliRunner.WaitForTextAfter(cli, "Turn one done.", "You: ", 30000);
+
+                        // A distinct reply per turn: WaitForTextAfter anchors on the LAST
+                        // occurrence, so the same marker twice would match turn 1 again.
+                        server.FixedReply = "Turn two done.";
+                        cli.WriteLine("second question");
+                        CliRunner.WaitForTextAfter(cli, "Turn two done.", "You: ", 30000);
+                    }
+
+                    TestAssert.True(server.ReceivedBodies.Count >= 2,
+                        "two chat requests sent (got " + server.ReceivedBodies.Count + ")");
+                    if (server.ReceivedBodies.Count < 2)
+                        return;
+
+                    JArray turnOne = MessagesOf(JObject.Parse(server.ReceivedBodies[0]));
+                    JArray turnTwo = MessagesOf(JObject.Parse(server.ReceivedBodies[1]));
+
+                    string firstOnTurnOne = FirstUserContent(turnOne);
+                    string firstOnTurnTwo = FirstUserContent(turnTwo);
+
+                    // Without a tool in the advertised schema the injector never runs, there is
+                    // nothing to keep stable, and the comparison below would pass for the wrong
+                    // reason - so prove both halves before comparing.
+                    TestAssert.True(JObject.Parse(server.ReceivedBodies[0])["tools"] != null,
+                        "the enabled tool is advertised in the request, which is what activates the injector"
+                        + "\n      turn 1 body: " + server.ReceivedBodies[0]);
+
+                    TestAssert.True(firstOnTurnOne.Length > "first question".Length,
+                        "the context injector ran and was baked into the turn-1 user message"
+                        + "\n      turn 1 user message: " + firstOnTurnOne);
+
+                    TestAssert.Equal(firstOnTurnOne, firstOnTurnTwo,
+                        "the turn-1 user message is re-sent unchanged, so the prompt stays a prefix of the previous one"
+                        + "\n      turn 1: " + firstOnTurnOne.Replace("\n", "\\n")
+                        + "\n      turn 2: " + firstOnTurnTwo.Replace("\n", "\\n"));
+                }
+            });
+
+            // A reasoning model emits "thinking then answer", and that token stream is what
+            // the server holds in its KV cache. Storing only the answer makes the next
+            // prompt diverge from the cached one right after the user message, so the
+            // whole conversation is reprocessed every turn. Echo the thinking back.
+            TestRunner.Run("cli.reasoning_echoed_in_history", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    const string thinking = "The user asked a simple question; answer briefly.";
+                    server.ReasoningReply = thinking;
+                    server.FixedReply = "First answer.";
+                    server.StreamDelayMs = 0;
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        cli.WriteLine("first question");
+                        CliRunner.WaitForTextAfter(cli, "First answer.", "You: ", 20000);
+
+                        server.FixedReply = "Second answer.";
+                        cli.WriteLine("second question");
+                        CliRunner.WaitForTextAfter(cli, "Second answer.", "You: ", 20000);
+                    }
+
+                    TestAssert.True(server.ReceivedBodies.Count >= 2,
+                        "two chat requests sent (got " + server.ReceivedBodies.Count + ")");
+
+                    JObject turnOne = JObject.Parse(server.ReceivedBodies[0]);
+                    JObject turnTwo = JObject.Parse(server.ReceivedBodies[1]);
+
+                    // Turn 1 has nothing to echo yet.
+                    TestAssert.Equal(0, CountReasoning(turnOne), "turn 1 carries no reasoning to echo");
+
+                    JObject echo = FirstAssistantWithReasoning(turnTwo);
+                    TestAssert.True(echo != null,
+                        "turn 2 echoes the model thinking back as reasoning_content"
+                        + "\n      turn 2 messages: " + turnTwo["messages"].ToString(Newtonsoft.Json.Formatting.None));
+                    if (echo != null)
+                        TestAssert.Equal(thinking, (string)echo["reasoning_content"], "echoed verbatim");
+                }
+            });
+
+            // The same contract on the tool-call path: a model that thinks before calling a
+            // tool stores that thinking on the assistant message that carries the call.
+            TestRunner.Run("cli.reasoning_echoed_on_tool_call_message", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    const string thinking = "I should run a shell command to answer this.";
+                    server.ReasoningReply = thinking;
+                    server.FixedReply = "done";
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var args = new JObject();
+                    args["command"] = "echo reasoning-echo-probe";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run the probe command");
+                        CliRunner.WaitForTextAfter(cli, "done", "You: ", 60000);
+                    }
+
+                    // Find a request whose assistant tool-call message carries the thinking.
+                    bool found = false;
+                    foreach (string body in server.ReceivedBodies)
+                    {
+                        foreach (JObject msg in MessagesOf(JObject.Parse(body)))
+                        {
+                            if (msg["tool_calls"] == null)
+                                continue;
+                            if ((string)msg["reasoning_content"] == thinking)
+                                found = true;
+                        }
+                    }
+                    TestAssert.True(found,
+                        "the assistant tool-call message echoes reasoning_content"
+                        + "\n      requests: " + server.ReceivedBodies.Count);
+                }
             });
 
             TestRunner.Run("cli.bad_reasoning_effort", () =>
@@ -1953,31 +2140,45 @@ namespace SimpleLLMChatCLI.Tests
         [DllImport("kernel32.dll")]
         static extern bool CloseHandle(IntPtr handle);
 
-        static JArray BuildSampleMessages()
+        static JArray MessagesOf(JObject payload)
         {
-            JArray messages = new JArray();
+            JArray messages = payload["messages"] as JArray;
+            return messages ?? new JArray();
+        }
 
-            JObject systemMsg = new JObject();
-            systemMsg["role"] = "system";
-            systemMsg["content"] = "You are helpful.";
-            messages.Add(systemMsg);
+        static int CountReasoning(JObject payload)
+        {
+            int count = 0;
+            foreach (JObject msg in MessagesOf(payload))
+            {
+                if (!string.IsNullOrEmpty((string)msg["reasoning_content"]))
+                    count++;
+            }
+            return count;
+        }
 
-            JObject firstUser = new JObject();
-            firstUser["role"] = "user";
-            firstUser["content"] = "first question";
-            messages.Add(firstUser);
+        static JObject FirstAssistantWithReasoning(JObject payload)
+        {
+            foreach (JObject msg in MessagesOf(payload))
+            {
+                if ((string)msg["role"] == "assistant" && !string.IsNullOrEmpty((string)msg["reasoning_content"]))
+                    return msg;
+            }
+            return null;
+        }
 
-            JObject assistantMsg = new JObject();
-            assistantMsg["role"] = "assistant";
-            assistantMsg["content"] = "first answer";
-            messages.Add(assistantMsg);
-
-            JObject secondUser = new JObject();
-            secondUser["role"] = "user";
-            secondUser["content"] = "second question";
-            messages.Add(secondUser);
-
-            return messages;
+        static string FirstUserContent(JArray messages)
+        {
+            foreach (JToken token in messages)
+            {
+                JObject msg = token as JObject;
+                if (msg == null || (string)msg["role"] != "user")
+                    continue;
+                string content = (string)msg["content"];
+                if (content != null)
+                    return content;
+            }
+            return "";
         }
 
         static bool HasConfigKey(JObject cfgObj, string name)

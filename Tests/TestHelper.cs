@@ -820,6 +820,18 @@ public sealed class FakeOpenAiServer : IDisposable
     public int StreamChunkChars { get; set; }
 
     /// <summary>
+    /// Every request body received, oldest first. Lets a test compare what was sent on
+    /// turn 1 with what was sent on turn 2 (e.g. that a prefix stayed byte-identical).
+    /// </summary>
+    public List<string> ReceivedBodies { get; private set; }
+
+    /// <summary>
+    /// When set, each chat reply opens with a reasoning_content delta carrying this
+    /// text before any content, like a reasoning model that thinks before answering.
+    /// </summary>
+    public string ReasoningReply { get; set; }
+
+    /// <summary>
     /// Remaining chat requests that should respond with a tool-call delta instead of
     /// text. Each consumes one request; when it reaches 0, replies return to content.
     /// The id increments per tool call ("call_1", "call_2", ...).
@@ -890,6 +902,7 @@ public sealed class FakeOpenAiServer : IDisposable
         StreamDelayMs = 30;
         UsageTokenRatio = 0.48;
         StreamChunkChars = 16;
+        ReceivedBodies = new List<string>();
         string baseUrl;
         _listener = TestHttpListener.StartLoopback(out baseUrl);
         BaseUrl = baseUrl;
@@ -956,6 +969,8 @@ public sealed class FakeOpenAiServer : IDisposable
 
         if (path.IndexOf("/v1/chat/completions", StringComparison.OrdinalIgnoreCase) >= 0)
         {
+            // Only chat turns are recorded: the model-list probe is not a prompt.
+            ReceivedBodies.Add(body);
             WriteSseChat(ctx);
             return;
         }
@@ -1058,6 +1073,17 @@ public sealed class FakeOpenAiServer : IDisposable
 
         using (Stream output = ctx.Response.OutputStream)
         {
+            if (!string.IsNullOrEmpty(ReasoningReply))
+            {
+                string evt = DataPrefix + "{\"choices\":[{\"delta\":{\"reasoning_content\":\"" +
+                    EscapeJson(ReasoningReply) + "\"}}]}\n\n";
+                byte[] bytes = Encoding.UTF8.GetBytes(evt);
+                output.Write(bytes, 0, bytes.Length);
+                output.Flush();
+                if (delayMs > 0)
+                    Thread.Sleep(delayMs);
+            }
+
             for (int i = 0; i < content.Length; i += chunkChars)
             {
                 if (!_running)
@@ -1162,6 +1188,15 @@ public sealed class FakeOpenAiServer : IDisposable
 
         using (Stream output = ctx.Response.OutputStream)
         {
+            if (!string.IsNullOrEmpty(ReasoningReply))
+            {
+                string think = DataPrefix + "{\"choices\":[{\"delta\":{\"reasoning_content\":\"" +
+                    EscapeJson(ReasoningReply) + "\"}}]}\n\n";
+                byte[] thinkBytes = Encoding.UTF8.GetBytes(think);
+                output.Write(thinkBytes, 0, thinkBytes.Length);
+                output.Flush();
+            }
+
             string head = "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":null," +
                 "\"tool_calls\":[{\"index\":0,\"id\":\"" + id + "\",\"type\":\"function\"," +
                 "\"function\":{\"name\":\"" + EscapeJson(name) + "\",\"arguments\":\"\"}}]}}]}\n\n";

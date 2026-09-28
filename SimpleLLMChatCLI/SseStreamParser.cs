@@ -25,6 +25,7 @@ namespace SimpleLLMChatCLI
             };
 
             StringBuilder output = new StringBuilder();
+            StringBuilder reasoning = new StringBuilder();
             Dictionary<int, ToolRegistry.ToolCall> partialToolCalls = new Dictionary<int, ToolRegistry.ToolCall>();
             Dictionary<int, int> toolCallArgumentLength = new Dictionary<int, int>();
             bool inReasoning = false;
@@ -68,7 +69,7 @@ namespace SimpleLLMChatCLI
 
                     foreach (JObject choice in choices)
                     {
-                        ProcessChoice(choice, ref response, output, ref inReasoning, ref firstContent,
+                        ProcessChoice(choice, ref response, output, reasoning, ref inReasoning, ref firstContent,
                             ref reasoningEndedWithNewline, ref reasoningStart, partialToolCalls, toolCallArgumentLength,
                             onContentChunk, onReasoningChunk, onReasoningSummary, onToolCallChunk, onContentStart, startBlock);
                     }
@@ -84,6 +85,11 @@ namespace SimpleLLMChatCLI
 
             response.ToolCalls.AddRange(partialToolCalls.Values);
             response.Content = output.ToString();
+            // Kept even when the thinking block is hidden from the UI: this is the exact
+            // text the model generated, and it has to be echoed back on the next request
+            // or the stored history no longer matches what the server holds in its KV
+            // cache (see LLMClient.BuildMessageObject).
+            response.ReasoningContent = reasoning.ToString();
             return response;
         }
 
@@ -91,6 +97,7 @@ namespace SimpleLLMChatCLI
             JObject choice,
             ref LLMClient.LLMCompletionResponse response,
             StringBuilder output,
+            StringBuilder reasoning,
             ref bool inReasoning,
             ref bool firstContent,
             ref bool reasoningEndedWithNewline,
@@ -108,6 +115,9 @@ namespace SimpleLLMChatCLI
                 ?? (string)choice["delta"]?["reasoning"];
             if (!string.IsNullOrEmpty(reasoningChunk))
             {
+                // Always accumulate: showing the block to the user is a separate concern.
+                reasoning.Append(reasoningChunk);
+
                 if (onReasoningChunk != null)
                 {
                     if (!inReasoning)

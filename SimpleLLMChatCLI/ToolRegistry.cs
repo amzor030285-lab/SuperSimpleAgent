@@ -281,46 +281,32 @@ namespace SimpleLLMChatCLI
             return results;
         }
 
-        /// <summary>
-        /// Context injectors are volatile: the focused window and its control tree change
-        /// between turns. They are appended to the last user turn instead of the system
-        /// message, because a changed system message invalidates the provider's cached prompt
-        /// prefix on every turn. Returns the number of characters appended.
-        /// </summary>
-        public static int AppendContextInjections(JArray messages, List<string> contextInjections)
-        {
-            string tail = BuildInjectionTail(contextInjections);
-            if (tail.Length == 0)
-                return 0;
+    /// <summary>
+    /// Bakes the context injectors into a user message as it is stored in the
+    /// conversation, so the snapshot the model actually saw stays part of the
+    /// message forever.
+    ///
+    /// Injectors are volatile (the focused window and its control tree change between
+    /// turns), so each turn gets a fresh one - and the text of an already-sent message
+    /// must never change again. A provider reuses its cached prompt prefix only while
+    /// the previous prompt is byte-for-byte a prefix of the next one. Appending the
+    /// injection to the serialized copy of the last user turn instead made that turn's
+    /// stored text differ from what was sent, so the prefix diverged in the middle of
+    /// the history and the whole conversation was recomputed every turn. Returns the
+    /// user content with the tail appended; idempotent, so re-baking is a no-op.
+    /// </summary>
+    public static string BakeContextInjection(string userContent, List<string> contextInjections)
+    {
+        string tail = BuildInjectionTail(contextInjections);
+        if (tail.Length == 0)
+            return userContent ?? "";
 
-            for (int i = messages.Count - 1; i >= 1; i--)
-            {
-                JObject msg = messages[i] as JObject;
-                if (msg == null || (string)msg["role"] != "user")
-                    continue;
+        string text = userContent ?? "";
+        if (text.EndsWith(tail, StringComparison.Ordinal))
+            return text;
 
-                JArray parts = msg["content"] as JArray;
-                if (parts != null)
-                {
-                    parts.Add(new JObject
-                    {
-                        ["type"] = "text",
-                        ["text"] = tail
-                    });
-                }
-                else
-                {
-                    string text = (string)msg["content"] ?? "";
-                    msg["content"] = text.Length > 0 ? text + "\n\n" + tail : tail;
-                }
-                return tail.Length + 2;
-            }
-
-            JObject system = messages.Count > 0 ? messages[0] as JObject : null;
-            if (system != null)
-                system["content"] = ((string)system["content"] ?? "") + "\n\n" + tail;
-            return tail.Length + 2;
-        }
+        return text.Length > 0 ? text + "\n\n" + tail : tail;
+    }
 
         public static string BuildInjectionTail(List<string> contextInjections)
         {
