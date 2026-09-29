@@ -932,9 +932,10 @@ namespace SimpleLLMChatGUI
             var hyperlink = new Hyperlink
             {
                 NavigateUri = uri,
-                Cursor = Cursors.Hand
+                Cursor = Cursors.Hand,
+                TextDecorations = System.Windows.TextDecorations.Underline
             };
-            hyperlink.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
+            hyperlink.SetResourceReference(TextElement.ForegroundProperty, "LinkBrush");
             // The ToolTip attached property gives native hover open/close with
             // the system show delay, so no manual timer is needed.
             hyperlink.ToolTip = new ToolTip { Content = uri.AbsoluteUri, Placement = PlacementMode.Mouse };
