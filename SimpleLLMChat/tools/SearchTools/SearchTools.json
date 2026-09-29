@@ -1,0 +1,19 @@
+{
+    "name": "Search Tools",
+    "executable": "SearchTools.exe",
+    "options": [
+        { "name": "port", "label": "Everything HTTP server port", "type": "int", "default": "8888", "description": "Port of Everything's built-in HTTP server (Everything -> Tools -> Options -> HTTP Server -> Server port). It must match the port enabled there." },
+        { "name": "timeout", "label": "Everything HTTP timeout (seconds)", "type": "int", "default": "5", "description": "How long to wait for Everything before giving up. Everything answers in about a millisecond, so only raise this on a very busy machine." }
+    ],
+    "tools": [
+        {
+            "name": "everything_search",
+            "description": "Find files and folders by name anywhere on the machine, using the Everything index (Everything from https://www.voidtools.com/ must be running with its HTTP server enabled). Answers in about a millisecond, so prefer this over a recursive directory walk. Pass a filename or a fragment, NOT a full path; a path is answered with a hint instead of results. An empty result is a real 'nothing indexed matches', so it is safe to report the file as missing - but a returned 'error:' line means Everything itself is not answering, and then nothing can be concluded about the file. Search syntax: ext:jpg;png for extensions; \"exact phrase\" for an exact name; dm:today / dm:yesterday / dm:2026-01-31 for the modified date; size:tiny|small|medium|large|huge|gigantic; folder:name to match folders NAMED name; parent:C:\\Projects to list one folder's contents; AND / OR / NOT for boolean logic; regex:^test.*\\.py$ for a pattern. Combine them to keep results small, e.g. 'ext:md size:small dm:today'.",
+            "parameters": [
+                { "name": "query", "type": "string", "description": "Filename, part of a name, or a filter expression. Do not pass a full path. At least 2 significant characters, max 100.", "required": true },
+                { "name": "max_results", "type": "integer", "description": "Results per page (default 50, hard cap 100).", "required": false },
+                { "name": "offset", "type": "integer", "description": "Skip this many results to page further (default 0). Use the offset the previous call reported when it said more results are available.", "required": false }
+            ]
+        }
+    ]
+}

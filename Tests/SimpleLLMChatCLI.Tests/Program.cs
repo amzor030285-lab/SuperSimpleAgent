@@ -523,6 +523,70 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            // The manifest's parameter types are sent to the provider verbatim as JSON
+            // Schema types. "int" is not one: strict providers (automatic parser
+            // generation) reject the WHOLE request with HTTP 400 before the model
+            // ever sees the message.
+            TestRunner.Run("cli.tool_schema_types_are_valid_json_schema", () =>
+            {
+                string searchDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "SearchTools", "bin", "Release"));
+                string searchExe = Path.Combine(searchDir, "SearchTools.exe");
+                if (!File.Exists(searchExe))
+                {
+                    TestRunner.Skip("SearchTools.exe not built: " + searchExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.FixedReply = "Done.";
+                    server.StreamDelayMs = 0;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(searchExe, Path.Combine(toolsDir, "SearchTools.exe"), true);
+                    File.Copy(Path.Combine(searchDir, "SearchTools.json"), Path.Combine(toolsDir, "SearchTools.json"), true);
+                    File.Copy(Path.Combine(searchDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "everything_search");
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("hi");
+                        CliRunner.WaitForTextAfter(cli, "Done.", "You: ", 30000);
+                    }
+
+                    TestAssert.True(server.ReceivedBodies.Count >= 1, "one chat request sent");
+                    if (server.ReceivedBodies.Count < 1)
+                        return;
+
+                    JArray tools = JObject.Parse(server.ReceivedBodies[0])["tools"] as JArray;
+                    TestAssert.True(tools != null && tools.Count > 0,
+                        "the enabled tool is advertised in the request");
+                    if (tools == null || tools.Count == 0)
+                        return;
+
+                    JObject props = tools[0]["function"]["parameters"]["properties"] as JObject;
+                    TestAssert.True(props != null, "the function has properties");
+                    if (props == null)
+                        return;
+
+                    foreach (JProperty property in props.Properties())
+                    {
+                        JObject propObj = property.Value as JObject;
+                        string type = propObj == null ? null : (string)propObj["type"];
+                        TestAssert.True(
+                            type == "string" || type == "integer" || type == "number"
+                            || type == "boolean" || type == "array" || type == "object",
+                            "parameter '" + property.Name + "' uses '" + type + "', not a JSON Schema type");
+                    }
+                }
+            });
+
             // Baking the snapshot into the stored message is what keeps the prompt a
             // byte-for-byte prefix of the previous one, but it also means the session
             // file holds text the user never typed. The original has to travel next to

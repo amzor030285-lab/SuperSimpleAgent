@@ -34,6 +34,8 @@ set TESTS=%ROOT%Tests
 
 call :BuildOne "%TESTS%\FileTools.Tests\FileTools.Tests.csproj" || set FAILED=1
 
+call :BuildOne "%TESTS%\SearchTools.Tests\SearchTools.Tests.csproj" || set FAILED=1
+
 call :BuildOne "%TESTS%\MemoryTools.Tests\MemoryTools.Tests.csproj" || set FAILED=1
 
 call :BuildOne "%TESTS%\SkillTools.Tests\SkillTools.Tests.csproj" || set FAILED=1
@@ -71,6 +73,8 @@ echo === Packaging product files beside test EXEs ===
 
 
 call :CopyTool FileTools
+
+call :CopyTool SearchTools
 
 call :CopyTool MemoryTools
 

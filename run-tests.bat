@@ -35,6 +35,7 @@ set SUMMARY=%LOGDIR%\summary.txt
 >> "%SUMMARY%" echo.
 
 call :RunSuite FileTools FileTools.Tests
+call :RunSuite SearchTools SearchTools.Tests
 call :RunSuite MemoryTools MemoryTools.Tests
 call :RunSuite SkillTools SkillTools.Tests
 call :RunSuite ShellTools ShellTools.Tests
