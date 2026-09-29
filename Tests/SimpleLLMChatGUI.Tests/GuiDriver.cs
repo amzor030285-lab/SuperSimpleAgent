@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -452,14 +453,42 @@ namespace SimpleLLMChatGUI.Tests
             }
         }
 
-        /// <summary>Finds an element by automation id inside a titled (dialog) window.</summary>
+        /// <summary>
+        /// Finds an element by automation id inside a titled (dialog) window.
+        /// Retries until <paramref name="timeoutMs"/>: a window that is still
+        /// closing after an invoke does not answer descendant queries at once.
+        /// </summary>
         public AutomationElement FindByIdInWindow(string windowTitle, string automationId, int timeoutMs)
         {
-            AutomationElement window = FindWindowByTitle(windowTitle, timeoutMs);
-            if (window == null)
-                throw new TestFailureException("Dialog window not found: " + windowTitle);
-            return window.FindFirst(TreeScope.Descendants,
-                new PropertyCondition(AutomationElement.AutomationIdProperty, automationId));
+            Condition byId = new PropertyCondition(AutomationElement.AutomationIdProperty, automationId);
+            Stopwatch sw = Stopwatch.StartNew();
+            while (true)
+            {
+                AutomationElement window = FindWindowByTitle(windowTitle, timeoutMs);
+                if (window == null)
+                    throw new TestFailureException("Dialog window not found: " + windowTitle);
+
+                AutomationElement el = window.FindFirst(TreeScope.Descendants, byId);
+                if (el != null)
+                    return el;
+                if (sw.ElapsedMilliseconds >= timeoutMs)
+                    return null;
+
+                Thread.Sleep(100);
+            }
+        }
+
+        /// <summary>Waits until a titled dialog is gone. Invoke is async, so effects land after it returns.</summary>
+        public void WaitForDialogClosed(string windowTitle, int timeoutMs)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                if (FindWindowNative((windowTitle ?? "").Trim()) == IntPtr.Zero)
+                    return;
+                Thread.Sleep(100);
+            }
+            throw new TestFailureException("Dialog window still open: " + windowTitle);
         }
 
         public void SetTextBoxInWindow(string windowTitle, string automationId, string text, int timeoutMs)
@@ -516,6 +545,131 @@ namespace SimpleLLMChatGUI.Tests
             }
             throw new TestFailureException(
                 "List item \"" + containsText + "\" not found in " + automationId + " in " + windowTitle);
+        }
+
+        /// <summary>
+        /// Automation ids inside a titled window that start with
+        /// <paramref name="prefix"/> (UIA has no "starts with" condition).
+        /// </summary>
+        public List<string> AutomationIdsInWindow(string windowTitle, string prefix, int timeoutMs)
+        {
+            AutomationElement window = FindWindowByTitle(windowTitle, timeoutMs);
+            if (window == null)
+                throw new TestFailureException("Dialog window not found: " + windowTitle);
+
+            var ids = new List<string>();
+            AutomationElementCollection all = window.FindAll(TreeScope.Descendants, Condition.TrueCondition);
+            foreach (AutomationElement el in all)
+            {
+                string id = "";
+                try { id = el.Current.AutomationId ?? ""; } catch { }
+                if (id.StartsWith(prefix, StringComparison.Ordinal))
+                    ids.Add(id);
+            }
+            return ids;
+        }
+
+        /// <summary>
+        /// Opens a combo box in a titled window and picks an item by text.
+        /// Fails if the dropdown does not expand or the item is not exposed:
+        /// both are what a broken combo template looks like from outside.
+        /// </summary>
+        public void SelectComboItemInWindow(string windowTitle, string automationId, string itemText, int timeoutMs)
+        {
+            AutomationElement combo = FindByIdInWindow(windowTitle, automationId, timeoutMs);
+            if (combo == null)
+                throw new TestFailureException("ComboBox not found: " + automationId + " in " + windowTitle);
+
+            ExpandCollapsePattern expand =
+                combo.GetCurrentPattern(ExpandCollapsePattern.Pattern) as ExpandCollapsePattern;
+            if (expand == null)
+                throw new TestFailureException(automationId + " does not support ExpandCollapsePattern");
+            expand.Expand();
+
+            Stopwatch sw = Stopwatch.StartNew();
+            bool wasExpanded = false;
+            while (sw.ElapsedMilliseconds < timeoutMs)
+            {
+                try
+                {
+                    if (expand.Current.ExpandCollapseState == ExpandCollapseState.Expanded)
+                        wasExpanded = true;
+                }
+                catch { }
+
+                AutomationElement item = FindSelectable(combo, itemText);
+                if (item == null)
+                {
+                    AutomationElement popup = FindOpenPopup();
+                    if (popup != null)
+                        item = FindSelectable(popup, itemText);
+                }
+                if (item != null)
+                {
+                    SelectionItemPattern select = item.GetCurrentPattern(SelectionItemPattern.Pattern) as SelectionItemPattern;
+                    if (select != null)
+                    {
+                        select.Select();
+                        return;
+                    }
+                }
+                Thread.Sleep(100);
+            }
+
+            LogTopLevelWindows("combo dropdown timeout: " + windowTitle);
+            throw new TestFailureException(automationId + " item \"" + itemText + "\" not selectable"
+                + (wasExpanded ? " (dropdown was expanded)" : " (dropdown never expanded)"));
+        }
+
+        private static AutomationElement FindSelectable(AutomationElement parent, string containsText)
+        {
+            try
+            {
+                Condition selectable = new PropertyCondition(
+                    AutomationElement.IsSelectionItemPatternAvailableProperty, true);
+                AutomationElementCollection items = parent.FindAll(TreeScope.Descendants, selectable);
+                foreach (AutomationElement item in items)
+                {
+                    string name = "";
+                    try { name = item.Current.Name ?? ""; } catch { }
+                    if (name.IndexOf(containsText, StringComparison.OrdinalIgnoreCase) >= 0)
+                        return item;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>Top-level WPF popup window (combo dropdown, tooltip) if one is open.</summary>
+        private static AutomationElement FindOpenPopup()
+        {
+            try
+            {
+                Condition popupClass = new PropertyCondition(AutomationElement.ClassNameProperty, "Popup");
+                AutomationElementCollection popups =
+                    AutomationElement.RootElement.FindAll(TreeScope.Children, popupClass);
+                foreach (AutomationElement popup in popups)
+                {
+                    if (CountListItems(popup) > 0)
+                        return popup;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static int CountListItems(AutomationElement parent)
+        {
+            try
+            {
+                Condition listItem = new PropertyCondition(
+                    AutomationElement.ControlTypeProperty, ControlType.ListItem);
+                return parent.FindAll(TreeScope.Descendants, listItem).Count;
+            }
+            catch
+            {
+                return 0;
+            }
         }
 
         private static AutomationElement WaitForWindow(Process process, int timeoutMs)

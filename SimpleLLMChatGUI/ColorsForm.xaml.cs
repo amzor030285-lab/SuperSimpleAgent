@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,67 +12,144 @@ namespace SimpleLLMChatGUI
 {
     public partial class ColorsForm : Window
     {
-        private class ColorSetting
+        /// <summary>
+        /// One configurable color. Previews show the color the app actually
+        /// renders (custom value if set, otherwise the active theme's color),
+        /// so the dialog cannot disagree with the window behind it.
+        /// </summary>
+        public sealed class ColorSetting : INotifyPropertyChanged
         {
-            public ColorConfig Config { get; set; }
-            public System.Windows.Media.Color? Value { get; set; }
-            public Border PreviewBorder { get; set; }
+            private readonly ColorConfig _config;
+            private string _theme;
+            private System.Windows.Media.Color? _value;
+
+            public ColorSetting(ColorConfig config, string theme)
+            {
+                _config = config;
+                _theme = theme;
+            }
+
+            public ColorConfig Config { get { return _config; } }
+            public string Key { get { return _config.Key; } }
+            public string DisplayName { get { return _config.DisplayName; } }
+            public string ChooseButtonId { get { return "chooseButton_" + _config.Key; } }
+            public string ClearButtonId { get { return "clearButton_" + _config.Key; } }
+            public string PreviewId { get { return "preview_" + _config.Key; } }
+
+            /// <summary>Theme the preview falls back to when no custom value is set.</summary>
+            public string Theme
+            {
+                get { return _theme; }
+                set
+                {
+                    if (string.Equals(_theme, value, StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    _theme = value;
+                    OnPropertyChanged("Theme");
+                    OnPropertyChanged("PreviewBrush");
+                    OnPropertyChanged("PreviewTip");
+                }
+            }
+
+            /// <summary>Custom color, or null to follow the theme.</summary>
+            public System.Windows.Media.Color? Value
+            {
+                get { return _value; }
+                set
+                {
+                    _value = value;
+                    OnPropertyChanged("Value");
+                    OnPropertyChanged("PreviewBrush");
+                    OnPropertyChanged("PreviewTip");
+                }
+            }
+
+            /// <summary>The color the window behind the dialog actually renders.</summary>
+            public System.Windows.Media.Color EffectiveColor
+            {
+                get { return _value ?? ThemeColor; }
+            }
+
+            public System.Windows.Media.Brush PreviewBrush
+            {
+                get { return new SolidColorBrush(EffectiveColor); }
+            }
+
+            public string PreviewTip
+            {
+                get
+                {
+                    if (_value.HasValue)
+                        return "Custom " + Hex(_value.Value) + " - overrides the theme";
+
+                    string source = _theme == ColorHelper.ThemeSystem
+                        ? "System default"
+                        : ColorHelper.GetThemeDisplayName(_theme) + " theme";
+                    return source + " " + Hex(ThemeColor);
+                }
+            }
+
+            private System.Windows.Media.Color ThemeColor
+            {
+                get { return ColorHelper.ResolveColor(_config.ResourceKey, _theme, null); }
+            }
+
+            private static string Hex(System.Windows.Media.Color color)
+            {
+                return string.Format("#{0:X2}{1:X2}{2:X2}{3:X2}", color.A, color.R, color.G, color.B);
+            }
+
+            public event PropertyChangedEventHandler PropertyChanged;
+
+            private void OnPropertyChanged(string name)
+            {
+                PropertyChangedEventHandler handler = PropertyChanged;
+                if (handler != null)
+                    handler(this, new PropertyChangedEventArgs(name));
+            }
         }
 
-        private Dictionary<string, ColorSetting> _colorSettings;
+        private readonly List<ColorSetting> _colorSettings;
         private string _theme = ColorHelper.ThemeSystem;
 
         public ColorsForm()
         {
             InitializeComponent();
-            InitializeColorSettings();
-        }
 
-        private void InitializeColorSettings()
-        {
-            _colorSettings = new Dictionary<string, ColorSetting>();
+            // One row per configured color, in a stable order.
+            var keys = new List<string>(ColorHelper.ColorConfigs.Keys);
+            keys.Sort(StringComparer.OrdinalIgnoreCase);
 
-            // Use centralized color configuration and find preview borders by naming convention
-            foreach (var config in ColorHelper.ColorConfigs.Values)
-            {
-                // Border names follow PascalCase + "Preview" convention (e.g. "buttontextcolor" -> "ButtonTextColorPreview")
-                var previewBorder = FindName(config.ResourceKey.Replace("Brush", "Preview")) as Border;
-                if (previewBorder != null)
-                {
-                    _colorSettings[config.Key] = new ColorSetting
-                    {
-                        Config = config,
-                        PreviewBorder = previewBorder
-                    };
-                }
-            }
+            _colorSettings = new List<ColorSetting>(keys.Count);
+            foreach (string key in keys)
+                _colorSettings.Add(new ColorSetting(ColorHelper.ColorConfigs[key], _theme));
+
+            colorList.ItemsSource = _colorSettings;
         }
 
         private void SetColor(string key, System.Windows.Media.Color? value)
         {
-            if (_colorSettings.ContainsKey(key))
-            {
-                _colorSettings[key].Value = value;
-                UpdatePreview(key);
-            }
+            ColorSetting setting = Find(key);
+            if (setting != null)
+                setting.Value = value;
         }
 
-        private void UpdatePreview(string key)
+        private ColorSetting Find(string key)
         {
-            if (_colorSettings.ContainsKey(key))
+            foreach (var setting in _colorSettings)
             {
-                var setting = _colorSettings[key];
-                var displayColor = setting.Value ?? setting.Config.DefaultSystemColor;
-                setting.PreviewBorder.Background = new SolidColorBrush(displayColor);
+                if (string.Equals(setting.Key, key, StringComparison.OrdinalIgnoreCase))
+                    return setting;
             }
+            return null;
         }
-
 
         private void ShowColorDialog(System.Windows.Media.Color? currentColor, System.Windows.Media.Color defaultColor, Action<System.Windows.Media.Color> onColorSelected)
         {
             using (var colorDialog = new ColorDialog())
             {
-                // Use current color if set, otherwise use system color for dialog
+                // Start from the pending value, or from what the theme shows.
                 System.Windows.Media.Color dialogColor = currentColor ?? defaultColor;
                 colorDialog.Color = System.Drawing.Color.FromArgb(
                     dialogColor.A,
@@ -81,7 +159,6 @@ namespace SimpleLLMChatGUI
 
                 if (colorDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
                 {
-                    // Convert System.Drawing.Color back to WPF Color
                     var selectedColor = colorDialog.Color;
                     onColorSelected(System.Windows.Media.Color.FromArgb(
                         selectedColor.A,
@@ -97,7 +174,9 @@ namespace SimpleLLMChatGUI
         {
             if (sender is System.Windows.Controls.Button button && button.Tag is string key)
             {
-                ShowColorDialogForSetting(key, color => SetColor(key, color));
+                ColorSetting setting = Find(key);
+                if (setting != null)
+                    ShowColorDialog(setting.Value, setting.Config.DefaultSystemColor, color => SetColor(key, color));
             }
         }
 
@@ -109,29 +188,24 @@ namespace SimpleLLMChatGUI
             }
         }
 
-        private void ShowColorDialogForSetting(string key, Action<System.Windows.Media.Color> onColorSelected)
-        {
-            if (_colorSettings.ContainsKey(key))
-            {
-                var setting = _colorSettings[key];
-                ShowColorDialog(setting.Value, setting.Config.DefaultSystemColor, onColorSelected);
-            }
-        }
-
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            SaveColors(App.ColorsFileName);
-            
-            // Update all global color brush resources immediately
-            foreach (var setting in _colorSettings.Values)
+            try
             {
-                var brush = setting.Value.HasValue
-                    ? new SolidColorBrush(setting.Value.Value)
-                    : setting.Config.DefaultSystemBrush;
-                ColorHelper.UpdateColorBrush(setting.Config.ResourceKey, brush);
+                SaveColors(App.ColorsFileName);
+
+                // Re-derive every brush from the saved file: the palette applies
+                // again for colors that were cleared instead of being pinned to
+                // system colors.
+                ColorHelper.ReloadFrom(App.ColorsFileName);
+                DialogResult = true;
             }
-            
-            DialogResult = true;
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show(this, "Error saving colors: " + ex.Message, "Warning",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             Close();
         }
 
@@ -147,21 +221,12 @@ namespace SimpleLLMChatGUI
             FontHandler.ApplyFontToWindow(this);
 
             LoadColors(App.ColorsFileName);
-            
-            // Initialize all previews to show system colors if no colors were loaded
-            foreach (var key in _colorSettings.Keys)
-            {
-                UpdatePreview(key);
-            }
         }
 
         private void LoadColors(string path)
         {
             if (!File.Exists(path))
-            {
-                // Use defaults (leave blank for system colors)
                 return;
-            }
 
             try
             {
@@ -169,21 +234,21 @@ namespace SimpleLLMChatGUI
 
                 string themeValue;
                 if (settings.TryGetValue(ColorHelper.ThemeKey, out themeValue) && !string.IsNullOrWhiteSpace(themeValue))
-                    _theme = themeValue.Trim().ToLowerInvariant();
-
-                foreach (var key in _colorSettings.Keys)
                 {
-                    if (settings.TryGetValue(key, out string colorValue))
+                    _theme = themeValue.Trim().ToLowerInvariant();
+                }
+
+                foreach (var setting in _colorSettings)
+                    setting.Theme = _theme;
+
+                foreach (var setting in _colorSettings)
+                {
+                    string colorValue;
+                    if (settings.TryGetValue(setting.Key, out colorValue) && !string.IsNullOrWhiteSpace(colorValue))
                     {
-                        // Only set if value is not blank/empty
-                        if (!string.IsNullOrWhiteSpace(colorValue))
-                        {
-                            if (ColorHelper.TryParseColor(colorValue, out System.Windows.Media.Color color))
-                            {
-                                _colorSettings[key].Value = color;
-                            }
-                        }
-                        // If blank, leave color as null (system colors will be used)
+                        System.Windows.Media.Color color;
+                        if (ColorHelper.TryParseColor(colorValue, out color))
+                            setting.Value = color;
                     }
                 }
             }
@@ -197,26 +262,35 @@ namespace SimpleLLMChatGUI
             }
         }
 
+        /// <summary>
+        /// Writes the theme and every configured color, keeping any other keys
+        /// the file happens to contain.
+        /// </summary>
         private void SaveColors(string path)
         {
-            var lines = new List<string>();
-            lines.Add(ColorHelper.ThemeKey + "=" + _theme);
+            var settings = IniFileHandler.LoadIni(path);
+            settings[ColorHelper.ThemeKey] = _theme;
 
-            foreach (var setting in _colorSettings.Values)
+            foreach (var setting in _colorSettings)
             {
                 if (setting.Value.HasValue)
                 {
-                    lines.Add($"{setting.Config.Key}=#{setting.Value.Value.A:X2}{setting.Value.Value.R:X2}{setting.Value.Value.G:X2}{setting.Value.Value.B:X2}");
+                    System.Windows.Media.Color color = setting.Value.Value;
+                    settings[setting.Key] = string.Format(
+                        "#{0:X2}{1:X2}{2:X2}{3:X2}", color.A, color.R, color.G, color.B);
                 }
                 else
                 {
-                    // Save blank value to indicate system colors should be used
-                    lines.Add($"{setting.Config.Key}=");
+                    // Blank means "follow the theme".
+                    settings[setting.Key] = string.Empty;
                 }
             }
 
+            var lines = new List<string>(settings.Count);
+            foreach (var kvp in settings)
+                lines.Add(kvp.Key + "=" + kvp.Value);
+
             File.WriteAllLines(path, lines);
         }
-
     }
 }

@@ -40,6 +40,9 @@ namespace SimpleLLMChatGUI
         private string _embeddingsApiKey;
         private readonly ProcessHandler _processHandler;
 
+        /// <summary>Theme currently persisted in colors.ini; restored if the dialog is cancelled.</summary>
+        private string _savedTheme;
+
         public event PropertyChangedEventHandler PropertyChanged;
 
         private readonly List<string> _availableTools;
@@ -219,6 +222,7 @@ namespace SimpleLLMChatGUI
         public Options(ProcessHandler processHandler)
         {
             _processHandler = processHandler;
+            _savedTheme = ColorHelper.GetTheme(App.ColorsFileName);
             InitializeComponent();
             DataContext = this;
 
@@ -396,6 +400,28 @@ namespace SimpleLLMChatGUI
         private void Options_Closed(object sender, EventArgs e)
         {
             IndexingStatusHub.Updated -= OnIndexingStatusUpdated;
+
+            // A theme previewed here was never persisted unless the dialog was
+            // saved, so put the saved theme back on cancel / window close.
+            if (DialogResult != true)
+                ColorHelper.ApplyTheme(_savedTheme, IniFileHandler.LoadIni(App.ColorsFileName));
+        }
+
+        /// <summary>
+        /// Repaints with the selected theme immediately, so the choice can be
+        /// judged before saving.
+        /// </summary>
+        private void ThemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            ColorHelper.ApplyTheme(SelectedTheme(), IniFileHandler.LoadIni(App.ColorsFileName));
+        }
+
+        private string SelectedTheme()
+        {
+            int idx = ThemeComboBox.SelectedIndex;
+            return (idx >= 0 && idx < ColorHelper.ThemeOrder.Length)
+                ? ColorHelper.ThemeOrder[idx]
+                : ColorHelper.ThemeSystem;
         }
 
         private void OnIndexingStatusUpdated()
@@ -437,11 +463,9 @@ namespace SimpleLLMChatGUI
 
         private void SaveThemeSelection()
         {
-            int idx = ThemeComboBox.SelectedIndex;
-            string theme = (idx >= 0 && idx < ColorHelper.ThemeOrder.Length)
-                ? ColorHelper.ThemeOrder[idx]
-                : ColorHelper.ThemeSystem;
+            string theme = SelectedTheme();
             ColorHelper.SaveTheme(theme, App.ColorsFileName);
+            _savedTheme = theme;
         }
 
         private void ClearIndexButton_Click(object sender, RoutedEventArgs e)

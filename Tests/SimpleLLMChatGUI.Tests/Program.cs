@@ -58,10 +58,140 @@ namespace SimpleLLMChatGUI.Tests
                 string msg = ToolApproval.FormatApprovalMessage("shell", "echo hi");
                 string tool, arguments;
                 TestAssert.True(ToolApproval.TryParseApprovalPrompt(
-                    msg + "\n" + ToolApproval.ApprovalPrompt, out tool, out arguments), "parse");
+                    msg + ToolApproval.ApprovalPrompt, out tool, out arguments), "parse");
                 TestAssert.Equal("shell", tool, "tool");
                 TestAssert.Contains(arguments, "echo hi", "args");
             });
+
+            TestRunner.Run("ColorHelper.palettes_cover_configured_colors", () =>
+            {
+                var expected = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var config in ColorHelper.ColorConfigs.Values)
+                    expected.Add(config.ResourceKey);
+
+                TestAssert.Equal(14, expected.Count, "configured brush resources");
+                TestAssert.Equal(ColorHelper.ColorConfigs.Count, expected.Count, "no two settings share a resource");
+
+                foreach (var palette in ColorHelper.ThemePalettes)
+                {
+                    foreach (string key in expected)
+                        TestAssert.True(palette.Value.ContainsKey(key),
+                            palette.Key + " defines " + key);
+                    TestAssert.Equal(expected.Count, palette.Value.Count,
+                        palette.Key + " has no extra/duplicate entries");
+                }
+
+                foreach (string theme in ColorHelper.ThemeOrder)
+                    TestAssert.Equal(ColorHelper.ColorConfigs.Count,
+                        ColorHelper.GetThemedResourceKeys(theme).Count,
+                        theme + " themes every configured color");
+            });
+
+            TestRunner.Run("ColorHelper.button_border_is_a_configured_color", () =>
+            {
+                // Regression: ButtonBorderBrush was in every palette but had no
+                // ColorConfig, so ApplyTheme never painted it.
+                var config = ColorHelper.GetConfig("ButtonBorderBrush");
+                TestAssert.True(config != null, "ButtonBorderBrush has a config");
+                TestAssert.Equal("buttonbordercolor", config.Key, "config key");
+                TestAssert.Equal("Button Border", config.DisplayName, "dialog label");
+
+                foreach (var palette in ColorHelper.ThemePalettes)
+                    TestAssert.True(palette.Value.ContainsKey("ButtonBorderBrush"),
+                        palette.Key + " border color is applied");
+            });
+
+            TestRunner.Run("ColorHelper.theme_order_matches_palettes", () =>
+            {
+                foreach (string theme in ColorHelper.ThemeOrder)
+                {
+                    if (theme != ColorHelper.ThemeSystem)
+                        TestAssert.True(ColorHelper.ThemePalettes.ContainsKey(theme),
+                            theme + " has a palette");
+                }
+                TestAssert.Equal(ColorHelper.ThemeOrder.Length,
+                    ColorHelper.ThemePalettes.Count + 1,
+                    "order covers every palette plus system");
+            });
+
+            TestRunner.Run("ColorHelper.custom_color_overrides_theme", () =>
+            {
+                var custom = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                custom["chattextcolor"] = "#FFFF00FF";
+
+                TestAssert.Equal("#FFFF00FF",
+                    HexColor(ColorHelper.ResolveColor("ChatTextColorBrush", ColorHelper.ThemeDark, custom)),
+                    "custom color wins over the palette");
+
+                var cleared = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                cleared["chattextcolor"] = "   ";
+                TestAssert.Equal(
+                    HexColor(ColorHelper.ThemePalettes[ColorHelper.ThemeDark]["ChatTextColorBrush"]),
+                    HexColor(ColorHelper.ResolveColor("ChatTextColorBrush", ColorHelper.ThemeDark, cleared)),
+                    "blank value falls back to the palette");
+
+                TestAssert.Equal(
+                    HexColor(ColorHelper.GetConfig("ChatTextColorBrush").DefaultSystemColor),
+                    HexColor(ColorHelper.ResolveColor("ChatTextColorBrush", ColorHelper.ThemeSystem,
+                        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase))),
+                    "system theme uses system colors");
+            });
+
+            TestRunner.Run("ColorHelper.solarized_controls_differ_from_chat_background", () =>
+            {
+                // Regression: buttons and the user bubble were the same color as
+                // the chat background, so they were invisible.
+                var palette = ColorHelper.ThemePalettes[ColorHelper.ThemeSolarizedDark];
+                foreach (string key in new[]
+                    { "ButtonBackgroundBrush", "UserBubbleBackgroundBrush", "CodeBlockBackgroundColorBrush" })
+                {
+                    TestAssert.True(palette[key] != palette["ChatBackgroundColorBrush"],
+                        key + " differs from the chat background");
+                }
+            });
+
+            TestRunner.Run("ColorHelper.every_theme_is_visible_against_system", () =>
+            {
+                // Regression: a theme that resolves to the system colors looks
+                // like "nothing happened" when the user picks it.
+                var noCustom = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (string theme in ColorHelper.ThemeOrder)
+                {
+                    if (theme == ColorHelper.ThemeSystem)
+                        continue;
+
+                    foreach (string key in new[] { "WindowBackgroundColorBrush", "ChatTextColorBrush" })
+                    {
+                        var themed = ColorHelper.ResolveColor(key, theme, noCustom);
+                        var system = ColorHelper.ResolveColor(key, ColorHelper.ThemeSystem, noCustom);
+                        TestAssert.True(themed != system,
+                            theme + " changes " + key + " (both were " + themed + ")");
+                    }
+                }
+            });
+
+            TestRunner.Run("ColorHelper.theme_is_read_from_colors_ini", () =>
+            {
+                // Regression: theme=claudecode in colors.ini must survive parsing.
+                var settings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                settings["theme"] = "claudecode";
+                TestAssert.Equal("claudecode", ColorHelper.GetThemeName(settings), "theme from ini");
+
+                var file = Path.Combine(Path.GetTempPath(), "colors-" + Guid.NewGuid().ToString("N") + ".ini");
+                File.WriteAllText(file, "theme=claudecode\r\n");
+                try
+                {
+                    TestAssert.Equal("claudecode", ColorHelper.GetTheme(file), "theme from file on disk");
+                    TestAssert.Equal("claudecode",
+                        ColorHelper.GetThemeName(IniFileHandler.LoadIni(file)), "theme via ini loader");
+                }
+                finally
+                {
+                    File.Delete(file);
+                }
+            });
+
 
             TestRunner.Run("ModelsClient.list_models", () =>
             {
@@ -645,6 +775,76 @@ namespace SimpleLLMChatGUI.Tests
                     TestLog.Info("gui-session.perf.tsv=" + sessionPerf);
                 }
             });
+
+            TestRunner.Run("gui.colors_dialog_exposes_every_setting", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.ClickButtonInWindow("Options", "chooseColorsButton", 15000);
+
+                        // Every configurable color must be reachable in the dialog;
+                        // keys used to be dropped silently when a row had no preview.
+                        List<string> chooseIds = gui.AutomationIdsInWindow("Colors", "chooseButton_", 10000);
+                        TestAssert.Equal(ColorHelper.ColorConfigs.Count, chooseIds.Count,
+                            "one Choose button per configurable color");
+                        foreach (string key in ColorHelper.ColorConfigs.Keys)
+                            TestAssert.True(chooseIds.Contains("chooseButton_" + key),
+                                "Colors dialog has a row for " + key);
+
+                        gui.ClickButtonInWindow("Colors", "colorsCancelButton", 10000);
+                        gui.WaitForDialogClosed("Colors", 10000);
+                        gui.ClickButtonInWindow("Options", "optionsCancelButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+                }
+            });
+
+            TestRunner.Run("gui.theme_selection_saves_and_cancel_keeps_it", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+                    string colorsPath = Path.Combine(ws.Path, "colors.ini");
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectComboItemInWindow("Options", "themeComboBox", "Solarized Dark", 10000);
+                        gui.ClickButtonInWindow("Options", "optionsOkButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                        TestAssert.Equal("solarizeddark", ThemeSetting(colorsPath), "theme saved on OK");
+
+                        // Previewing another theme and cancelling must not persist it.
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectComboItemInWindow("Options", "themeComboBox", "Dracula", 10000);
+                        gui.ClickButtonInWindow("Options", "optionsCancelButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                        TestAssert.Equal("solarizeddark", ThemeSetting(colorsPath), "theme unchanged after cancel");
+                    }
+                }
+            });
+        }
+
+        static string ThemeSetting(string colorsPath)
+        {
+            var settings = IniFileHandler.LoadIni(colorsPath);
+            string theme;
+            return settings.TryGetValue("theme", out theme) ? (theme ?? "").Trim() : "";
+        }
+
+        static string HexColor(System.Windows.Media.Color color)
+        {
+            return string.Format("#{0:X2}{1:X2}{2:X2}{3:X2}", color.A, color.R, color.G, color.B);
         }
 
         static long WorkingSetMb(Process p)

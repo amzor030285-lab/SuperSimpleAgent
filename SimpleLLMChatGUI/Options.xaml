@@ -6,7 +6,8 @@
             WindowStartupLocation="CenterOwner"
             ResizeMode="CanResize"
             Loaded="Window_Loaded"
-            Background="{DynamicResource WindowBackgroundColorBrush}">
+            Background="{DynamicResource WindowBackgroundColorBrush}"
+        Foreground="{DynamicResource LabelTextColorBrush}">
 
     <Grid Margin="10">
         <Grid.RowDefinitions>
@@ -23,7 +24,6 @@
                  Grid.Row="0" Grid.Column="0"
                  Margin="0,0,8,10"
                  SelectedIndex="0"
-                 Foreground="{x:Static SystemColors.ControlTextBrush}"
                  SelectionChanged="CategoryListBox_SelectionChanged">
             <ListBoxItem Content="Appearance"/>
             <ListBoxItem Content="RAG"/>
@@ -72,7 +72,8 @@
                               Height="23"
                               HorizontalAlignment="Left"
                               Width="160"
-                              SelectedIndex="0"/>
+                              AutomationProperties.AutomationId="themeComboBox"
+                              SelectionChanged="ThemeComboBox_SelectionChanged"/>
 
                     <!-- Colors -->
                     <Label Content="Colors:"/>
@@ -81,6 +82,7 @@
                             Height="23"
                             HorizontalAlignment="Left"
                             Width="120"
+                            AutomationProperties.AutomationId="chooseColorsButton"
                             Click="ChooseColorsButton_Click"/>
 
                     <Label Content="Markdown:"/>
@@ -181,7 +183,6 @@
                              ItemsSource="{Binding AvailableTools}"
                              ItemTemplate="{StaticResource MultiSelectListBoxItemTemplate}"
                              SelectionMode="Multiple"
-                             Foreground="{x:Static SystemColors.ControlTextBrush}"
                              Height="100"/>
 
                     <!-- Tools Requiring Approval -->
@@ -190,7 +191,6 @@
                              ItemsSource="{Binding AvailableTools}"
                              ItemTemplate="{StaticResource MultiSelectListBoxItemTemplate}"
                              SelectionMode="Multiple"
-                             Foreground="{x:Static SystemColors.ControlTextBrush}"
                              Height="100"/>
 
                 </StackPanel>
@@ -299,8 +299,10 @@
         <!-- Buttons -->
         <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button x:Name="SaveButton" Content="OK" Width="75" Height="23"
+                        AutomationProperties.AutomationId="optionsOkButton"
                         Margin="0,0,8,0" Click="SaveButton_Click" IsDefault="True"/>
             <Button x:Name="CancelButton" Content="Cancel" Width="75" Height="23"
+                        AutomationProperties.AutomationId="optionsCancelButton"
                         Click="CancelButton_Click" IsCancel="True"/>
         </StackPanel>
     </Grid>

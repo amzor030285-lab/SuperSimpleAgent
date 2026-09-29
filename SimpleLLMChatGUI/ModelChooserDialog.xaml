@@ -10,6 +10,7 @@
         ResizeMode="CanResizeWithGrip"
         ShowInTaskbar="False"
         Background="{DynamicResource WindowBackgroundColorBrush}"
+        Foreground="{DynamicResource LabelTextColorBrush}"
         ContentRendered="Window_ContentRendered">
 
     <Grid Margin="10">
@@ -27,7 +28,6 @@
 
         <ListBox x:Name="ModelsListBox"
                  Grid.Row="1"
-                 Foreground="{x:Static SystemColors.ControlTextBrush}"
                  MouseDoubleClick="ModelsListBox_MouseDoubleClick"/>
 
         <StackPanel Grid.Row="2"

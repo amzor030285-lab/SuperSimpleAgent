@@ -103,6 +103,10 @@ namespace SimpleLLMChatGUI
                         PagePadding = new Thickness(0),
                         LineHeight = LineHeightMultiplier
                     };
+                    // A FlowDocument does not inherit TextElement.Foreground from the
+                    // RichTextBox that hosts it (Control.Foreground is a different DP),
+                    // so without this every plain paragraph renders in default black.
+                    _document.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
                     _hasContent = false;
                     _restoring = true;
                     try
@@ -207,6 +211,7 @@ namespace SimpleLLMChatGUI
                 PagePadding = new Thickness(0),
                 LineHeight = LineHeightMultiplier
             };
+            _document.SetResourceReference(TextElement.ForegroundProperty, "ChatTextColorBrush");
         }
 
         /// <summary>

@@ -31,11 +31,14 @@ namespace SimpleLLMChatGUI
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
+            SetResourceReference(BackgroundProperty, "WindowBackgroundColorBrush");
+
             var label = new TextBlock
             {
                 Text = "Session name (leave empty for auto name):",
                 Margin = new Thickness(0, 0, 0, 4)
             };
+            label.SetResourceReference(TextBlock.ForegroundProperty, "LabelTextColorBrush");
             Grid.SetRow(label, 0);
             panel.Children.Add(label);
 
@@ -149,6 +152,8 @@ namespace SimpleLLMChatGUI
             var panel = new Grid { Margin = new Thickness(12) };
             panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
             panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            SetResourceReference(BackgroundProperty, "WindowBackgroundColorBrush");
 
             sessionList = new ListBox
             {

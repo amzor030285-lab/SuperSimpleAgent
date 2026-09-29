@@ -100,14 +100,12 @@ namespace SimpleLLMChatGUI
             {
                 attachButton.ToolTip = "Detach Image";
                 attachButton.IsChecked = true;
-                attachButton.Background = System.Windows.Media.Brushes.LightBlue;
             };
 
             imageHandler.ImageDetached += () =>
             {
                 attachButton.ToolTip = "Attach Image";
                 attachButton.IsChecked = false;
-                attachButton.ClearValue(Button.BackgroundProperty);
             };
         }
 

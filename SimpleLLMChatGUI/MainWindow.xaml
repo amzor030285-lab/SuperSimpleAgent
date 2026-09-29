@@ -4,7 +4,8 @@
         xmlns:local="clr-namespace:SimpleLLMChatGUI"
         Title="Simple LLM Chat" Height="350" Width="450" Loaded="Window_Loaded"
         MinWidth="415" MinHeight="200"
-        Background="{DynamicResource WindowBackgroundColorBrush}">
+        Background="{DynamicResource WindowBackgroundColorBrush}"
+        Foreground="{DynamicResource LabelTextColorBrush}">
     <Window.Resources>
         <!-- +/- toggle for collapsible thinking / tool-call blocks -->
         <Style x:Key="ThinkingExpandToggleStyle" TargetType="ToggleButton">
@@ -153,6 +154,7 @@
                         Click="themeButton_Click" />
 
                 <Button Name="optionsButton"
+                        AutomationProperties.AutomationId="optionsButton"
                         Content="Options"
                         MinWidth="80"
                         MinHeight="25"

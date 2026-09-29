@@ -293,12 +293,13 @@ namespace SimpleLLMChatGUI
             var paragraph = new Paragraph
             {
                 Margin = new Thickness(0, 3, 0, 3),
-                BorderBrush = SystemColors.ControlTextBrush,
                 BorderThickness = new Thickness(0, 1, 0, 0),
                 Padding = new Thickness(0),
                 LineHeight = 1,
                 FontSize = 1
             };
+            // Theme-aware so the rule stays visible after a theme switch.
+            paragraph.SetResourceReference(Paragraph.BorderBrushProperty, "TableBorderBrush");
             paragraph.Inlines.Add(new Run(" "));
             return paragraph;
         }

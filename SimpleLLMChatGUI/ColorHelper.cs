@@ -13,6 +13,10 @@ namespace SimpleLLMChatGUI
     {
         public string Key { get; set; }
         public string ResourceKey { get; set; }
+
+        /// <summary>Label shown in the Colors dialog.</summary>
+        public string DisplayName { get; set; }
+
         public Color DefaultSystemColor { get; set; }
         public Brush DefaultSystemBrush { get; set; }
     }
@@ -34,8 +38,31 @@ namespace SimpleLLMChatGUI
                 {
                     Key = "buttontextcolor",
                     ResourceKey = "ButtonTextColorBrush",
+                    DisplayName = "Button Text",
                     DefaultSystemColor = SystemColors.ControlTextColor,
                     DefaultSystemBrush = SystemColors.ControlTextBrush
+                }
+            },
+            {
+                "buttonbackgroundcolor",
+                new ColorConfig
+                {
+                    Key = "buttonbackgroundcolor",
+                    ResourceKey = "ButtonBackgroundBrush",
+                    DisplayName = "Button BG",
+                    DefaultSystemColor = SystemColors.ControlColor,
+                    DefaultSystemBrush = SystemColors.ControlBrush
+                }
+            },
+            {
+                "buttonbordercolor",
+                new ColorConfig
+                {
+                    Key = "buttonbordercolor",
+                    ResourceKey = "ButtonBorderBrush",
+                    DisplayName = "Button Border",
+                    DefaultSystemColor = SystemColors.ControlDarkColor,
+                    DefaultSystemBrush = SystemColors.ControlDarkBrush
                 }
             },
             {
@@ -44,6 +71,7 @@ namespace SimpleLLMChatGUI
                 {
                     Key = "chatbackgroundcolor",
                     ResourceKey = "ChatBackgroundColorBrush",
+                    DisplayName = "Chat BG",
                     DefaultSystemColor = SystemColors.WindowColor,
                     DefaultSystemBrush = SystemColors.WindowBrush
                 }
@@ -54,6 +82,7 @@ namespace SimpleLLMChatGUI
                 {
                     Key = "chattextcolor",
                     ResourceKey = "ChatTextColorBrush",
+                    DisplayName = "Chat Text",
                     DefaultSystemColor = SystemColors.WindowTextColor,
                     DefaultSystemBrush = SystemColors.WindowTextBrush
                 }
@@ -64,46 +93,7 @@ namespace SimpleLLMChatGUI
                 {
                     Key = "codeblockbackgroundcolor",
                     ResourceKey = "CodeBlockBackgroundColorBrush",
-                    DefaultSystemColor = SystemColors.ControlColor,
-                    DefaultSystemBrush = SystemColors.ControlBrush
-                }
-            },
-            {
-                "labeltextcolor",
-                new ColorConfig
-                {
-                    Key = "labeltextcolor",
-                    ResourceKey = "LabelTextColorBrush",
-                    DefaultSystemColor = SystemColors.ControlTextColor,
-                    DefaultSystemBrush = SystemColors.ControlTextBrush
-                }
-            },
-            {
-                "windowbackgroundcolor",
-                new ColorConfig
-                {
-                    Key = "windowbackgroundcolor",
-                    ResourceKey = "WindowBackgroundColorBrush",
-                    DefaultSystemColor = SystemColors.ControlColor,
-                    DefaultSystemBrush = SystemColors.ControlBrush
-                }
-            },
-            {
-                "buttonbackgroundcolor",
-                new ColorConfig
-                {
-                    Key = "buttonbackgroundcolor",
-                    ResourceKey = "ButtonBackgroundBrush",
-                    DefaultSystemColor = SystemColors.ControlColor,
-                    DefaultSystemBrush = SystemColors.ControlBrush
-                }
-            },
-            {
-                "userbubblebackgroundcolor",
-                new ColorConfig
-                {
-                    Key = "userbubblebackgroundcolor",
-                    ResourceKey = "UserBubbleBackgroundBrush",
+                    DisplayName = "Code Block BG",
                     DefaultSystemColor = SystemColors.ControlColor,
                     DefaultSystemBrush = SystemColors.ControlBrush
                 }
@@ -114,8 +104,20 @@ namespace SimpleLLMChatGUI
                 {
                     Key = "codeblockheadercolor",
                     ResourceKey = "CodeBlockHeaderBrush",
+                    DisplayName = "Code Block Header",
                     DefaultSystemColor = SystemColors.ControlColor,
                     DefaultSystemBrush = SystemColors.ControlBrush
+                }
+            },
+            {
+                "labeltextcolor",
+                new ColorConfig
+                {
+                    Key = "labeltextcolor",
+                    ResourceKey = "LabelTextColorBrush",
+                    DisplayName = "Label Text",
+                    DefaultSystemColor = SystemColors.ControlTextColor,
+                    DefaultSystemBrush = SystemColors.ControlTextBrush
                 }
             },
             {
@@ -124,6 +126,7 @@ namespace SimpleLLMChatGUI
                 {
                     Key = "linkcolor",
                     ResourceKey = "LinkBrush",
+                    DisplayName = "Link",
                     DefaultSystemColor = SystemColors.HotTrackColor,
                     DefaultSystemBrush = SystemColors.HotTrackBrush
                 }
@@ -134,6 +137,7 @@ namespace SimpleLLMChatGUI
                 {
                     Key = "rolelabelcolor",
                     ResourceKey = "RoleLabelBrush",
+                    DisplayName = "Role Label",
                     DefaultSystemColor = SystemColors.ControlTextColor,
                     DefaultSystemBrush = SystemColors.ControlTextBrush
                 }
@@ -144,6 +148,7 @@ namespace SimpleLLMChatGUI
                 {
                     Key = "tablebordercolor",
                     ResourceKey = "TableBorderBrush",
+                    DisplayName = "Table Border",
                     DefaultSystemColor = SystemColors.ControlDarkColor,
                     DefaultSystemBrush = SystemColors.ControlDarkBrush
                 }
@@ -154,11 +159,69 @@ namespace SimpleLLMChatGUI
                 {
                     Key = "tableheaderbackgroundcolor",
                     ResourceKey = "TableHeaderBackgroundBrush",
+                    DisplayName = "Table Header BG",
+                    DefaultSystemColor = SystemColors.ControlColor,
+                    DefaultSystemBrush = SystemColors.ControlBrush
+                }
+            },
+            {
+                "userbubblebackgroundcolor",
+                new ColorConfig
+                {
+                    Key = "userbubblebackgroundcolor",
+                    ResourceKey = "UserBubbleBackgroundBrush",
+                    DisplayName = "User Bubble BG",
+                    DefaultSystemColor = SystemColors.ControlColor,
+                    DefaultSystemBrush = SystemColors.ControlBrush
+                }
+            },
+            {
+                "windowbackgroundcolor",
+                new ColorConfig
+                {
+                    Key = "windowbackgroundcolor",
+                    ResourceKey = "WindowBackgroundColorBrush",
+                    DisplayName = "Window BG",
                     DefaultSystemColor = SystemColors.ControlColor,
                     DefaultSystemBrush = SystemColors.ControlBrush
                 }
             }
         };
+
+        /// <summary>
+        /// Lookup by brush resource key. Kept in a nested holder so it is built
+        /// after ColorConfigs regardless of field declaration order.
+        /// </summary>
+        private static class ConfigLookup
+        {
+            public static readonly Dictionary<string, ColorConfig> ByResourceKey = Build();
+
+            private static Dictionary<string, ColorConfig> Build()
+            {
+                var map = new Dictionary<string, ColorConfig>(StringComparer.Ordinal);
+                foreach (var config in ColorConfigs.Values)
+                    map[config.ResourceKey] = config;
+                return map;
+            }
+        }
+
+        /// <summary>
+        /// The ColorConfig driving a brush resource key, or null when unknown.
+        /// </summary>
+        public static ColorConfig GetConfig(string resourceKey)
+        {
+            ColorConfig config;
+            return ConfigLookup.ByResourceKey.TryGetValue(resourceKey, out config) ? config : null;
+        }
+
+        /// <summary>
+        /// Name of the preview element the Colors dialog shows for a brush key
+        /// ("ButtonBorderBrush" -> "ButtonBorderPreview").
+        /// </summary>
+        public static string PreviewNameFor(string resourceKey)
+        {
+            return resourceKey.Replace("Brush", "Preview");
+        }
 
         /// <summary>
         /// Attempts to parse a color string (hex format) into a WPF Color.
@@ -398,18 +461,18 @@ namespace SimpleLLMChatGUI
                 {
                     { "WindowBackgroundColorBrush", Color.FromArgb(0xFF, 0x00, 0x2B, 0x36) },
                     { "ChatBackgroundColorBrush", Color.FromArgb(0xFF, 0x07, 0x36, 0x42) },
-                    { "ChatTextColorBrush", Color.FromArgb(0xFF, 0x83, 0x94, 0x96) },
-                    { "CodeBlockBackgroundColorBrush", Color.FromArgb(0xFF, 0x07, 0x36, 0x42) },
-                    { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0x83, 0x94, 0x96) },
+                    { "ChatTextColorBrush", Color.FromArgb(0xFF, 0x93, 0xA1, 0xA1) },
+                    { "CodeBlockBackgroundColorBrush", Color.FromArgb(0xFF, 0x00, 0x2B, 0x36) },
+                    { "ButtonTextColorBrush", Color.FromArgb(0xFF, 0x93, 0xA1, 0xA1) },
                     { "LabelTextColorBrush", Color.FromArgb(0xFF, 0x93, 0xA1, 0xA1) },
-                    { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x07, 0x36, 0x42) },
-                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) },
-                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x07, 0x36, 0x42) },
-                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) },
+                    { "ButtonBackgroundBrush", Color.FromArgb(0xFF, 0x58, 0x6E, 0x75) },
+                    { "ButtonBorderBrush", Color.FromArgb(0xFF, 0x65, 0x7B, 0x83) },
+                    { "UserBubbleBackgroundBrush", Color.FromArgb(0xFF, 0x58, 0x6E, 0x75) },
+                    { "CodeBlockHeaderBrush", Color.FromArgb(0xFF, 0x58, 0x6E, 0x75) },
                     { "LinkBrush", Color.FromArgb(0xFF, 0x26, 0x8B, 0xD2) },
                     { "RoleLabelBrush", Color.FromArgb(0xFF, 0x93, 0xA1, 0xA1) },
-                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) },
-                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x0E, 0x4A, 0x58) }
+                    { "TableBorderBrush", Color.FromArgb(0xFF, 0x65, 0x7B, 0x83) },
+                    { "TableHeaderBackgroundBrush", Color.FromArgb(0xFF, 0x58, 0x6E, 0x75) }
                 }
             },
             {
@@ -495,41 +558,112 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
+        /// Palette of a theme key, or null for "system"/unknown themes.
+        /// </summary>
+        public static Dictionary<string, Color> GetPalette(string themeName)
+        {
+            Dictionary<string, Color> palette;
+            if (!string.IsNullOrEmpty(themeName) && ThemePalettes.TryGetValue(themeName, out palette))
+                return palette;
+            return null;
+        }
+
+        /// <summary>
+        /// Brush a resource key resolves to: custom color first, then the theme
+        /// palette, then the system default. This is the single source of truth
+        /// used both when applying a theme and when previewing colors.
+        /// </summary>
+        public static Brush ResolveBrush(string resourceKey, Dictionary<string, Color> palette, Dictionary<string, string> customColors)
+        {
+            ColorConfig config;
+            bool known = ConfigLookup.ByResourceKey.TryGetValue(resourceKey, out config);
+
+            if (known && customColors != null)
+            {
+                string customValue;
+                if (customColors.TryGetValue(config.Key, out customValue))
+                {
+                    Color customColor;
+                    if (TryParseColor(customValue, out customColor))
+                        return new SolidColorBrush(customColor);
+                }
+            }
+
+            if (palette != null)
+            {
+                Color paletteColor;
+                if (palette.TryGetValue(resourceKey, out paletteColor))
+                    return new SolidColorBrush(paletteColor);
+            }
+
+            return known ? config.DefaultSystemBrush : SystemColors.ControlBrush;
+        }
+
+        /// <summary>
+        /// The color a resource key actually shows for a theme plus custom colors.
+        /// </summary>
+        public static Color ResolveColor(string resourceKey, string themeName, Dictionary<string, string> customColors)
+        {
+            var brush = ResolveBrush(resourceKey, GetPalette(themeName), customColors);
+            var solid = brush as SolidColorBrush;
+            if (solid != null)
+                return solid.Color;
+
+            ColorConfig config = GetConfig(resourceKey);
+            return config != null ? config.DefaultSystemColor : SystemColors.ControlColor;
+        }
+
+        /// <summary>
+        /// Every brush resource key the application themes: the configured
+        /// settings plus anything a palette defines, so a palette entry can
+        /// never be silently skipped because it has no ColorConfig.
+        /// </summary>
+        public static List<string> GetThemedResourceKeys(string themeName)
+        {
+            Dictionary<string, Color> palette = GetPalette(themeName);
+
+            var keys = new List<string>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var config in ColorConfigs.Values)
+            {
+                if (seen.Add(config.ResourceKey))
+                    keys.Add(config.ResourceKey);
+            }
+
+            if (palette != null)
+            {
+                foreach (string paletteKey in palette.Keys)
+                {
+                    if (seen.Add(paletteKey))
+                        keys.Add(paletteKey);
+                }
+            }
+
+            return keys;
+        }
+
+        /// <summary>
         /// Applies a theme palette to the global brush resources.
         /// Custom colors (from the colors INI) override the palette per key.
         /// </summary>
         public static void ApplyTheme(string themeName, Dictionary<string, string> customColors)
         {
-            Dictionary<string, Color> palette = null;
-            if (!string.IsNullOrEmpty(themeName))
-                ThemePalettes.TryGetValue(themeName, out palette);
+            Dictionary<string, Color> palette = GetPalette(themeName);
 
-            foreach (var config in ColorConfigs.Values)
+            foreach (string resourceKey in GetThemedResourceKeys(themeName))
             {
-                Brush brush = null;
-
-                string customValue;
-                if (customColors != null &&
-                    customColors.TryGetValue(config.Key, out customValue) &&
-                    !string.IsNullOrWhiteSpace(customValue))
-                {
-                    Color customColor;
-                    if (TryParseColor(customValue, out customColor))
-                        brush = new SolidColorBrush(customColor);
-                }
-
-                if (brush == null && palette != null)
-                {
-                    Color paletteColor;
-                    if (palette.TryGetValue(config.ResourceKey, out paletteColor))
-                        brush = new SolidColorBrush(paletteColor);
-                }
-
-                if (brush == null)
-                    brush = config.DefaultSystemBrush;
-
-                UpdateColorBrush(config.ResourceKey, brush);
+                UpdateColorBrush(resourceKey, ResolveBrush(resourceKey, palette, customColors));
             }
+        }
+
+        /// <summary>
+        /// Re-reads the colors INI and (re)applies its theme.
+        /// </summary>
+        public static void ReloadFrom(string colorsPath)
+        {
+            Dictionary<string, string> settings = IniFileHandler.LoadIni(colorsPath);
+            ApplyTheme(GetThemeName(settings), settings);
         }
 
         /// <summary>
