@@ -523,6 +523,77 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            // Baking the snapshot into the stored message is what keeps the prompt a
+            // byte-for-byte prefix of the previous one, but it also means the session
+            // file holds text the user never typed. The original has to travel next to
+            // it, or the chat window renders the memory and skills dumps as the
+            // user's own message.
+            TestRunner.Run("cli.baked_context_keeps_user_text_separate", () =>
+            {
+                string desktopDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "DesktopTools", "bin", "Release"));
+                string desktopExe = Path.Combine(desktopDir, "DesktopTools.exe");
+                if (!File.Exists(desktopExe))
+                {
+                    TestRunner.Skip("DesktopTools.exe not built: " + desktopExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.FixedReply = "Answer given.";
+                    server.StreamDelayMs = 0;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(desktopExe, Path.Combine(toolsDir, "DesktopTools.exe"), true);
+                    File.Copy(Path.Combine(desktopDir, "DesktopTools.json"), Path.Combine(toolsDir, "DesktopTools.json"), true);
+                    File.Copy(Path.Combine(desktopDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "list_windows");
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("напиши ок");
+                        CliRunner.WaitForTextAfter(cli, "Answer given.", "You: ", 30000);
+                        cli.WriteLine("/save baked");
+                        CliRunner.WaitForTextAfter(cli, "Session saved: baked", "You: ", 15000);
+                    }
+
+                    string sessionsDir = Path.Combine(ws.Path, "sessions");
+                    List<JObject> messages = null;
+                    TestAssert.True(SessionStore.Load(sessionsDir, "baked", out messages),
+                        "the session was saved");
+                    if (messages == null || messages.Count == 0)
+                        return;
+
+                    JObject user = messages[0];
+                    string content = (string)user["Content"];
+                    string userText = (string)user["UserText"];
+
+                    TestAssert.Equal("напиши ок", userText,
+                        "the session keeps exactly what the user typed");
+                    TestAssert.True(content.Length > userText.Length,
+                        "the stored content still carries the baked context for the model"
+                        + "\n      content: " + content);
+                    TestAssert.True(content.StartsWith(userText, StringComparison.Ordinal),
+                        "the baked context follows the user's own text"
+                        + "\n      content: " + content);
+
+                    // The model still receives the baked text: this field is for the UI
+                    // only and must not shrink what is sent.
+                    TestAssert.True(server.ReceivedBodies.Count >= 1, "a chat request was sent");
+                    if (server.ReceivedBodies.Count < 1)
+                        return;
+                    JArray sent = MessagesOf(JObject.Parse(server.ReceivedBodies[0]));
+                    TestAssert.Equal(content, FirstUserContent(sent),
+                        "the request carries the baked content, not the display text");
+                }
+            });
+
             // A reasoning model emits "thinking then answer", and that token stream is what
             // the server holds in its KV cache. Storing only the answer makes the next
             // prompt diverge from the cached one right after the user message, so the

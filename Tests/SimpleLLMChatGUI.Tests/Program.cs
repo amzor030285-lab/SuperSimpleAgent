@@ -338,6 +338,54 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            // A session file stores what was sent to the model, and a user turn is the
+            // user's message plus the context the app baked into it (the memory and
+            // skills snapshots). Showing that verbatim makes it look like the user
+            // typed a wall of memory dumps into their own message.
+            TestRunner.Run("gui.loaded_session_hides_baked_context", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    server.FixedReply = "Done.";
+                    server.StreamDelayMs = 5;
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    const string typed = "напиши ок";
+                    string baked = typed + "\n\nCurrent Memories:\ncurrent_date: 29 сентября 2026\n"
+                        + "\n\nSkills:\nSkills are located in C:\\skills.\n(no skills installed)";
+
+                    // New files keep the typed text in UserText; old ones only have the
+                    // combined Content and have to be split on the snapshot headers.
+                    string sessionsDir = Path.Combine(ws.Path, "sessions");
+                    Directory.CreateDirectory(sessionsDir);
+                    File.WriteAllText(Path.Combine(sessionsDir, "baked_new.json"),
+                        SessionJson(baked, "\"UserText\":\"" + JsonText(typed) + "\","), Encoding.UTF8);
+                    File.WriteAllText(Path.Combine(sessionsDir, "baked_old.json"),
+                        SessionJson(baked, ""), Encoding.UTF8);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+
+                        foreach (string name in new string[] { "baked_new", "baked_old" })
+                        {
+                            gui.ClickMainButton("loadButton");
+                            gui.SelectListItemInWindow("Load Session", "sessionListBox", name, 10000);
+                            gui.ClickButtonInWindow("Load Session", "dialogOkButton", 10000);
+                            gui.WaitUntilIdle(15000);
+
+                            string text = gui.GetAllText();
+                            TestAssert.Contains(text, typed, name + ": the user's own message is shown");
+                            TestAssert.True(!text.Contains("Current Memories:"),
+                                name + ": the memory snapshot is not shown as user text");
+                            TestAssert.True(!text.Contains("Skills:"),
+                                name + ": the skills snapshot is not shown as user text");
+                        }
+                    }
+                }
+            });
+
             TestRunner.Run("gui.markdown_table", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
@@ -638,6 +686,32 @@ namespace SimpleLLMChatGUI.Tests
                 "test-model",
                 "You are a test assistant.",
                 8192);
+        }
+
+        /// <summary>
+        /// A session file shaped like the CLI's: one user turn carrying
+        /// <paramref name="content"/> plus whatever extra fields the caller needs.
+        /// </summary>
+        static string SessionJson(string content, string extraFields)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append("{\"Version\":1,\"SavedAtUtc\":\"2026-01-01T00:00:00Z\",\"Messages\":[");
+            sb.Append("{\"Role\":\"user\",\"Content\":\"" + JsonText(content) + "\"");
+            if (extraFields.Length > 0)
+                sb.Append(',').Append(extraFields);
+            sb.Append('}');
+            sb.Append("]}");
+            return sb.ToString();
+        }
+
+        static string JsonText(string text)
+        {
+            return text
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\r\n", "\\n")
+                .Replace("\r", "\\n")
+                .Replace("\n", "\\n");
         }
     }
 }

@@ -50,6 +50,18 @@ public class LLMClient
         /// </summary>
         public string ReasoningContent;
 
+        /// <summary>
+        /// Exactly what the user typed, when <see cref="Content"/> carries more than
+        /// that: the context injectors (memory and skills snapshots) and the RAG
+        /// merge are baked into the stored message so the text sent to the provider
+        /// never changes after it was sent - a message that shifts under the
+        /// provider destroys its cached prompt prefix. The chat window must not
+        /// present that baked context as if the user had typed it, so the original
+        /// is kept alongside. Null when the message is the user's own text in full,
+        /// and for sessions saved before this field existed.
+        /// </summary>
+        public string UserText;
+
         public ChatMessage(string role, string content)
         {
             Role = role;
@@ -58,6 +70,7 @@ public class LLMClient
             Image = null;
             ImageMime = null;
             ReasoningContent = "";
+            UserText = null;
             ToolCalls = new List<ToolRegistry.ToolCall>();
         }
     }
@@ -143,6 +156,13 @@ public class LLMClient
         {
             Role = "user",
             Content = contentForLlm,
+            // Only when the stored text is not the user's own text in full: the GUI
+            // shows this instead of Content, so a memory or skills snapshot is never
+            // rendered as something the user wrote.
+            UserText = string.Equals(contentForLlm, userMessage ?? "", StringComparison.Ordinal)
+                || string.IsNullOrEmpty(userMessage)
+                ? null
+                : userMessage,
             Image = image,
             ImageMime = string.IsNullOrEmpty(imageMime) ? null : imageMime
         });

@@ -976,7 +976,7 @@ namespace SimpleLLMChatGUI
                     // User messages stay plain text; the role header carries the name.
                     turn.Role = ChatTurnRole.User;
                     turn.RoleLabel = "You";
-                    turn.AppendText(msg.Content);
+                    turn.AppendText(DisplayedUserText(msg));
                     turn.Complete();
                     continue;
                 }
@@ -992,6 +992,50 @@ namespace SimpleLLMChatGUI
                 turn.RoleLabel = GetAssistantName();
                 AppendHistoricText(turn, text).Complete();
             }
+        }
+
+        /// <summary>
+        /// The user's own words from a historic turn. A session file stores what was
+        /// sent to the model, and a user turn is their message plus whatever context
+        /// the app baked in (the memory and skills snapshots). Recent files record
+        /// the original text separately, so it is used as is; older ones only carry
+        /// the combined text, where the baked block is recognised by its header.
+        /// </summary>
+        private static string DisplayedUserText(HistoricMessage msg)
+        {
+            if (!string.IsNullOrEmpty(msg.UserText))
+                return msg.UserText;
+
+            return StripBakedContext(msg.Content);
+        }
+
+        /// <summary>
+        /// First lines the bundled context injectors start their snapshot with. Used
+        /// only for sessions saved before user messages carried their own text; the
+        /// baked snapshot is always the trailing block, so the earliest header wins.
+        /// </summary>
+        private static readonly string[] BakedContextHeaders =
+        {
+            "Current Memories:",
+            "Skills:"
+        };
+
+        private static string StripBakedContext(string content)
+        {
+            if (string.IsNullOrEmpty(content))
+                return content;
+
+            int cut = -1;
+            foreach (string header in BakedContextHeaders)
+            {
+                int at = content.StartsWith(header, StringComparison.Ordinal)
+                    ? 0
+                    : content.IndexOf("\n\n" + header, StringComparison.Ordinal);
+                if (at >= 0 && (cut < 0 || at < cut))
+                    cut = at;
+            }
+
+            return cut < 0 ? content : content.Substring(0, cut).TrimEnd('\r', '\n', ' ');
         }
 
         /// <summary>
@@ -1095,6 +1139,10 @@ namespace SimpleLLMChatGUI
             public string Role { get; set; }
             public string Content { get; set; }
             public List<HistoricToolCall> ToolCalls { get; set; }
+
+            /// <summary>What the user actually typed, when Content also holds baked
+            /// context (memory and skills snapshots) that must not be shown as theirs.</summary>
+            public string UserText { get; set; }
         }
 
         private sealed class HistoricToolCall

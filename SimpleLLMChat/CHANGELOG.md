@@ -14,6 +14,15 @@ quadratically.
 
 ### Fixed
 
+- **Loading a session no longer mixes stored context into the user's messages.** A saved
+  conversation stores what was sent to the model, and a user turn is their message plus
+  whatever context the app bakes in for the model - the memory and skills snapshots - so
+  a loaded chat showed whole dumps of those snapshots inside the user's own bubble. The
+  typed text is now stored next to the baked text and is what the chat window renders;
+  sessions written before this are split on the known snapshot headers, which are
+  unambiguous. Nothing about what is sent to the model changed, so the prompt cache still
+  sees byte-identical history.
+
 - **Cyrillic console output no longer arrives as mojibake.** `run_shell_command`
   output written in the OEM (CP866) or ANSI (CP1251) code pages - `tasklist` on a
   Russian system, Russian installers, legacy CLIs - came back as garbage. Strict
@@ -45,12 +54,15 @@ quadratically.
 ### Tests
 
 - Four decoder unit tests plus a regression test that feeds a captured real CP866
-  `tasklist` header through the exact decode path the tool uses, and the CLI suite
-  now copies the bundled `Ude.dll` into its tool sandboxes like the build scripts do.
-  ShellTools grows from 13 to 27 tests.
+  `tasklist` header through the exact decode path the tool uses, and the CLI suite now
+  copies the bundled `Ude.dll` into its tool sandboxes like the build scripts do.
+  ShellTools grows from 13 to 27 tests. Two further tests cover the stored-context split
+  above: a session round-trip that checks the file keeps the typed text next to the baked
+  one, and a GUI load of a crafted session file that must not render the snapshot as the
+  user's message.
 
 Tested on Windows 11 (x64): FileTools 19 pass, MemoryTools 3, SkillTools 2, ShellTools
-27, PythonTools 2, WebTools 4 pass + 1 skip, DesktopTools 30, CLI 59, GUI 18 - 164 pass,
+27, PythonTools 2, WebTools 4 pass + 1 skip, DesktopTools 30, CLI 60, GUI 19 - 166 pass,
 0 fail. Windows XP SP3 (x86) has not been re-checked for this release yet.
 
 ## [1.0.3] - 2026-09-28
