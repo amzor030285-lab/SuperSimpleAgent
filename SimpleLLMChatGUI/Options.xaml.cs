@@ -13,6 +13,7 @@ namespace SimpleLLMChatGUI
     public partial class Options : Window, INotifyPropertyChanged
     {
         private string _serverUrl;
+        private string _chatPath;
         private string _apiKey;
         private string _model;
         private string _sysPrompt;
@@ -74,6 +75,16 @@ namespace SimpleLLMChatGUI
         {
             get { return _serverUrl; }
             set { _serverUrl = value; OnPropertyChanged(nameof(ServerURL)); }
+        }
+
+        /// <summary>
+        /// Explicit chat-completions path from the chatpath key. Empty means the CLI
+        /// detects it from the server URL, which is what almost every provider needs.
+        /// </summary>
+        public string ChatPath
+        {
+            get { return _chatPath; }
+            set { _chatPath = value; OnPropertyChanged(nameof(ChatPath)); }
         }
 
         public string ApiKey
@@ -343,15 +354,141 @@ namespace SimpleLLMChatGUI
             LoadToolSelections(config);
             BuildToolOptionsUI(config);
             BuildToolTimeoutsUI(config);
+            RefreshPresetCombo(null);
 
             IndexingStatusHub.Updated += OnIndexingStatusUpdated;
             RefreshIndexingStatusUi();
-            Closed += Options_Closed;
+                Closed += Options_Closed;
+            }
+
+        /// <summary>
+        /// Repopulates the preset list from disk. Pass a name to select it afterwards.
+        /// The name box is a separate input and is left alone here.
+        /// </summary>
+        private void RefreshPresetCombo(string selectName)
+        {
+            List<string> names = PresetStore.Names(PresetStore.Load(PresetStore.DefaultPath));
+            PresetComboBox.ItemsSource = names;
+            PresetComboBox.SelectedItem =
+                (string.IsNullOrEmpty(selectName) || !names.Contains(selectName)) ? null : selectName;
         }
+
+        private void PresetLoadButton_Click(object sender, RoutedEventArgs e)
+        {
+            string selected = PresetComboBox.SelectedItem as string;
+            if (string.IsNullOrEmpty(selected))
+            {
+                MessageBox.Show(this, "Select a preset to load.", "Presets", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            List<LlmPreset> presets = PresetStore.Load(PresetStore.DefaultPath);
+            int index = PresetStore.FindIndex(presets, selected);
+            if (index < 0)
+            {
+                MessageBox.Show(this, "That preset no longer exists.", "Presets", MessageBoxButton.OK, MessageBoxImage.Information);
+                RefreshPresetCombo(null);
+                return;
+            }
+
+            ApplyPreset(presets[index]);
+        }
+
+        /// <summary>
+        /// Copies the preset into the System and RAG sections and applies it. sysprompt,
+        /// tools, appearance and the RAG index are left exactly as they are: they are
+        /// the user's, not the model's.
+        /// </summary>
+        private void ApplyPreset(LlmPreset preset)
+        {
+            ServerURL = preset.ServerUrl;
+            ChatPath = preset.ChatPath;
+            Model = preset.Model;
+            ContextWindowSize = preset.ContextWindowSize;
+            EmbeddingsEndpoint = preset.EmbeddingsEndpoint;
+            EmbeddingsModel = preset.EmbeddingsModel;
+
+            // The password boxes are not bound and SaveCurrentSettings reads them,
+            // so they have to be filled before saving.
+            ApiKeyPasswordBox.Password = preset.ApiKey;
+            EmbeddingsApiKeyPasswordBox.Password = preset.EmbeddingsApiKey;
+
+            SaveCurrentSettings();
+            App.LoadSettings();
+
+            if (_processHandler != null && _processHandler.IsProcessRunning)
+                _processHandler.SendReload();
+        }
+
+        private void PresetSaveButton_Click(object sender, RoutedEventArgs e)
+        {
+            string name = (PresetNameTextBox.Text ?? string.Empty).Trim();
+            if (name.Length == 0)
+            {
+                MessageBox.Show(this, "Type a name for the preset in the \"Save current settings as\" box first.", "Presets", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            List<LlmPreset> presets = PresetStore.Load(PresetStore.DefaultPath);
+            int existingIndex = PresetStore.FindIndex(presets, name);
+            if (existingIndex >= 0)
+            {
+                MessageBoxResult confirm = MessageBox.Show(
+                    this, "Overwrite the preset '" + name + "'?", "Presets", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (confirm != MessageBoxResult.Yes)
+                    return;
+            }
+
+            // Snapshot what is on screen, not what was last saved.
+            ApiKey = ApiKeyPasswordBox.Password;
+            EmbeddingsApiKey = EmbeddingsApiKeyPasswordBox.Password;
+
+            var preset = new LlmPreset
+            {
+                Name = name,
+                ServerUrl = ServerURL ?? string.Empty,
+                ApiKey = ApiKey,
+                ChatPath = ChatPath ?? string.Empty,
+                Model = Model ?? string.Empty,
+                ContextWindowSize = ContextWindowSize,
+                EmbeddingsEndpoint = EmbeddingsEndpoint ?? string.Empty,
+                EmbeddingsApiKey = EmbeddingsApiKey,
+                EmbeddingsModel = EmbeddingsModel ?? string.Empty,
+            };
+
+            if (existingIndex >= 0)
+                presets[existingIndex] = preset;
+            else
+                presets.Add(preset);
+
+            PresetStore.Save(PresetStore.DefaultPath, presets);
+            PresetNameTextBox.Text = string.Empty;
+            RefreshPresetCombo(name);
+        }
+
+        private void PresetDeleteButton_Click(object sender, RoutedEventArgs e)
+        {
+            string selected = PresetComboBox.SelectedItem as string;
+            if (string.IsNullOrEmpty(selected))
+            {
+                MessageBox.Show(this, "Select a preset to delete.", "Presets", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            MessageBoxResult confirm = MessageBox.Show(
+                this, "Delete the preset '" + selected + "'?", "Presets", MessageBoxButton.YesNo, MessageBoxImage.Question);
+            if (confirm != MessageBoxResult.Yes)
+                return;
+
+            PresetStore.Delete(PresetStore.DefaultPath, selected);
+            RefreshPresetCombo(null);
+        }
+
 
         private void LoadSettings(ConfigHandler config)
         {
             ServerURL = config.GetConfigValue("llmserver");
+            ChatPath = config.GetConfigValue(EndpointUrl.ChatPathKey);
             ApiKey = config.GetConfigValue("apikey");
             Model = config.GetConfigValue("model");
             SysPrompt = ConfigHandler.DecodeStoredPrompt(config.GetConfigValue("sysprompt"));
@@ -530,7 +667,7 @@ namespace SimpleLLMChatGUI
                     "ragmaxresults=" + RagMaxResults,
                     "ragretrievemode=" + (RagRetrieveMode ?? "newchat"),
                 }),
-                new KeyValuePair<string, List<string>>("System", SettingsIniWriter.GetSystemSettings(ApiKey, ServerURL, Model, SysPrompt, ContextWindowSize)),
+                new KeyValuePair<string, List<string>>("System", SettingsIniWriter.GetSystemSettings(ApiKey, ServerURL, ChatPath, Model, SysPrompt, ContextWindowSize)),
                 new KeyValuePair<string, List<string>>("Tools", GetToolSettings()),
             };
             AddDynamicToolSettings(sections);

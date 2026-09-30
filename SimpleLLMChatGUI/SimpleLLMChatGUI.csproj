@@ -75,11 +75,15 @@
     <Compile Include="FontHandler.cs" />
     <Compile Include="ImageHandler.cs" />
     <Compile Include="SettingsIniWriter.cs" />
+    <Compile Include="PresetStore.cs" />
     <Compile Include="..\Shared\IniFileHandler.cs">
       <Link>Shared\IniFileHandler.cs</Link>
     </Compile>
     <Compile Include="..\Shared\Constants.cs">
       <Link>Shared\Constants.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\EndpointUrl.cs">
+      <Link>Shared\EndpointUrl.cs</Link>
     </Compile>
     <Compile Include="..\Shared\RagExtensionList.cs">
       <Link>Shared\RagExtensionList.cs</Link>

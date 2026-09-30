@@ -2213,6 +2213,170 @@ namespace SimpleLLMChatCLI.Tests
                     }
                 }
             });
+            TestRunner.Run("endpoint_url.versioned_base_keeps_legacy_v1", () =>
+            {
+                // A base ending in /v1 already carries the version: adding another
+                // "/v1" would be wrong, but so would dropping it — the endpoint must
+                // be byte-identical to what the pre-existing code produced.
+                TestAssert.Equal(
+                    "https://api.openai.com/v1/chat/completions",
+                    EndpointUrl.ChatCompletions("https://api.openai.com/v1", ""),
+                    "openai v1 base");
+                TestAssert.Equal(
+                    "http://127.0.0.1:11434/v1/chat/completions",
+                    EndpointUrl.ChatCompletions("http://127.0.0.1:11434/v1/", ""),
+                    "ollama base with trailing slash");
+                TestAssert.Equal(
+                    "https://api.openai.com/v1/models",
+                    EndpointUrl.Models("https://api.openai.com/v1"),
+                    "models on a v1 base");
+            });
+
+            TestRunner.Run("endpoint_url.unversioned_base_keeps_v1", () =>
+            {
+                // Backward compatibility: a bare base has no version of its own, so it
+                // keeps the historical /v1/... that every existing config relies on.
+                TestAssert.Equal(
+                    "http://127.0.0.1:8080/v1/chat/completions",
+                    EndpointUrl.ChatCompletions("http://127.0.0.1:8080", ""),
+                    "bare base");
+                TestAssert.Equal(
+                    "http://127.0.0.1:8080/v1/models",
+                    EndpointUrl.Models("http://127.0.0.1:8080"),
+                    "models on a bare base");
+                TestAssert.Equal(
+                    "http://127.0.0.1:8080/v1/embeddings",
+                    EndpointUrl.Embeddings("http://127.0.0.1:8080"),
+                    "embeddings on a bare base");
+                TestAssert.Equal(
+                    "http://127.0.0.1:8080/v1/chat/completions",
+                    EndpointUrl.ChatCompletions("  http://127.0.0.1:8080  ", null),
+                    "whitespace and null chatpath");
+            });
+
+            TestRunner.Run("endpoint_url.bigmodel_base_drops_the_extra_v1", () =>
+            {
+                // bigmodel.cn publishes its OpenAI-compatible base as
+                // https://open.bigmodel.cn/api/paas/v4 and serves
+                // /api/paas/v4/chat/completions. The old hardcoded "/v1" produced
+                // /api/paas/v4/v1/chat/completions, which no provider accepts.
+                TestAssert.Equal(
+                    "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                    EndpointUrl.ChatCompletions("https://open.bigmodel.cn/api/paas/v4", ""),
+                    "bigmodel chat");
+                TestAssert.Equal(
+                    "https://open.bigmodel.cn/api/paas/v4/models",
+                    EndpointUrl.Models("https://open.bigmodel.cn/api/paas/v4"),
+                    "bigmodel models");
+                TestAssert.Equal(
+                    "https://open.bigmodel.cn/api/paas/v4/embeddings",
+                    EndpointUrl.Embeddings("https://open.bigmodel.cn/api/paas/v4"),
+                    "bigmodel embeddings");
+                // A non-numeric segment is not a version: /v1beta keeps /v1, and a host
+                // that merely starts with v must not be mistaken for one.
+                TestAssert.Equal(
+                    "https://example.com/v1beta/v1/chat/completions",
+                    EndpointUrl.ChatCompletions("https://example.com/v1beta", ""),
+                    "v1beta is not a version segment");
+                TestAssert.Equal(
+                    "https://v1.example.com/v1/chat/completions",
+                    EndpointUrl.ChatCompletions("https://v1.example.com", ""),
+                    "host starting with v is not a version segment");
+            });
+
+            TestRunner.Run("endpoint_url.explicit_chatpath_wins", () =>
+            {
+                TestAssert.Equal(
+                    "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                    EndpointUrl.ChatCompletions("https://open.bigmodel.cn/api/paas/v4", "/chat/completions"),
+                    "explicit path is used verbatim");
+                // A leading slash is optional and a trailing one is trimmed, so pasting
+                // "chat/completions/" still works.
+                TestAssert.Equal(
+                    "https://example.com/v1/completions",
+                    EndpointUrl.ChatCompletions("https://example.com/v1", " completions/ "),
+                    "path normalized without leading slash");
+                // An explicit path overrides detection: even a bare base uses it.
+                TestAssert.Equal(
+                    "http://127.0.0.1:8080/openai/chat",
+                    EndpointUrl.ChatCompletions("http://127.0.0.1:8080", "/openai/chat"),
+                    "explicit path overrides the legacy /v1");
+                // A full URL in chatpath is the directEndpoint escape hatch.
+                TestAssert.Equal(
+                    "https://gw.example.com/openai/v1/chat/completions",
+                    EndpointUrl.ChatCompletions("https://gw.example.com", "https://gw.example.com/openai/v1/chat/completions"),
+                    "full URL used as the complete endpoint");
+                // A base that already is the full endpoint is passed through untouched.
+                TestAssert.Equal(
+                    "https://gw.example.com/openai/chat/completions",
+                    EndpointUrl.ChatCompletions("https://gw.example.com/openai/chat/completions/", ""),
+                    "base that already is an endpoint");
+            });
+
+            TestRunner.Run("cli.chat_path_resolved_from_versioned_base", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // llmserver carries a version segment the fake server does not
+                    // route under /v1, so only a correctly resolved path gets a reply.
+                    server.AcceptUnversionedChatPath = true;
+                    WriteCliIni(ws.Path, server.BaseUrl + "/api/paas/v4");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+                    }
+                    TestAssert.Equal("/api/paas/v4/chat/completions", server.LastPath,
+                        "request went to the versioned base without an extra /v1");
+                }
+            });
+
+            TestRunner.Run("cli.chat_path_override_replaces_the_whole_suffix", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.AcceptUnversionedChatPath = true;
+                    // A bare base with an explicit path: nothing of the default
+                    // "/v1/chat/completions" may survive alongside it.
+                    WriteCliIni(ws.Path, server.BaseUrl, chatPath: "/api/paas/v4/chat/completions");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+                    }
+                    TestAssert.Equal("/api/paas/v4/chat/completions", server.LastPath,
+                        "explicit chatpath replaced the whole default suffix");
+                }
+            });
+
+            TestRunner.Run("cli.unversioned_base_still_uses_v1", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The fake server only routes /v1/chat/completions here, so a
+                    // regression in the default would 404 and time out.
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+                    }
+                    TestAssert.Equal("/v1/chat/completions", server.LastPath,
+                        "bare base keeps the historical /v1 path");
+                }
+            });
         }
 
         /// <summary>
@@ -2382,13 +2546,14 @@ namespace SimpleLLMChatCLI.Tests
 
         static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "",
             int streamStallTimeout = 120, int requestTimeout = 300, string toolTimeout = "",
-            int repetitionGuard = -1)
+            int repetitionGuard = -1, string chatPath = "")
         {
             string path = Path.Combine(dir, "LLMSettings.ini");
             File.WriteAllText(path,
                 "[System]\r\n" +
                 "apikey=test-key\r\n" +
                 "llmserver=" + llmServer + "\r\n" +
+                "chatpath=" + (chatPath ?? "") + "\r\n" +
                 "model=test-model\r\n" +
                 "sysprompt=\"You are a test assistant.\"\r\n" +
                 "contextWindowSize=" + contextWindowSize + "\r\n" +

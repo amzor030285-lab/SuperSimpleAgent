@@ -1538,13 +1538,17 @@ public class LLMClient
         int finished = 0;
         int stallAborted = 0;
 
+        // Both the direct request and the curl fallback below must hit the same URL.
+        string serverUrl = config.GetConfigValue("llmserver") ?? "";
+        string chatUrl = EndpointUrl.ChatCompletions(serverUrl, config.GetConfigValue(EndpointUrl.ChatPathKey));
+
         try
         {
             // A stop clicked during a tool round must not start the next request.
             if (AbortSupport.AbortRequested)
                 return new LLMCompletionResponse("generation_aborted", null, "aborted");
 
-            request = (HttpWebRequest)WebRequest.Create($"{config.GetConfigValue("llmserver")}/v1/chat/completions");
+            request = (HttpWebRequest)WebRequest.Create(chatUrl);
             request.Method = "POST";
             request.ContentType = "application/json";
             request.Headers.Add("Authorization", "Bearer " + config.GetConfigValue("apikey"));
@@ -1619,9 +1623,8 @@ public class LLMClient
             }
 
             // Try curl fallback for HTTPS connection errors
-            string serverUrl = config.GetConfigValue("llmserver") ?? "";
             if (CurlClient.CanFallback(serverUrl, ex))
-                return CurlClient.SendRequest(serverUrl, config.GetConfigValue("apikey"), payload, guardedOutput, onReasoningChunk, onReasoningSummary, requestTimeoutMs / 1000, stallSeconds, toolCallCallback, onContentStart, startBlock);
+                return CurlClient.SendRequest(chatUrl, config.GetConfigValue("apikey"), payload, guardedOutput, onReasoningChunk, onReasoningSummary, requestTimeoutMs / 1000, stallSeconds, toolCallCallback, onContentStart, startBlock);
 
             return new LLMCompletionResponse(reason, null, "request_failed");
         }

@@ -62,12 +62,14 @@ namespace SimpleLLMChatCLI
 
         /// <summary>
         /// Streaming chat-completions POST. Parses SSE from curl stdout.
+        /// <paramref name="endpointUrl"/> is the complete URL; the caller builds it with
+        /// <see cref="EndpointUrl"/> so curl and the direct HTTP path cannot drift apart.
         /// <paramref name="connectTimeoutSeconds"/> caps the connect phase; a stream
         /// silent for longer than <paramref name="stallSeconds"/> kills curl, just
         /// like the stall watchdog on the direct HTTP path (0 disables it).
         /// </summary>
         public static LLMClient.LLMCompletionResponse SendRequest(
-            string serverUrl, string apiKey, JObject payload,
+            string endpointUrl, string apiKey, JObject payload,
             Action<string> outputCallback,
             Action<string> onReasoningChunk,
             Action<int> onReasoningSummary,
@@ -76,7 +78,7 @@ namespace SimpleLLMChatCLI
             Action onContentStart = null,
             Action startBlock = null)
         {
-            string url = serverUrl.TrimEnd('/') + "/v1/chat/completions";
+            string url = endpointUrl;
             try
             {
                 LLMClient.LLMCompletionResponse result = new LLMClient.LLMCompletionResponse(

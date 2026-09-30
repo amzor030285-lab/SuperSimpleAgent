@@ -22,7 +22,9 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Fetches model ids from <c>{baseUrl}/v1/models</c>.
+        /// Fetches model ids from the model-list endpoint of <paramref name="baseUrl"/>.
+        /// The path comes from <see cref="EndpointUrl.Models"/>, so a base that already
+        /// carries a version segment is not given a second "/v1".
         /// Throws if the server is unreachable or the response is invalid.
         /// </summary>
         public static IList<string> ListModels(string baseUrl, string apiKey)
@@ -32,7 +34,7 @@ namespace SimpleLLMChatGUI
 
             TlsConfig.EnsureModernProtocols();
 
-            string url = baseUrl.Trim().TrimEnd('/') + "/v1/models";
+            string url = EndpointUrl.Models(baseUrl);
             string key = apiKey ?? string.Empty;
             string body = GetModelsJson(url, key);
             return ParseModelIds(body);
@@ -66,13 +68,13 @@ namespace SimpleLLMChatGUI
                     if (exitCode == 0 && !string.IsNullOrEmpty(body))
                         return body;
                     throw new ModelsException(
-                        "Unable to reach /v1/models (curl): " + (body ?? httpBody ?? ex.Message),
+                        "Unable to reach " + url + " (curl): " + (body ?? httpBody ?? ex.Message),
                         ex);
                 }
 
                 if (!string.IsNullOrEmpty(httpBody))
-                    throw new ModelsException("Unable to reach /v1/models: " + ex.Message + " — " + httpBody, ex);
-                throw new ModelsException("Unable to reach /v1/models: " + ex.Message, ex);
+                    throw new ModelsException("Unable to reach " + url + ": " + ex.Message + " — " + httpBody, ex);
+                throw new ModelsException("Unable to reach " + url + ": " + ex.Message, ex);
             }
         }
 

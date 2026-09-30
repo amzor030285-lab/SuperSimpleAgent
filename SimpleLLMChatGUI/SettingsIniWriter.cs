@@ -61,7 +61,10 @@ namespace SimpleLLMChatGUI
             {
                 new KeyValuePair<string, List<string>>("Appearance", GetDefaultAppearanceSettings()),
                 new KeyValuePair<string, List<string>>("RAG", GetDefaultRagSettings()),
-                new KeyValuePair<string, List<string>>("System", GetSystemSettings(apiKey, llmServer, model, sysPrompt, contextWindowSize)),
+                // chatpath stays empty on a fresh install: the CLI detects the path from
+                // llmserver, which is right for every provider that keeps the version in
+                // the base URL.
+                new KeyValuePair<string, List<string>>("System", GetSystemSettings(apiKey, llmServer, string.Empty, model, sysPrompt, contextWindowSize)),
                 new KeyValuePair<string, List<string>>("Tools", GetDefaultToolSettings()),
             };
             WriteSections(path, sections);
@@ -70,6 +73,7 @@ namespace SimpleLLMChatGUI
         public static List<string> GetSystemSettings(
             string apiKey,
             string llmServer,
+            string chatPath,
             string model,
             string sysPrompt,
             int contextWindowSize)
@@ -77,6 +81,7 @@ namespace SimpleLLMChatGUI
             return new List<string>
             {
                 "apikey=" + SecretProtector.Protect(apiKey),
+                "chatpath=" + (chatPath ?? string.Empty).Trim(),
                 "contextWindowSize=" + contextWindowSize,
                 "llmserver=" + (llmServer ?? string.Empty),
                 "model=" + (model ?? string.Empty),

@@ -889,6 +889,13 @@ public sealed class FakeOpenAiServer : IDisposable
     /// </summary>
     public bool DataPrefixNoSpace { get; set; }
 
+    /// <summary>
+    /// When true, "/chat/completions" is served under any prefix instead of only
+    /// "/v1/chat/completions". Lets a test point llmserver at a base that carries a
+    /// non-v1 version segment (bigmodel's "/api/paas/v4") and prove the path resolved.
+    /// </summary>
+    public bool AcceptUnversionedChatPath { get; set; }
+
     private string DataPrefix
     {
         get { return DataPrefixNoSpace ? "data:" : "data: "; }
@@ -959,15 +966,17 @@ public sealed class FakeOpenAiServer : IDisposable
         LastBody = body;
         TestLog.Detail("FakeOpenAi " + ctx.Request.HttpMethod + " " + path + " body_len=" + body.Length);
 
-        if (path.EndsWith("/v1/models", StringComparison.OrdinalIgnoreCase) ||
-            path.Equals("/v1/models", StringComparison.OrdinalIgnoreCase))
+        if (path.EndsWith("/v1/models", StringComparison.OrdinalIgnoreCase)
+            || (AcceptUnversionedChatPath && path.EndsWith("/models", StringComparison.OrdinalIgnoreCase)))
         {
             string json = "{\"object\":\"list\",\"data\":[{\"id\":\"test-model\",\"object\":\"model\"}]}";
             WriteJson(ctx, 200, json);
             return;
         }
 
-        if (path.IndexOf("/v1/chat/completions", StringComparison.OrdinalIgnoreCase) >= 0)
+        if (path.IndexOf("/v1/chat/completions", StringComparison.OrdinalIgnoreCase) >= 0
+            || (AcceptUnversionedChatPath
+                && path.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase)))
         {
             // Only chat turns are recorded: the model-list probe is not a prompt.
             ReceivedBodies.Add(body);

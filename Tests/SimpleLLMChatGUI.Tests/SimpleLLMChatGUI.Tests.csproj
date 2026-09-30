@@ -54,6 +54,9 @@
     <Compile Include="..\..\SimpleLLMChatGUI\SettingsIniWriter.cs">
       <Link>GUI\SettingsIniWriter.cs</Link>
     </Compile>
+    <Compile Include="..\..\SimpleLLMChatGUI\PresetStore.cs">
+      <Link>GUI\PresetStore.cs</Link>
+    </Compile>
     <Compile Include="..\..\SimpleLLMChatGUI\ModelsClient.cs">
       <Link>GUI\ModelsClient.cs</Link>
     </Compile>
@@ -65,6 +68,9 @@
     </Compile>
     <Compile Include="..\..\Shared\Constants.cs">
       <Link>Shared\Constants.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\EndpointUrl.cs">
+      <Link>Shared\EndpointUrl.cs</Link>
     </Compile>
     <Compile Include="..\..\Shared\RagExtensionList.cs">
       <Link>Shared\RagExtensionList.cs</Link>

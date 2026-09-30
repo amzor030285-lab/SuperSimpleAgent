@@ -53,6 +53,191 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("SettingsIniWriter.chatpath_roundtrip", () =>
+            {
+                using (TempWorkspace ws = new TempWorkspace("gui-ini-chatpath"))
+                {
+                    string path = ws.Combine("LLMSettings.ini");
+                    // A fresh install must leave the key present but empty: the CLI then
+                    // detects the path from llmserver. Dropping the line entirely would
+                    // lose the user's setting the next time Options rewrites the file.
+                    SettingsIniWriter.WriteInitialConfig(
+                        path, "key", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash", "Hello", 4096);
+                    string text = File.ReadAllText(path);
+                    TestAssert.Contains(text, "chatpath=\r\n", "chatpath written empty on a fresh install");
+                    TestAssert.Equal("", new ConfigHandler(path).GetConfigValue("chatpath"), "reads back empty");
+
+                    // The Options save path carries an explicit value through unchanged.
+                    List<string> lines = SettingsIniWriter.GetSystemSettings(
+                        "key", "https://open.bigmodel.cn/api/paas/v4", " /chat/completions ",
+                        "glm-4-flash", "Hello", 4096);
+                    string chatLine = null;
+                    foreach (string line in lines)
+                        if (line.StartsWith("chatpath=", StringComparison.Ordinal))
+                            chatLine = line;
+                    TestAssert.Equal("chatpath=/chat/completions", chatLine, "explicit chatpath trimmed and kept");
+                }
+            });
+
+            TestRunner.Run("PresetStore.roundtrip", () =>
+            {
+                using (TempWorkspace ws = new TempWorkspace("gui-preset"))
+                {
+                    string path = ws.Combine(PresetStore.FileName);
+                    var first = new LlmPreset
+                    {
+                        Name = "GLM-4.7-Flash - bigmodel",
+                        ServerUrl = "https://open.bigmodel.cn/api/paas/v4",
+                        ApiKey = "glm-key",
+                        ChatPath = string.Empty,
+                        Model = "glm-4.7-flash",
+                        ContextWindowSize = 131072,
+                    };
+                    var second = new LlmPreset
+                    {
+                        Name = "Local ollama",
+                        ServerUrl = "http://127.0.0.1:11434",
+                        Model = "qwen2.5:14b",
+                        EmbeddingsEndpoint = "https://api.openai.com/v1",
+                        EmbeddingsApiKey = "emb-key",
+                        EmbeddingsModel = "text-embedding-3-small",
+                    };
+
+                    PresetStore.Save(path, new List<LlmPreset> { first, second });
+                    List<LlmPreset> loaded = PresetStore.Load(path);
+
+                    TestAssert.Equal(2, loaded.Count, "both presets read back");
+                    TestAssert.Equal("GLM-4.7-Flash - bigmodel", loaded[0].Name, "file order preserved");
+                    TestAssert.Equal("https://open.bigmodel.cn/api/paas/v4", loaded[0].ServerUrl, "server url");
+                    TestAssert.Equal("glm-key", loaded[0].ApiKey, "api key round-trips through DPAPI");
+                    TestAssert.Equal("glm-4.7-flash", loaded[0].Model, "model");
+                    TestAssert.Equal(131072, loaded[0].ContextWindowSize, "context window");
+                    // An empty chatpath means "detect from llmserver" and must stay empty:
+                    // baking the resolved path in would freeze today's detection rule.
+                    TestAssert.Equal("", loaded[0].ChatPath, "empty chatpath stays empty");
+
+                    TestAssert.Equal("Local ollama", loaded[1].Name, "second preset name");
+                    // No api key on this one, which is legitimate for a local server.
+                    TestAssert.Equal("", loaded[1].ApiKey, "absent api key stays empty");
+                    // 0 keeps the CLI sizing its budget from real usage instead of a
+                    // percentage of a window.
+                    TestAssert.Equal(0, loaded[1].ContextWindowSize, "unset context window stays 0");
+                    TestAssert.Equal("https://api.openai.com/v1", loaded[1].EmbeddingsEndpoint, "embeddings endpoint");
+                    TestAssert.Equal("emb-key", loaded[1].EmbeddingsApiKey, "embeddings key");
+                    TestAssert.Equal("text-embedding-3-small", loaded[1].EmbeddingsModel, "embeddings model");
+                }
+            });
+
+            TestRunner.Run("PresetStore.secrets_are_encrypted", () =>
+            {
+                using (TempWorkspace ws = new TempWorkspace("gui-preset-secret"))
+                {
+                    string path = ws.Combine(PresetStore.FileName);
+                    PresetStore.Save(path, new List<LlmPreset>
+                    {
+                        new LlmPreset { Name = "p", ApiKey = "sk-live-PLAINTEXT-abc123", EmbeddingsApiKey = "sk-emb-PLAINTEXT-def456" },
+                    });
+
+                    string text = File.ReadAllText(path);
+                    TestAssert.True(!text.Contains("sk-live-PLAINTEXT-abc123"), "api key is not on disk in the clear");
+                    TestAssert.True(!text.Contains("sk-emb-PLAINTEXT-def456"), "embeddings key is not on disk in the clear");
+                    TestAssert.Contains(text, "apikey=" + SecretProtector.Prefix, "api key stored with the dpapi prefix");
+                    TestAssert.Contains(text, "embeddingsapikey=" + SecretProtector.Prefix, "embeddings key stored with the dpapi prefix");
+
+                    LlmPreset loaded = PresetStore.Load(path)[0];
+                    TestAssert.Equal("sk-live-PLAINTEXT-abc123", loaded.ApiKey, "still decrypts for the app");
+                    TestAssert.Equal("sk-emb-PLAINTEXT-def456", loaded.EmbeddingsApiKey, "embeddings key still decrypts");
+                }
+            });
+
+            TestRunner.Run("PresetStore.value_with_equals_survives", () =>
+            {
+                using (TempWorkspace ws = new TempWorkspace("gui-preset-equals"))
+                {
+                    string path = ws.Combine(PresetStore.FileName);
+                    // Both an INI value and a query string can contain '='; the parser
+                    // must split on the first one only.
+                    PresetStore.Save(path, new List<LlmPreset>
+                    {
+                        new LlmPreset
+                        {
+                            Name = "p",
+                            ServerUrl = "https://host/v1?a=b&c=d",
+                            Model = "m=1",
+                            ApiKey = "key=with=equals",
+                        },
+                    });
+
+                    LlmPreset loaded = PresetStore.Load(path)[0];
+                    TestAssert.Equal("https://host/v1?a=b&c=d", loaded.ServerUrl, "url with query string survives");
+                    TestAssert.Equal("m=1", loaded.Model, "model with '=' survives");
+                    TestAssert.Equal("key=with=equals", loaded.ApiKey, "key with '=' survives");
+                }
+            });
+
+            TestRunner.Run("PresetStore.upsert_and_delete", () =>
+            {
+                using (TempWorkspace ws = new TempWorkspace("gui-preset-upsert"))
+                {
+                    string path = ws.Combine(PresetStore.FileName);
+                    var presets = new List<LlmPreset>
+                    {
+                        new LlmPreset { Name = "a", Model = "first" },
+                        new LlmPreset { Name = "b", Model = "second" },
+                    };
+                    PresetStore.Save(path, presets);
+
+                    // Re-saving the same name overwrites in place instead of duplicating.
+                    // Located by name, because the list is re-read and holds new instances.
+                    List<LlmPreset> current = PresetStore.Load(path);
+                    int index = PresetStore.FindIndex(current, "a");
+                    TestAssert.Equal(0, index, "FindIndex locates the preset by name");
+
+                    LlmPreset updated = current[index];
+                    updated.Model = "updated";
+                    current[index] = updated;
+                    PresetStore.Save(path, current);
+
+                    List<LlmPreset> afterUpdate = PresetStore.Load(path);
+                    TestAssert.Equal(2, afterUpdate.Count, "overwrite did not add a third section");
+                    TestAssert.Equal("updated", afterUpdate[0].Model, "same-name preset was overwritten");
+                    TestAssert.Equal("second", afterUpdate[1].Model, "the other preset is untouched");
+
+                    TestAssert.True(PresetStore.Delete(path, "a"), "delete reports success");
+                    TestAssert.Equal(1, PresetStore.Load(path).Count, "one preset left");
+                    TestAssert.Equal("b", PresetStore.Load(path)[0].Name, "the right one is left");
+                    TestAssert.Equal("second", PresetStore.Load(path)[0].Model, "with its fields intact");
+                    TestAssert.True(!PresetStore.Delete(path, "a"), "deleting a missing preset reports failure");
+                    TestAssert.True(PresetStore.FindIndex(PresetStore.Load(path), "a") < 0, "FindIndex reports a missing preset as -1");
+                }
+            });
+
+            TestRunner.Run("PresetStore.skips_unusable_section", () =>
+            {
+                using (TempWorkspace ws = new TempWorkspace("gui-preset-badname"))
+                {
+                    string path = ws.Combine(PresetStore.FileName);
+                    // A name becomes a section header, so brackets cannot be part of it.
+                    // A hand-edited file must not throw on the next read either.
+                    File.WriteAllLines(path, new List<string>
+                    {
+                        "[good]",
+                        "model=m1",
+                        "[bad]name]",
+                        "model=m2",
+                    });
+
+                    List<LlmPreset> loaded = PresetStore.Load(path);
+                    TestAssert.Equal(1, loaded.Count, "only the usable section is read");
+                    TestAssert.Equal("good", loaded[0].Name, "usable section kept");
+                    // Still m1, so the unreadable section's model=m2 did not bleed into it.
+                    TestAssert.Equal("m1", loaded[0].Model, "unread section does not leak keys into it");
+
+                    PresetStore.Save(path, new List<LlmPreset> { new LlmPreset { Name = "also bad]name", Model = "m3" } });
+                    TestAssert.Equal(0, PresetStore.Load(path).Count, "an unusable name is not written back");
+                }
+            });
+
             TestRunner.Run("ToolApproval.parse", () =>
             {
                 string msg = ToolApproval.FormatApprovalMessage("shell", "echo hi");

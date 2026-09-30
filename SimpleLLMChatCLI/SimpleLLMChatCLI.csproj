@@ -68,6 +68,9 @@
     <Compile Include="..\Shared\Constants.cs">
       <Link>Shared\Constants.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\EndpointUrl.cs">
+      <Link>Shared\EndpointUrl.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\RagExtensionList.cs">
       <Link>Shared\RagExtensionList.cs</Link>
     </Compile>
