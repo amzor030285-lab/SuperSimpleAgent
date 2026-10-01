@@ -2063,6 +2063,62 @@ namespace SimpleLLMChatCLI.Tests
                             server.LastBody, "# Reply turn 16",
                             "second summary request must embed the first recap text");
 
+                        // Ordering is the whole point of this test. The merge
+                        // instructions must be the LAST thing the model reads before
+                        // the template. When they were not, the prompt ended with
+                        // "Summarize the conversation above", and since <conversation>
+                        // holds only post-compaction messages the model dropped
+                        // anything the old recap did not repeat - which is how a
+                        // second compaction lost the first recap's content.
+                        //
+                        // Assertions run on the DECODED user prompt, not the raw
+                        // body: JSON escaping would otherwise hide clauses that
+                        // contain quotes, e.g. "Next Move".
+                        string prompt = ExtractUserPrompt(server.LastBody);
+                        int idxConversation = prompt.IndexOf("<conversation>", StringComparison.Ordinal);
+                        int idxPriorOpen = prompt.IndexOf("<prior-summary>", StringComparison.Ordinal);
+                        int idxPriorClose = prompt.IndexOf("</prior-summary>", StringComparison.Ordinal);
+                        int idxTemplate = prompt.IndexOf("<template>", StringComparison.Ordinal);
+                        TestAssert.True(
+                            idxConversation >= 0 && idxConversation < idxPriorOpen,
+                            "conversation block must precede the prior-summary block");
+                        TestAssert.True(
+                            idxPriorOpen < idxPriorClose,
+                            "prior-summary block must be closed");
+                        TestAssert.True(
+                            idxPriorClose < idxTemplate,
+                            "prior-summary block must precede the template");
+
+                        // The merge instruction itself, and the clauses that keep the
+                        // model carrying state forward instead of filtering the recap
+                        // against the visible conversation.
+                        int idxMerge = prompt.IndexOf("is discarded after this", StringComparison.Ordinal);
+                        TestAssert.True(
+                            idxMerge > idxPriorClose,
+                            "merge instructions must come AFTER the prior-summary block, "
+                            + "so they are the final instruction before the template "
+                            + "(merge_at=" + idxMerge + " prior_close=" + idxPriorClose + ")");
+                        TestAssert.True(
+                            idxMerge > 0 && idxMerge < idxTemplate,
+                            "merge instructions must sit between the prior summary and the template");
+                        TestAssert.Contains(
+                            prompt, "even when the <conversation> does not mention them",
+                            "merge instructions must authorize carrying forward state the "
+                            + "new window does not repeat");
+                        TestAssert.Contains(
+                            prompt, "Drop only what is finished and no longer needed",
+                            "merge instructions must bound what may be dropped");
+                        TestAssert.Contains(
+                            prompt, "Next Move",
+                            "merge instructions must require Objective/Next Move refresh");
+                        TestAssert.Contains(
+                            prompt, "reflect the current work state",
+                            "merge instructions must require Objective/Next Move refresh");
+                        TestAssert.True(
+                            prompt.IndexOf("Summarize the conversation above", StringComparison.Ordinal) < 0,
+                            "the merge prompt must not end by scoping the task to the "
+                            + "conversation block, which drops the prior recap");
+
                         cli.WriteLine("continue");
                         CliRunner.WaitForText(cli, "# Reply turn 20", 30000);
                         CliRunner.WaitForText(cli, "You:", 15000);
@@ -2498,6 +2554,26 @@ namespace SimpleLLMChatCLI.Tests
                     return true;
             }
             return false;
+        }
+
+        /// <summary>
+        /// Decoded content of the last "user" message in a captured chat request body.
+        /// Prompt-shape assertions must run on this rather than the raw JSON: escaping
+        /// would otherwise break any needle containing a quote.
+        /// </summary>
+        static string ExtractUserPrompt(string body)
+        {
+            JObject obj = JObject.Parse(body);
+            JArray messages = obj["messages"] as JArray;
+            if (messages == null)
+                throw new TestFailureException("request body has no messages array");
+
+            for (int i = messages.Count - 1; i >= 0; i--)
+            {
+                if ((string)messages[i]["role"] == "user")
+                    return (string)messages[i]["content"] ?? "";
+            }
+            throw new TestFailureException("request body has no user message");
         }
 
         static TempWorkspace PackageCliWorkspace()

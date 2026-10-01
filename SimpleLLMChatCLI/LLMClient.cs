@@ -1294,28 +1294,63 @@ public class LLMClient
         "Respond in the same language as the conversation.";
 
     /// <summary>
+    /// Merge instructions for a re-compaction, ported from opencode's
+    /// SUMMARY_UPDATE_INSTRUCTIONS. The "discarded after this" pressure and the
+    /// "even when the conversation does not mention them" clause are what stop the
+    /// model from dropping carried-forward state, so this block must stay LAST,
+    /// immediately before the template, instead of a generic "summarize the
+    /// conversation above" that would scope the task to the post-compaction window.
+    /// </summary>
+    private const string SummaryUpdateInstructions =
+        "The <prior-summary> summarizes everything that happened before the " +
+        "<conversation>. Construct a new summary that combines both. The " +
+        "<prior-summary> is discarded after this: anything you do not carry into the " +
+        "new summary is lost.\n\n" +
+        "When combining:\n" +
+        "- Carry forward objectives, constraints, user directives, decisions, and " +
+        "parallel workstreams from the <prior-summary> even when the <conversation> " +
+        "does not mention them. Drop only what is finished and no longer needed.\n" +
+        "- The <conversation> is more recent than the <prior-summary>. Where they " +
+        "conflict, the conversation wins: state the corrected fact and drop the old claim.\n" +
+        "- Add new progress, decisions, constraints, and context from the conversation.\n" +
+        "- Move completed work from \"Active\" to \"Completed\".\n" +
+        "- If a blocker has been resolved, update the summary to reflect that while " +
+        "keeping any details still needed to continue the work.\n" +
+        "- Update \"Objective\" and \"Next Move\" to reflect the current work state.";
+
+    /// <summary>
     /// Summarizer user prompt: the serialized head, the fixed section template, and
-    /// (when present) the previous summary with merge instructions.
+    /// (when present) the previous summary with merge instructions. The merge
+    /// instructions are emitted last so they are the final instruction the model
+    /// reads before the template.
     /// </summary>
     private static string BuildSummaryPrompt(string serializedConversation, string previousSummary)
     {
         StringBuilder sb = new StringBuilder();
-        sb.Append("<conversation>\n")
+        sb.Append("Here is the conversation so far:\n\n<conversation>\n")
           .Append(serializedConversation)
           .Append("\n</conversation>\n\n");
 
         if (!string.IsNullOrEmpty(previousSummary))
         {
-            sb.Append("<prior-summary>\n")
+            sb.Append("Here is the summary of the conversation before the " +
+                      "<conversation> above:\n\n<prior-summary>\n")
               .Append(previousSummary)
-              .Append("\n</prior-summary>\n");
-            sb.Append("Update the previous summary with what happened afterwards: carry " +
-                      "over everything still unfinished, let newer information win on " +
-                      "conflicts, and move items from Active to Completed when they are done.\n\n");
+              .Append("\n</prior-summary>\n\n")
+              .Append(SummaryUpdateInstructions)
+              .Append("\n\n");
+        }
+        else
+        {
+            sb.Append("Create a new anchored summary from the conversation history in the " +
+                      "<conversation> tags above so another coding agent can continue the " +
+                      "work.\n\n");
         }
 
-        sb.Append("Summarize the conversation above using the structure below. Keep every " +
-                  "section even when empty (write \"(none)\" then). Use terse bullet points. " +
+        sb.Append("Output exactly the Markdown structure shown inside <template> and keep " +
+                  "the section order unchanged. Do not include the <template> tags in your " +
+                  "response. Keep every section, even when empty (write \"(none)\" then). " +
+                  "Use terse bullet points, not prose paragraphs. " +
                   "Do not mention the summary process itself.\n\n");
         sb.Append("<template>\n");
         sb.Append("## Objective\n- What the user is trying to accomplish.\n\n");
