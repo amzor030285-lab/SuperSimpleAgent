@@ -97,6 +97,57 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("readme_documents_every_ini_key", () =>
+            {
+                // Nothing in the build compares the README to the keys the app
+                // actually writes, so a key can ship undocumented and nothing
+                // notices - which is how chatpath, the two timeouts and the
+                // presets all went missing. The key list is taken from a real
+                // config rather than a hand-kept one, so the test cannot drift
+                // along with the code.
+                using (TempWorkspace ws = new TempWorkspace("gui-readme"))
+                {
+                    string path = ws.Combine("LLMSettings.ini");
+                    SettingsIniWriter.WriteInitialConfig(
+                        path, "key", "https://example.invalid/api/v1", "a-model", "Hello", 4096);
+
+                    string readme = ReadRepoFile("README.md");
+                    List<string> missing = new List<string>();
+                    foreach (string line in File.ReadAllLines(path))
+                    {
+                        int eq = line.IndexOf('=');
+                        if (eq <= 0)
+                        {
+                            continue;
+                        }
+
+                        string key = line.Substring(0, eq).Trim();
+                        if (key.Length == 0 || key.StartsWith("[", StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        // Dynamic keys carry a per-tool suffix and are documented
+                        // by pattern, so match on the part before the dot.
+                        int dot = key.IndexOf('.');
+                        if (dot > 0)
+                        {
+                            key = key.Substring(0, dot);
+                        }
+
+                        if (readme.IndexOf("`" + key + "`", StringComparison.Ordinal) < 0)
+                        {
+                            missing.Add(key);
+                        }
+                    }
+
+                    TestAssert.Equal(0, missing.Count,
+                        missing.Count == 0
+                            ? "every written key is in the README Configuration list"
+                            : "undocumented INI keys: " + string.Join(", ", missing.ToArray()));
+                }
+            });
+
             TestRunner.Run("PresetStore.roundtrip", () =>
             {
                 using (TempWorkspace ws = new TempWorkspace("gui-preset"))
@@ -1172,6 +1223,26 @@ namespace SimpleLLMChatGUI.Tests
             sb.Append('}');
             sb.Append("]}");
             return sb.ToString();
+        }
+
+        // The suite runs from Tests-Build\<Suite>\, so the README is a couple of
+        // levels up. Walking up beats hardcoding a depth: a run from a different
+        // output folder should not turn a documentation gap into a crash.
+        static string ReadRepoFile(string name)
+        {
+            DirectoryInfo dir = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+            while (dir != null)
+            {
+                string candidate = Path.Combine(dir.FullName, name);
+                if (File.Exists(candidate))
+                {
+                    return File.ReadAllText(candidate);
+                }
+
+                dir = dir.Parent;
+            }
+
+            throw new FileNotFoundException("not found above " + name, name);
         }
 
         static string JsonText(string text)

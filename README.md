@@ -95,12 +95,15 @@ On first use, if `LLMSettings.ini` does not exist, the GUI setup wizard creates 
 **System**
 
 -   `apikey`: API key (if required by model provider)
+-   `chatpath`: Chat completions path appended to `llmserver`. Leave empty and the CLI detects it from the endpoint, which is right for every provider that keeps the version in the base URL
 -   `llmserver`: Base URL of the OpenAI-compatible endpoint
 -   `model`: Model name to use for text generation (if supported by the endpoint)
 -   `sysprompt`: System prompt for the LLM
 -   `contextWindowSize`: If known, can be set here to enable automatic context management when context fills
 -   `approvalmode`: Tool approval mode (`ask`, `auto`, or `config`; default `config`)
--   `repetitionguard`: Stop a generation that has degenerated into repeating the same block of text (default `1`; set `0` to disable)
+-   `streamstalltimeout`: Seconds a stream may stay silent before it is abandoned (default `120`)
+-   `requesttimeout`: Seconds before the whole request is abandoned (default `300`)
+-   `repetitionguard`: Stop a generation that has degenerated into repeating the same block of text (default `0`, off). How prone a model is to loop is a property of the model, so this is off by default and enabled per model in `Options` -> `System`, next to `Context Window Size`
 
 **Tools**
 
@@ -114,7 +117,7 @@ Tool-specific configuration options for the included tools are available in the 
 
 **GUI**: To launch the GUI interface, open `SimpleLLMChatGUI.exe`.
 
--   To adjust application settings, select `Options`.
+-   To adjust application settings, select `Options`. The category list on the left switches between pages; the System page holds the model, its context size, saved presets for a provider plus model combination, and the per-model `Stop repetitive output automatically` guard.
 -   To attach an image, press the image attachment button (camera icon) and choose a file using the file picker.
 -   To clear the chat, press `Clear Chat`.
 -   To send a message, type it into the input box and press `Enter` or `Send`. To create multi-line messages, press `Shift+Enter`.
