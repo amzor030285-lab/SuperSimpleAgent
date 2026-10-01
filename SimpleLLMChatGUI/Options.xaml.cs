@@ -18,6 +18,7 @@ namespace SimpleLLMChatGUI
         private string _model;
         private string _sysPrompt;
         private int _contextWindowSize;
+        private bool _repetitionGuardEnabled;
         private string _assistantName;
         private string _thinkingDisplayModeText = "Collapsed";
         private string _toolCallDisplayModeText = "Collapsed";
@@ -109,6 +110,12 @@ namespace SimpleLLMChatGUI
         {
             get { return _contextWindowSize; }
             set { _contextWindowSize = value; OnPropertyChanged(nameof(ContextWindowSize)); }
+        }
+
+        public bool RepetitionGuardEnabled
+        {
+            get { return _repetitionGuardEnabled; }
+            set { _repetitionGuardEnabled = value; OnPropertyChanged(nameof(RepetitionGuardEnabled)); }
         }
 
         public string AssistantName
@@ -493,6 +500,9 @@ namespace SimpleLLMChatGUI
             Model = config.GetConfigValue("model");
             SysPrompt = ConfigHandler.DecodeStoredPrompt(config.GetConfigValue("sysprompt"));
             ContextWindowSize = config.GetConfigInt("contextWindowSize", 0);
+            // Same key and same default as the CLI reads in LLMClient, so the box
+            // cannot show one state while the tool runs with another.
+            RepetitionGuardEnabled = config.GetConfigInt("repetitionguard", 0) != 0;
             AssistantName = config.GetConfigValue("assistantname");
             if (string.IsNullOrWhiteSpace(AssistantName))
                 AssistantName = AppConstants.DefaultAssistantName;
@@ -667,7 +677,7 @@ namespace SimpleLLMChatGUI
                     "ragmaxresults=" + RagMaxResults,
                     "ragretrievemode=" + (RagRetrieveMode ?? "newchat"),
                 }),
-                new KeyValuePair<string, List<string>>("System", SettingsIniWriter.GetSystemSettings(ApiKey, ServerURL, ChatPath, Model, SysPrompt, ContextWindowSize)),
+                new KeyValuePair<string, List<string>>("System", SettingsIniWriter.GetSystemSettings(ApiKey, ServerURL, ChatPath, Model, SysPrompt, ContextWindowSize, RepetitionGuardEnabled)),
                 new KeyValuePair<string, List<string>>("Tools", GetToolSettings()),
             };
             AddDynamicToolSettings(sections);

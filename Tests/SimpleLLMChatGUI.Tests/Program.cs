@@ -79,6 +79,24 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("SettingsIniWriter.repetition_guard_off_on_a_fresh_install", () =>
+            {
+                using (TempWorkspace ws = new TempWorkspace("gui-ini-guard"))
+                {
+                    // A new install must not have the guard running: whether a model
+                    // loops is a property of the model, and the user is the one who
+                    // decides. The key is written explicitly so the value is visible
+                    // and editable instead of appearing only when something goes wrong.
+                    string path = ws.Combine("LLMSettings.ini");
+                    SettingsIniWriter.WriteInitialConfig(
+                        path, "key", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash", "Hello", 4096);
+
+                    string text = File.ReadAllText(path);
+                    TestAssert.Contains(text, "repetitionguard=0\r\n", "written, off");
+                    TestAssert.Equal("0", new ConfigHandler(path).GetConfigValue("repetitionguard"), "reads back off");
+                }
+            });
+
             TestRunner.Run("PresetStore.roundtrip", () =>
             {
                 using (TempWorkspace ws = new TempWorkspace("gui-preset"))
@@ -958,6 +976,73 @@ namespace SimpleLLMChatGUI.Tests
                         }
                     }
                     TestLog.Info("gui-session.perf.tsv=" + sessionPerf);
+                }
+            });
+
+            TestRunner.Run("gui.repetition_guard_box_survives_a_restart", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+                    string iniPath = Path.Combine(ws.Path, "LLMSettings.ini");
+
+                    // How prone a model is to loop is the user's call, so the key must
+                    // reach the INI the CLI reads. A box that only worked for the
+                    // session it was ticked in would silently leave the guard off.
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+
+                        // Off on a config that never mentions the key.
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "System", 10000);
+                        TestAssert.True(
+                            !gui.GetCheckBoxStateInWindow("Options", "RepetitionGuardCheckBox", 10000),
+                            "unchecked on a fresh config");
+                        gui.ClickButtonInWindow("Options", "optionsCancelButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+
+                        // Reopening Options starts on the first category, so the box
+                        // only exists to the driver once the System page is shown.
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "System", 10000);
+                        TestAssert.True(
+                            gui.SetCheckBoxInWindow("Options", "RepetitionGuardCheckBox", true, 10000),
+                            "ticked");
+                        gui.ClickButtonInWindow("Options", "optionsOkButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                        TestAssert.Equal("1", new ConfigHandler(iniPath).GetConfigValue("repetitionguard"),
+                            "saved as enabled");
+                    }
+
+                    // And it is still ticked when the app is started again.
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "System", 10000);
+                        TestAssert.True(
+                            gui.GetCheckBoxStateInWindow("Options", "RepetitionGuardCheckBox", 10000),
+                            "still ticked after a restart");
+                        gui.ClickButtonInWindow("Options", "optionsCancelButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+
+                    // Ticking it back off has to be saved too, otherwise the setting
+                    // could only ever be turned on.
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "System", 10000);
+                        gui.SetCheckBoxInWindow("Options", "RepetitionGuardCheckBox", false, 10000);
+                        gui.ClickButtonInWindow("Options", "optionsOkButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+
+                    TestAssert.Equal("0", new ConfigHandler(iniPath).GetConfigValue("repetitionguard"),
+                        "saved as disabled again");
                 }
             });
 

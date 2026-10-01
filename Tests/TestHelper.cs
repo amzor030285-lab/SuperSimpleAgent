@@ -371,6 +371,11 @@ public static class TestRunner
 
     public static void Run(string name, Action action)
     {
+        string filter = Environment.GetEnvironmentVariable("TEST_FILTER");
+        if (!string.IsNullOrEmpty(filter)
+            && name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0)
+            return;
+
         _currentProcessMs = 0;
         Stopwatch sw = Stopwatch.StartNew();
         string detail = null;

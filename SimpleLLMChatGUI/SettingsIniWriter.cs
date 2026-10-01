@@ -76,7 +76,8 @@ namespace SimpleLLMChatGUI
             string chatPath,
             string model,
             string sysPrompt,
-            int contextWindowSize)
+            int contextWindowSize,
+            bool repetitionGuard = false)
         {
             return new List<string>
             {
@@ -85,6 +86,7 @@ namespace SimpleLLMChatGUI
                 "contextWindowSize=" + contextWindowSize,
                 "llmserver=" + (llmServer ?? string.Empty),
                 "model=" + (model ?? string.Empty),
+                "repetitionguard=" + (repetitionGuard ? "1" : "0"),
                 "sysprompt=\"" + EscapePromptForStorage(sysPrompt) + "\"",
             };
         }

@@ -514,6 +514,40 @@ namespace SimpleLLMChatGUI.Tests
         }
 
         /// <summary>
+        /// Reads a checkbox without touching it, so a test can assert on the state the
+        /// app came up with rather than on a state it asked for.
+        /// </summary>
+        public bool GetCheckBoxStateInWindow(string windowTitle, string automationId, int timeoutMs)
+        {
+            AutomationElement el = FindByIdInWindow(windowTitle, automationId, timeoutMs);
+            if (el == null)
+                throw new TestFailureException("Checkbox not found: " + automationId + " in " + windowTitle);
+            TogglePattern toggle = el.GetCurrentPattern(TogglePattern.Pattern) as TogglePattern;
+            if (toggle == null)
+                throw new TestFailureException(automationId + " does not support TogglePattern");
+            return toggle.Current.ToggleState == ToggleState.On;
+        }
+
+        /// <summary>
+        /// Sets a checkbox to <paramref name="state"/> and returns what it read back,
+        /// so a test can assert on the result instead of on the click.
+        /// </summary>
+        public bool SetCheckBoxInWindow(string windowTitle, string automationId, bool state, int timeoutMs)
+        {
+            AutomationElement el = FindByIdInWindow(windowTitle, automationId, timeoutMs);
+            if (el == null)
+                throw new TestFailureException("Checkbox not found: " + automationId + " in " + windowTitle);
+            TogglePattern toggle = el.GetCurrentPattern(TogglePattern.Pattern) as TogglePattern;
+            if (toggle == null)
+                throw new TestFailureException(automationId + " does not support TogglePattern");
+
+            if (toggle.Current.ToggleState != (state ? ToggleState.On : ToggleState.Off))
+                toggle.Toggle();
+
+            return toggle.Current.ToggleState == ToggleState.On;
+        }
+
+        /// <summary>
         /// Selects the first list item whose text contains <paramref name="containsText"/>.
         /// </summary>
         public void SelectListItemInWindow(string windowTitle, string automationId, string containsText, int timeoutMs)

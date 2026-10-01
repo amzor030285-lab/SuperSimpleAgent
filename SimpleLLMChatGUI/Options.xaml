@@ -224,6 +224,14 @@
                              Text="{Binding ContextWindowSize, UpdateSourceTrigger=PropertyChanged}"
                              Height="23"/>
 
+                    <!-- Repetition Guard -->
+                    <CheckBox x:Name="RepetitionGuardCheckBox"
+                              AutomationProperties.AutomationId="RepetitionGuardCheckBox"
+                              Content="Stop repetitive output automatically"
+                              IsChecked="{Binding RepetitionGuardEnabled, UpdateSourceTrigger=PropertyChanged}"
+                              ToolTip="Cuts the answer off when the model repeats the same block back to back. Off by default: some models loop, some never do, so it is your call."
+                              Margin="0,10,0,0"/>
+
                 </StackPanel>
             </ScrollViewer>
 

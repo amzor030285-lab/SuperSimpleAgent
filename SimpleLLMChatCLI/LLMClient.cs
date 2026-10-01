@@ -1544,8 +1544,11 @@ public class LLMClient
         // three comparisons, so the added work stays small next to the per-token
         // parsing already happening here. Only content is guarded: reasoning is kept
         // out of the window so unrelated thinking text cannot look like a content loop.
+        // Off unless the user asks for it: how prone a model is to loop is a property
+        // of the model, so the call is theirs to make (Options, next to Context Window
+        // Size, or repetitionguard=1 in the INI).
         Action<string> guardedOutput = outputCallback;
-        if (outputCallback != null && config.GetConfigInt("repetitionguard", 1) != 0)
+        if (outputCallback != null && config.GetConfigInt("repetitionguard", 0) != 0)
         {
             RepetitionGuard guard = new RepetitionGuard();
             guardedOutput = delegate (string chunk)

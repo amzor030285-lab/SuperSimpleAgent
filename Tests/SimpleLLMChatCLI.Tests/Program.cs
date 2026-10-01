@@ -137,6 +137,147 @@ namespace SimpleLLMChatCLI.Tests
                   "20k appends in " + watch.ElapsedMilliseconds + " ms");
           });
 
+          TestRunner.Run("RepetitionGuard.cuts_a_loop_early", () =>
+          {
+              // The point of counting copies instead of characters: this loop is caught
+              // after a few hundred characters, not after thousands the reader has
+              // already scrolled past.
+              RepetitionGuard guard = new RepetitionGuard();
+              string block = "*Wait*, I will check the date.\n\n*Date Check Command:* `date /t`\n\n*Output:*\nOk.\n\n";
+              int appended = 0;
+              for (int i = 0; i < 200 && !guard.Tripped; i++)
+              {
+                  guard.Append(block);
+                  appended += block.Length;
+              }
+
+              TestAssert.True(guard.Tripped, "loop must trip");
+              TestAssert.True(appended < 1000,
+                  "caught after " + appended + " characters, expected well under 1000");
+          });
+
+          TestRunner.Run("RepetitionGuard.survives_a_loop_with_one_irregular_copy", () =>
+          {
+              // Real loops are not byte-perfect: one copy in the log lost a full stop.
+              // That must neither hide the loop nor be what catches it.
+              RepetitionGuard guard = new RepetitionGuard();
+              string block = "Checking the date again.\nResult: Ok.\n\n";
+              guard.Append("Sure, let me look at that.\n\n");
+              for (int i = 0; i < 60; i++)
+              {
+                  if (i == 7)
+                      guard.Append("Checking the date again.\nResult: Ok\n\n");
+                  else
+                      guard.Append(block);
+              }
+
+              TestAssert.True(guard.CheckNow(), "loop with one irregular copy must trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.needs_the_repeat_to_persist", () =>
+          {
+              // A long passage quoted back a bounded number of times is one confirmed
+              // run, not a runaway. The guard has to see the same thing again on the
+              // next checks before it cuts anything, which is what lets the copy count
+              // stay as low as it is.
+              RepetitionGuard guard = new RepetitionGuard();
+              string prose = "Here is a list of the configuration keys I found in your file. "
+                  + "First, llmserver names the endpoint. Second, apikey holds the credential. "
+                  + "Third, streamstalltimeout bounds a silent stream. "
+                  + "Fourth, requesttimeout bounds the whole request. "
+                  + "Each key is documented in the README under configuration. ";
+              for (int i = 0; i < 4; i++)
+                  guard.Append(prose);
+
+              TestAssert.True(!guard.CheckNow(), "one confirmed run must not be enough");
+          });
+
+          TestRunner.Run("RepetitionGuard.ignores_a_short_run", () =>
+          {
+              // A short block repeated a few times is what ordinary prose does by
+              // accident; it never amounts to enough output to be worth cutting.
+              RepetitionGuard guard = new RepetitionGuard();
+              string block = "The quick brown fox jumps over the lazy dog.\n";
+              for (int i = 0; i < 5; i++)
+                  guard.Append(block);
+
+              TestAssert.True(!guard.CheckNow(), "a short run must not trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.ignores_repeated_code_blocks", () =>
+          {
+              // Valid code repeats its boilerplate; a code block emitted 30 times is
+              // not a runaway and must not be cut. The lines are long enough that the
+              // minimum run length alone would not save them.
+              RepetitionGuard guard = new RepetitionGuard();
+              for (int i = 0; i < 30; i++)
+              {
+                  guard.Append("```csharp\n");
+                  guard.Append("for (int index = 0; index < items.Length; index++)\n");
+                  guard.Append("{\n");
+                  guard.Append("    total += items[index].Value;\n");
+                  guard.Append("}\n");
+                  guard.Append("```\n");
+              }
+
+              TestAssert.True(!guard.CheckNow(), "repeated code must not trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.ignores_repeated_table_rows", () =>
+          {
+              // A table of identical rows is literally periodic. The rows are long
+              // enough that only the table handling keeps it from being cut.
+              RepetitionGuard guard = new RepetitionGuard();
+              guard.Append("Here are the supported configuration keys:\n\n");
+              guard.Append("| configuration key | default value | description |\n");
+              for (int i = 0; i < 100; i++)
+                  guard.Append("| apikeysource | environment | where the credential is read |\n");
+
+              TestAssert.True(!guard.CheckNow(), "table rows must not trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.ignores_line_endings_and_spacing", () =>
+          {
+              // Token streams split lines anywhere and mix \r\n with \n. A repeat that
+              // only differs in its whitespace is still a repeat.
+              RepetitionGuard guard = new RepetitionGuard();
+              string block = "Result: done.\nSteps: 1, 2, 3.\nDone.\n\n";
+              for (int i = 0; i < 40; i++)
+                  guard.Append(i % 2 == 0
+                      ? block
+                      : block.Replace("\n", "\r\n").Replace("Result:", "Result:  "));
+
+              TestAssert.True(guard.CheckNow(), "repeat across mixed line endings must trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.detects_a_loop_that_follows_code", () =>
+          {
+              // Leaving a fence must restore detection; otherwise one code block early
+              // in the answer would blind the guard for the rest of the response.
+              RepetitionGuard guard = new RepetitionGuard();
+              guard.Append("Here is the snippet you asked for.\n\n```\nprint(1)\nprint(2)\n```\n\n");
+              for (int i = 0; i < 60; i++)
+                  guard.Append("And here is another line of prose that repeats itself.\n");
+
+              TestAssert.True(guard.CheckNow(), "loop after a code block must trip");
+          });
+
+          TestRunner.Run("RepetitionGuard.detects_a_loop_split_across_chunks", () =>
+          {
+              // Streaming cuts the block at arbitrary points, including inside the
+              // fence marker, so neither the run nor the fence state may assume a
+              // chunk boundary lines up with anything.
+              RepetitionGuard guard = new RepetitionGuard();
+              string block = "*Wait*, I will check the date.\n\n*Output:*\nOk.\n\n";
+              for (int i = 0; i < 200 && !guard.Tripped; i++)
+              {
+                  for (int c = 0; c < block.Length && !guard.Tripped; c += 3)
+                      guard.Append(block.Substring(c, Math.Min(3, block.Length - c)));
+              }
+
+              TestAssert.True(guard.Tripped, "loop split into 3-character chunks must trip");
+          });
+
           TestRunner.Run("TokenEstimator.basic", () =>
             {
                 TestAssert.Equal(0, TokenEstimator.ApproximateTokens(0), "zero");
@@ -846,7 +987,8 @@ namespace SimpleLLMChatCLI.Tests
                     server.FixedReply = Repeat(loop, 400);
                     server.StreamDelayMs = 0;
                     server.StreamChunkChars = 64;
-                    WriteCliIni(ws.Path, server.BaseUrl);
+                    // The guard is off unless asked for, so this test opts in.
+                    WriteCliIni(ws.Path, server.BaseUrl, repetitionGuard: 1);
 
                     using (CliRunner cli = new CliRunner(
                         Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
@@ -880,8 +1022,10 @@ namespace SimpleLLMChatCLI.Tests
                     server.FixedReply = Repeat(loop, 400);
                     server.StreamDelayMs = 0;
                     server.StreamChunkChars = 64;
-                    // repetitionguard=0 turns the check off, for anyone who has a
-                    // legitimate response it would otherwise cut short.
+                    // repetitionguard=0 turns the check off explicitly, for anyone who has a
+                    // legitimate response it would otherwise cut short. This is the
+                    // same state a fresh install is in, so the default is pinned by
+                    // the next test rather than by this one.
                     WriteCliIni(ws.Path, server.BaseUrl, 0, "", 120, 300, "", 0);
 
                     using (CliRunner cli = new CliRunner(
@@ -896,6 +1040,37 @@ namespace SimpleLLMChatCLI.Tests
                         TestAssert.True(
                             cli.Stdout.IndexOf("in a loop", StringComparison.Ordinal) < 0,
                             "guard stayed off, no loop notice");
+                        int rendered = cli.Stdout.Split(new string[] { loop }, StringSplitOptions.None).Length - 1;
+                        TestAssert.True(rendered > 300, "loop streamed whole, copies rendered=" + rendered);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.repetition_guard_is_off_by_default", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // How prone a model is to loop is a property of the model, so the
+                    // check does not run unless the user asked for it. An INI with no
+                    // repetitionguard key is what a fresh install and every existing
+                    // config look like, and the runaway has to stream to its end.
+                    string loop = "The answer is always the same. ";
+                    server.FixedReply = Repeat(loop, 400);
+                    server.StreamDelayMs = 0;
+                    server.StreamChunkChars = 64;
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("tell me something");
+
+                        CliRunner.WaitForTextAfter(cli, loop, "You: ", 60000);
+                        TestAssert.True(
+                            cli.Stdout.IndexOf("in a loop", StringComparison.Ordinal) < 0,
+                            "no loop notice when the guard was never enabled");
                         int rendered = cli.Stdout.Split(new string[] { loop }, StringSplitOptions.None).Length - 1;
                         TestAssert.True(rendered > 300, "loop streamed whole, copies rendered=" + rendered);
                     }
