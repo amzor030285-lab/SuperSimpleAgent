@@ -6,6 +6,41 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Per-model repetitive-output guard, off by default** - a `Stop repetitive output automatically`
+  box on the System page of Options, next to `Context Window Size`, writes `repetitionguard` to
+  `LLMSettings.ini`. The key already existed and defaulted to on, so the guard was running with no
+  way to see it; how prone a model is to loop is a property of the model, so it is now off unless
+  asked for - the box, or `repetitionguard=1` by hand.
+
+- **Versioned provider endpoints and saved presets** - a base URL may carry the version
+  (`.../v1`), or the chat path may be set separately in `chatpath`; the CLI detects it when the
+  field is left empty, which is right for every provider that keeps the version in the base URL.
+  System settings can be saved as a named preset and recalled instead of retyping a provider,
+  model and key.
+
+### Changed
+
+- **A repeating response is cut after a few copies, not 4000 characters** - the guard counted
+  characters of an unbroken repeat, so a model looping an 80-character block had to get through
+  4000 of them, about 15 repetitions of text already scrolled past. It now counts copies: four
+  back-to-back copies of one block, confirmed on three checks in a row, so the example log goes
+  from 30.5 s to 0.77 s. Three problems that hid loops are gone: one irregular copy no longer
+  ends the walk backwards (a single missing full stop was enough), text is normalized on arrival
+  so a chunk boundary cannot split a line or a fence marker, and fenced code plus Markdown table
+  rows are held out of the comparison - a 30-times repeated code loop and a table of 100 identical
+  rows are both literally periodic, and neither is a runaway.
+
+### Fixed
+
+- **Repeated compaction no longer drops the previous summary** - a second compaction in one turn
+  summarized the conversation again from scratch, because the summary it was meant to build on was
+  written after the pass that reads it had already taken its slice. The recap of a recap is now
+  built from the recap.
+
 ## [1.0.4] - 2026-09-29
 
 Cyrillic console output is decoded correctly, the chat stops yanking the viewport
