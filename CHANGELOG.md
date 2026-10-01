@@ -34,6 +34,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   rows are held out of the comparison - a 30-times repeated code loop and a table of 100 identical
   rows are both literally periodic, and neither is a runaway.
 
+### Tests
+
+- The GUI driver no longer re-walks the whole window tree every 50 ms while waiting for
+  a turn. Re-finding `sendButton` that way meant up to 600 full UI Automation tree walks
+  per wait, competing for CPU with the UI thread whose state the wait was for - a rotating
+  handful of cases failed with `sendButton never entered Stop state` depending on machine
+  load, on cases with nothing in common. The elements are now remembered between polls.
+
+- Waits are state-based rather than time-based. "Turn finished" used to be inferred from
+  a 1.5 s grace period, and the send button's caption alone does not prove it: the app
+  flips the caption back to `Send` when generation completes, but the last of the text can
+  still be arriving, so a caller could assert on a half-written reply - which is exactly
+  what `gui.second_turn_still_streams` was doing about half the time. A wait now ends on
+  "not generating and the transcript has stopped growing". A failed wait also reports what
+  it saw (caption, input state, whether the process is alive), and `StartTurn` confirms the
+  text reached the input before clicking, so a lost click is no longer reported as a
+  timeout.
+
+- Known remaining: `gui.stop_button_interrupts` fails about half the time, and its
+  transcript shows why - the reply is cut short (~200 of 3000 characters) on a stream the
+  server holds open for 15 s, before the test gets to press Stop. That is an unanswered
+  question about the product, not the harness, and is left visible rather than retuned
+  away.
+
 ### Fixed
 
 - **Repeated compaction no longer drops the previous summary** - a second compaction in one turn

@@ -17,6 +17,15 @@ namespace SimpleLLMChatGUI.Tests
         private AutomationElement _window;
         private readonly string _workDir;
 
+        // The two elements the waits below poll. Cached because the alternative
+        // - FindFirst over Descendants every 50 ms - walks the whole window tree
+        // up to 600 times per wait, and that cross-process traffic competes with
+        // the very UI thread whose state the wait is for. The symptom was a
+        // rotating handful of cases failing with "sendButton never entered Stop
+        // state", worse under load, on cases with nothing in common.
+        private readonly Dictionary<string, AutomationElement> _hot =
+            new Dictionary<string, AutomationElement>(StringComparer.Ordinal);
+
         public Process GuiProcess { get { return _gui; } }
         public string WorkDir { get { return _workDir; } }
 
@@ -68,8 +77,8 @@ namespace SimpleLLMChatGUI.Tests
         /// </summary>
         public void StartTurn(string text, int timeoutMs)
         {
-            AutomationElement input = FindById("chatInput");
-            AutomationElement send = FindById("sendButton");
+            AutomationElement input = Hot("chatInput");
+            AutomationElement send = Hot("sendButton");
             if (input == null || send == null)
                 throw new TestFailureException("chatInput/sendButton not found");
 
@@ -80,65 +89,181 @@ namespace SimpleLLMChatGUI.Tests
             else
                 throw new TestFailureException("chatInput does not support ValuePattern");
 
+            // Confirm the text landed before clicking. SetValue is asynchronous
+            // with respect to the app, and if the click wins that race the app is
+            // asked to send an empty turn - the wait below would then blame the
+            // app for a timeout the harness caused, and say nothing about the
+            // real cause.
+            string wanted = text ?? "";
+            string landed = "";
+            try { landed = value.Current.Value ?? ""; } catch { }
+            if (!string.Equals(landed, wanted, StringComparison.Ordinal))
+                throw new TestFailureException(
+                    "chatInput did not take the text: set " + wanted.Length +
+                    " chars, read back " + landed.Length);
+
             InvokePattern invoke = send.GetCurrentPattern(InvokePattern.Pattern) as InvokePattern;
             if (invoke == null)
                 throw new TestFailureException("sendButton does not support InvokePattern");
             invoke.Invoke();
 
-            // Wait until the button switches from Send to Stop (generation started).
+            // Wait until generation starts. The app switches the caption and
+            // disables the input together in EnterGeneratingMode, before any
+            // request is made, so neither can be delayed by a slow model.
             Stopwatch sw = Stopwatch.StartNew();
             while (sw.ElapsedMilliseconds < timeoutMs)
             {
-                AutomationElement current = FindById("sendButton");
-                if (current != null && current.Current.Name == "Stop")
+                if (IsGenerating())
                     return;
                 Thread.Sleep(50);
             }
             throw new TestFailureException(
-                "sendButton never entered Stop state within " + timeoutMs + " ms");
+                "sendButton never entered Stop state within " + timeoutMs + " ms" + DescribeState());
         }
 
         /// <summary>
-        /// Waits until the button returns from "Stop" to "Send" (generation complete).
-        /// Fast replies may complete before the first poll.
+        /// Generation is on when the caption reads "Stop" or the input is disabled.
+        /// Either alone is conclusive, so a late or stale name read cannot hide a
+        /// turn that did start.
+        /// </summary>
+        private bool IsGenerating()
+        {
+            AutomationElement send = Hot("sendButton");
+            if (send != null && NameOf(send) == "Stop")
+                return true;
+
+            AutomationElement input = Hot("chatInput");
+            if (input != null && !IsEnabled(input))
+                return true;
+
+            return false;
+        }
+
+        /// <summary>
+        /// What the app actually looked like when a wait gave up, so the next
+        /// failure says which of the three possible causes it was.
+        /// </summary>
+        private string DescribeState()
+        {
+            string caption = "<unreadable>";
+            string inputState = "<unreadable>";
+            string guiState = "unknown";
+
+            try
+            {
+                AutomationElement send = Hot("sendButton");
+                caption = send == null ? "absent" : NameOf(send);
+            }
+            catch { }
+
+            try
+            {
+                AutomationElement input = Hot("chatInput");
+                inputState = input == null ? "absent" : (IsEnabled(input) ? "enabled" : "disabled");
+            }
+            catch { }
+
+            try { guiState = _gui.HasExited ? "exited" : "alive"; } catch { }
+
+            return "; observed: sendButton=" + caption + ", chatInput=" + inputState +
+                   ", gui=" + guiState;
+        }
+
+        private static string NameOf(AutomationElement element)
+        {
+            return element.Current.Name ?? "";
+        }
+
+        private static bool IsEnabled(AutomationElement element)
+        {
+            return element.Current.IsEnabled;
+        }
+
+        /// <summary>
+        /// A polled element, remembered between polls and re-found only if it has
+        /// actually gone away. Reading a property is what proves it is still live.
+        /// </summary>
+        private AutomationElement Hot(string automationId)
+        {
+            AutomationElement cached;
+            if (_hot.TryGetValue(automationId, out cached) && cached != null)
+            {
+                try
+                {
+                    NameOf(cached);
+                    return cached;
+                }
+                catch (ElementNotAvailableException) { _hot.Remove(automationId); }
+                catch (InvalidOperationException) { _hot.Remove(automationId); }
+            }
+
+            AutomationElement found = FindById(automationId);
+            if (found != null)
+                _hot[automationId] = found;
+            return found;
+        }
+
+        /// <summary>
+        /// Waits until the turn is over: the button is no longer a Stop button and
+        /// the transcript has stopped growing.
+        ///
+        /// The caption alone is not enough, and neither is a grace period. The app
+        /// flips the caption back to Send when generation completes, but the last
+        /// of the text can still be arriving - which is exactly what these waits
+        /// used to hand back, and the caller then asserted on a truncated reply.
+        /// A fixed "assume it was a fast reply" timeout had the same flaw from the
+        /// other side: during the gap between the click and the first token nothing
+        /// is appended, so a stable transcript proves nothing either. Both signals
+        /// together are what actually identify the end of a turn.
         /// </summary>
         public void WaitUntilIdle(int timeoutMs)
         {
+            const int StableMs = 800;   // wider than the 300 ms inter-chunk gap the tests stream with
+            const int PollMs = 100;
+
             Stopwatch sw = Stopwatch.StartNew();
-            bool sawStop = false;
+            string previous = null;
+            long stableSince = -1;
+
             while (sw.ElapsedMilliseconds < timeoutMs)
             {
-                AutomationElement send = FindById("sendButton");
-                if (send == null)
+                AutomationElement send = Hot("sendButton");
+                bool generating = send != null && NameOf(send) == "Stop";
+
+                // Walking the tree while a reply streams is pure overhead: the
+                // caption already answers the question.
+                string now = generating ? null : SafeAllText();
+
+                if (now != null && string.Equals(now, previous, StringComparison.Ordinal))
                 {
-                    Thread.Sleep(50);
-                    continue;
+                    if (stableSince < 0)
+                        stableSince = sw.ElapsedMilliseconds;
+                    else if (sw.ElapsedMilliseconds - stableSince >= StableMs)
+                        return;
                 }
-                string name = send.Current.Name ?? "";
-                if (name == "Stop")
+                else
                 {
-                    sawStop = true;
+                    previous = now;
+                    stableSince = -1;
                 }
-                else if (sawStop)
-                {
-                    return;
-                }
-                else if (sw.ElapsedMilliseconds > 1500)
-                {
-                    // Never observed Stop: very fast reply, already back to Send.
-                    return;
-                }
-                Thread.Sleep(50);
+
+                Thread.Sleep(PollMs);
             }
+
             throw new TestFailureException(
-                "Button did not return to Send within " + timeoutMs + " ms");
+                "Button did not return to Send within " + timeoutMs + " ms" + DescribeState());
+        }
+
+        private string SafeAllText()
+        {
+            try { return GetAllText(); } catch { return null; }
         }
 
         /// <summary>Current sendButton caption ("Send", "Stop"), or null if not found.</summary>
         public string SendButtonName()
         {
-            AutomationElement send = FindById("sendButton");
-            return send == null ? null : send.Current.Name;
+            AutomationElement send = Hot("sendButton");
+            return send == null ? null : NameOf(send);
         }
 
         /// <summary>Clicks the send/stop button (whatever its current mode).</summary>

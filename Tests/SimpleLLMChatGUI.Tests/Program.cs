@@ -494,7 +494,8 @@ namespace SimpleLLMChatGUI.Tests
 
                         // Wait out the double-click guard before clicking Stop.
                         Thread.Sleep(800);
-                        TestAssert.Equal("Stop", gui.SendButtonName(), "button shows Stop while generating");
+                        TestAssert.Equal("Stop", gui.SendButtonName(),
+                            "button shows Stop while generating; transcript tail: " + Tail(gui.GetAllText()));
                         gui.ClickSend();
 
                         gui.WaitUntilIdle(20000);
@@ -1243,6 +1244,17 @@ namespace SimpleLLMChatGUI.Tests
             }
 
             throw new FileNotFoundException("not found above " + name, name);
+        }
+
+        // The last part of the window text: enough to tell a truncated reply from
+        // an error message from a missing request, which is what a failing wait
+        // otherwise cannot say.
+        static string Tail(string text)
+        {
+            if (text == null)
+                return "<null>";
+            string flat = text.Replace("\r\n", " ").Replace("\n", " ").Replace("\r", " ");
+            return flat.Length <= 400 ? flat : flat.Substring(flat.Length - 400);
         }
 
         static string JsonText(string text)
