@@ -77,8 +77,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Repeated compaction no longer drops the previous summary** - a second compaction in one turn
   summarized the conversation again from scratch, because the summary it was meant to build on was
-  written after the pass that reads it had already taken its slice. The recap of a recap is now
-  built from the recap.
+   written after the pass that reads it had already taken its slice. The recap of a recap is now
+   built from the recap.
+
+- **The repetition guard no longer misses a loop, and no longer misfires.** The copy
+  count was capped by a floor division, so a loop whose block length does not divide the
+  200-character minimum (for example a 44-character block) was walked short of the mass
+  floor and cut off from being detected at all; the cap is now a ceiling. A run of
+  backticks inside a table row could latch the code-fence state and freeze the comparison
+  window for the rest of the answer, and a frozen window kept re-confirming a stale repeat,
+  so a long code block that followed a bounded repeat was cut as if it were a loop; table
+  rows are now held out of the fence state and a hit only counts when the window actually
+  grows.
 
 ## [1.0.4] - 2026-09-29
 

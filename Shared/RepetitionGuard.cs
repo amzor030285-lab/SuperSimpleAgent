@@ -91,6 +91,12 @@ public sealed class RepetitionGuard
     private int _sinceCheck;
     private int _hits;
 
+    /// <summary>Total characters actually kept in the window; grows only when the window grows.</summary>
+    private int _charsKept;
+
+    /// <summary>Window length at the last hit; a new hit must advance past it.</summary>
+    private int _lastHitCharsKept;
+
     private bool _inFence;
     private bool _linePending = true;
     private bool _suppress;
@@ -143,6 +149,26 @@ public sealed class RepetitionGuard
     /// <summary>Classifies one incoming character and keeps it only if it counts.</summary>
     private void Consume(char c)
     {
+        // A line ending resets the line state and clears any pending backtick run, so
+        // one or two backticks cannot straddle a line break and combine with the next
+        // line to form a spurious fence marker.
+        if (c == '\n')
+        {
+            _linePending = true;
+            _suppress = false;
+            _pendingIndent.Length = 0;
+            _pendingSpace = false;
+            _pendingTicks = 0;
+            if (!_inFence)
+                Keep('\n');
+            return;
+        }
+
+        // A table row is held out of the comparison entirely, so nothing inside it -
+        // including a run of backticks - may change the fence state.
+        if (_suppress)
+            return;
+
         // A fence marker may straddle two chunks, so a run of one or two backticks is
         // held back until the character after it settles it.
         if (_pendingTicks > 0)
@@ -163,17 +189,6 @@ public sealed class RepetitionGuard
         if (c == '`')
         {
             _pendingTicks = 1;
-            return;
-        }
-
-        if (c == '\n')
-        {
-            _linePending = true;
-            _suppress = false;
-            _pendingIndent.Length = 0;
-            _pendingSpace = false;
-            if (!_inFence)
-                Keep('\n');
             return;
         }
 
@@ -198,9 +213,6 @@ public sealed class RepetitionGuard
 
             _pendingIndent.Length = 0;
         }
-
-        if (_suppress)
-            return;
 
         Keep(c);
     }
@@ -251,6 +263,7 @@ public sealed class RepetitionGuard
     private void AppendWindow(char c)
     {
         _window.Append(c);
+        _charsKept++;
 
         if (_window.Length > WindowChars * 2)
             _window.Remove(0, _window.Length - WindowChars);
@@ -292,6 +305,16 @@ public sealed class RepetitionGuard
 
             if (copies >= MinRepeatedRepeats && copies * period >= MinRepeatedRunChars)
             {
+                // A hit only counts if the window actually advanced since the last one. A
+                // frozen window - held-out code or a latched fence - re-shows the same stale
+                // tail on every check and must not keep earning hits from it.
+                if (_charsKept == _lastHitCharsKept)
+                {
+                    _hits = 0;
+                    return;
+                }
+
+                _lastHitCharsKept = _charsKept;
                 if (++_hits >= ConsecutiveHitsRequired)
                 {
                     Tripped = true;
@@ -304,6 +327,7 @@ public sealed class RepetitionGuard
         }
 
         _hits = 0;
+        _lastHitCharsKept = _charsKept;
     }
 
     /// <summary>Checks three characters at the end against the same period before it.</summary>
@@ -328,7 +352,10 @@ public sealed class RepetitionGuard
     {
         // The final block always matches itself.
         int copies = 1;
-        int wanted = MinRepeatedRunChars / period;
+        // Ceiling, not floor: reaching `wanted` copies must be exactly equivalent to
+        // clearing MinRepeatedRunChars, so a loop whose period does not divide 200 is
+        // not walked short of the mass floor and then missed.
+        int wanted = (MinRepeatedRunChars + period - 1) / period;
 
         if (wanted < MinRepeatedRepeats)
             wanted = MinRepeatedRepeats;

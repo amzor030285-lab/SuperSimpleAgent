@@ -669,7 +669,9 @@ namespace SimpleLLMChatGUI.Tests
             if (toggle.Current.ToggleState != (state ? ToggleState.On : ToggleState.Off))
                 toggle.Toggle();
 
-            return toggle.Current.ToggleState == ToggleState.On;
+            // Read back through a fresh query: out-of-process providers cache Current
+            // properties, so reusing the pattern above can return a stale state.
+            return GetCheckBoxStateInWindow(windowTitle, automationId, timeoutMs);
         }
 
         /// <summary>

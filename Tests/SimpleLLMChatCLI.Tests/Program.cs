@@ -275,8 +275,50 @@ namespace SimpleLLMChatCLI.Tests
                       guard.Append(block.Substring(c, Math.Min(3, block.Length - c)));
               }
 
-              TestAssert.True(guard.Tripped, "loop split into 3-character chunks must trip");
-          });
+               TestAssert.True(guard.Tripped, "loop split into 3-character chunks must trip");
+           });
+
+           TestRunner.Run("RepetitionGuard.trips_a_loop_whose_period_does_not_divide_the_floor", () =>
+           {
+               // The walk cap must be a ceiling, not a floor: with floor division a
+               // 44-character block caps at 4 copies (176 < 200) and the loop is missed
+               // entirely. 44 does not divide 200.
+               RepetitionGuard guard = new RepetitionGuard();
+               string block = "The quick brown fox jumps over the lazy dog ";
+               for (int i = 0; i < 400 && !guard.Tripped; i++)
+                   guard.Append(block);
+
+               TestAssert.True(guard.Tripped, "non-divisor-period loop must trip");
+           });
+
+           TestRunner.Run("RepetitionGuard.table_row_with_a_fence_does_not_freeze_the_window", () =>
+           {
+               // A table row is held out of the comparison, so a backtick fence inside it
+               // must not latch the fence state and freeze the window. A loop after the
+               // row still has to trip.
+               RepetitionGuard guard = new RepetitionGuard();
+               guard.Append("| language | sample |\n");
+               guard.Append("| csharp | ```csharp |\n");
+               for (int i = 0; i < 400 && !guard.Tripped; i++)
+                   guard.Append("repeating block again and again and over\n");
+
+               TestAssert.True(guard.Tripped, "loop after a table row with a fence must trip");
+           });
+
+           TestRunner.Run("RepetitionGuard.frozen_window_does_not_trip_on_a_stale_tail", () =>
+           {
+               // A bounded repeat followed by a long code block leaves a stale repeat at
+               // the window tail while the window is frozen. That must not earn the hits
+               // that cut the legitimate code block.
+               RepetitionGuard guard = new RepetitionGuard();
+               string block = "The quick brown fox jumps over the lazy dog. ";
+               guard.Append(block + block + block + block);
+               guard.Append("```csharp\n");
+               for (int i = 0; i < 20; i++)
+                   guard.Append("int total = items[index].Value;\n");
+
+               TestAssert.True(!guard.Tripped, "a frozen window after a bounded repeat must not trip");
+           });
 
           TestRunner.Run("TokenEstimator.basic", () =>
             {
