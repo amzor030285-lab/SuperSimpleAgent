@@ -1558,6 +1558,24 @@ namespace SimpleLLMChatCLI.Tests
                     !PlanMode.IsPlanWriteOutsidePlanFile(
                         "write_file", planPath.ToUpperInvariant(), null),
                     "plan path is compared case-insensitively");
+
+                // edit_file is a plan writer too, so it obeys the same path rules.
+                TestAssert.True(
+                    !PlanMode.IsPlanWriteOutsidePlanFile("edit_file", planPath, null),
+                    "edit_file may write the plan file");
+                TestAssert.True(
+                    PlanMode.IsPlanWriteOutsidePlanFile("edit_file", "C:\\Windows\\evil.txt", null),
+                    "edit_file cannot write anywhere else");
+
+                // Unusual spellings that point at something other than the local plan
+                // file must still be refused: a UNC share and a \\?-extended external
+                // path can never resolve to the plan file, so both are denied.
+                TestAssert.True(
+                    PlanMode.IsPlanWriteOutsidePlanFile("write_file", "\\\\server\\share\\plan.md", null),
+                    "a UNC path is refused");
+                TestAssert.True(
+                    PlanMode.IsPlanWriteOutsidePlanFile("write_file", "\\\\?\\C:\\Windows\\evil.txt", null),
+                    "a \\?-extended external path is refused");
             });
 
             TestRunner.Run("cli.plan_mode_mode_cycle", () =>
@@ -1639,6 +1657,58 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.plan_mode_writes_plan_file", () =>
+            {
+                // The positive path: a write to the plan file itself is allowed in
+                // plan mode and lands on disk. This pins the contract that the pinned
+                // schema description, the allowlist and FileTools' resolution all agree.
+                string fileToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "FileTools", "bin", "Release"));
+                string fileToolsExe = Path.Combine(fileToolsDir, "FileTools.exe");
+                if (!File.Exists(fileToolsExe))
+                {
+                    TestRunner.Skip("FileTools.exe not built: " + fileToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "write_file";
+                    string planPath = Path.Combine(ws.Path, "plans", "plan.md");
+                    var args = new JObject();
+                    args["filename"] = planPath;
+                    args["content"] = "the plan body";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.FixedReply = "Plan written reply.";
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(fileToolsExe, Path.Combine(toolsDir, "FileTools.exe"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "FileTools.json"), Path.Combine(toolsDir, "FileTools.json"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "read_file,write_file");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval plan"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("write the plan");
+                        CliRunner.WaitForText(cli, server.FixedReply, 60000);
+
+                        TestAssert.True(File.Exists(planPath), "plan mode allowed the write to the plan file");
+                        TestAssert.True(
+                            File.ReadAllText(planPath).Contains("the plan body"),
+                            "the plan file contains what the model wrote");
+                    }
+                }
+            });
+
             TestRunner.Run("cli.plan_mode_history_marker", () =>
             {
                 // The system prompt is rebuilt every turn, so it carries no record of
@@ -1680,6 +1750,37 @@ namespace SimpleLLMChatCLI.Tests
                         TestAssert.True(
                             AnyBodyHasMessageText(server.ReceivedBodies, "You have switched out of PLAN MODE"),
                             "disabling plan injects the exit marker");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.plan_mode_toggle_collapses", () =>
+            {
+                // Two toggles with no chat in between must not stack two synthetic
+                // "user" messages: the second replaces the first, so the request
+                // carries exactly one marker.
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.FixedReply = "Toggle reply.";
+                    server.StreamDelayMs = 5;
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "read_file");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("/plan on");
+                        cli.WriteLine("/plan off");
+                        cli.WriteLine("hello there");
+                        CliRunner.WaitForText(cli, server.FixedReply, 60000);
+
+                        JArray last = MessagesOf(JObject.Parse(server.ReceivedBodies[server.ReceivedBodies.Count - 1]));
+                        TestAssert.Equal(
+                            1, CountPlanMarkers(last),
+                            "back-to-back toggles collapse to a single marker message");
                     }
                 }
             });
@@ -2904,6 +3005,22 @@ namespace SimpleLLMChatCLI.Tests
                 }
             }
             return false;
+        }
+
+        /// <summary>Number of synthetic plan-mode marker messages in one request body.</summary>
+        static int CountPlanMarkers(JArray messages)
+        {
+            int count = 0;
+            foreach (JToken token in messages)
+            {
+                JObject msg = token as JObject;
+                if (msg == null)
+                    continue;
+                string content = (string)msg["content"];
+                if (content != null && content.IndexOf("You have switched", StringComparison.Ordinal) >= 0)
+                    count++;
+            }
+            return count;
         }
 
         static int CountReasoning(JObject payload)

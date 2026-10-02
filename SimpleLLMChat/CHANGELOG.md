@@ -19,9 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   plan mode, but with the guarantee OpenCode's non-experimental mode does not have: OpenCode only
   asks the model to behave (`edit` and `bash` stay `allow`, the tool list is unchanged), so a
   determined model can still write there. Turning plan mode off returns the button to `ask`.
-  The system prompt is rebuilt every turn, so it never records *when* the mode changed; turning
-  plan mode on or off therefore also drops a short reminder into the conversation itself, so the
-  model sees the switch in context rather than having to infer it.
+   The system prompt is rebuilt every turn, so it never records *when* the mode changed; turning
+   plan mode on or off therefore also drops a short reminder into the conversation itself, so the
+   model sees the switch in context rather than having to infer it. Back-to-back toggles with no
+   chat between them collapse into a single reminder, keeping the message roles alternating for
+   picky OpenAI-compatible endpoints; `/plan` takes only `on`/`off`.
 
 - **Per-model repetitive-output guard, off by default** - a `Stop repetitive output automatically`
   box on the System page of Options, next to `Context Window Size`, writes `repetitionguard` to

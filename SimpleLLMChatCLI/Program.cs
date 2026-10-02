@@ -22,17 +22,17 @@ namespace SimpleLLMChatCLI
         {
             ChatOutput.WriteLine("================== SimpleLLMChat ==================");
             ChatOutput.WriteLine("| Commands:                                       |");
-            ChatOutput.WriteLine("| /approval [ask|auto|config|plan]: Tool approval mode |");
+            ChatOutput.WriteLine("| /approval <mode>: ask auto config plan          |");
             ChatOutput.WriteLine("| /buildindex: Reconcile knowledge index          |");
             ChatOutput.WriteLine("| /clear: Clear chat context                      |");
             ChatOutput.WriteLine("| /clearindex: Clear knowledge index              |");
             ChatOutput.WriteLine("| /compact: Drop old tool messages                |");
-            ChatOutput.WriteLine("| /compactfull: Full compaction (micro+summarize)  |");
+            ChatOutput.WriteLine("| /compactfull: Full compaction (micro+summarize) |");
             ChatOutput.WriteLine("| /delete name: Delete a saved session            |");
             ChatOutput.WriteLine("| /exit: Exit the application                     |");
-            ChatOutput.WriteLine("| /image \"path\" prompt: Send an image             |");
+            ChatOutput.WriteLine("| /image \"path\" prompt: Send an image           |");
             ChatOutput.WriteLine("| /load keyword: Load a saved session             |");
-            ChatOutput.WriteLine("| /plan [on|off]: Read-only plan mode            |");
+            ChatOutput.WriteLine("| /plan [on|off]: Read-only plan mode             |");
             ChatOutput.WriteLine("| /reasoning [effort]: Set reasoning effort       |");
             ChatOutput.WriteLine("| /reload: Reload configuration                   |");
             ChatOutput.WriteLine("| /rename old new: Rename a saved session         |");
@@ -75,19 +75,13 @@ namespace SimpleLLMChatCLI
         /// <summary>True for the arguments that turn plan mode on.</summary>
         static bool IsPlanToggleOn(string value)
         {
-            return string.Equals(value, "on", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, PlanMode.ModePlan, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>True for the arguments that turn plan mode off.</summary>
         static bool IsPlanToggleOff(string value)
         {
-            return string.Equals(value, "off", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, "build", StringComparison.OrdinalIgnoreCase);
+            return string.Equals(value, "off", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -102,11 +96,30 @@ namespace SimpleLLMChatCLI
             bool isPlan = ToolApproval.IsPlanMode(mode);
 
             if (wasPlan != isPlan && conversation != null)
-                conversation.Add(new LLMClient.ChatMessage
+            {
+                string marker = isPlan ? PlanMode.EnterPlanMessage() : PlanMode.ExitPlanMessage();
+
+                // Back-to-back toggles (no chat between them) must not stack two
+                // synthetic "user" messages: some OpenAI-compatible endpoints reject
+                // non-alternating roles, which would break the user's next message.
+                LLMClient.ChatMessage last = conversation.Count > 0
+                    ? conversation[conversation.Count - 1]
+                    : default(LLMClient.ChatMessage);
+                if (last.Content == PlanMode.EnterPlanMessage() || last.Content == PlanMode.ExitPlanMessage())
                 {
-                    Role = "user",
-                    Content = isPlan ? PlanMode.EnterPlanMessage() : PlanMode.ExitPlanMessage()
-                });
+                    LLMClient.ChatMessage replaced = last;
+                    replaced.Content = marker;
+                    conversation[conversation.Count - 1] = replaced;
+                }
+                else
+                {
+                    conversation.Add(new LLMClient.ChatMessage
+                    {
+                        Role = "user",
+                        Content = marker
+                    });
+                }
+            }
 
             if (enabledTools == null)
                 return;
@@ -115,9 +128,11 @@ namespace SimpleLLMChatCLI
             {
                 client.RefreshBaseCharacterOverhead(enabledTools);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // The status figures are cosmetic; never fail the mode change over them.
+                // The status figures are cosmetic; never fail the mode change over
+                // them, but leave a trace so a persistently stale figure is explainable.
+                Console.Error.WriteLine("note: could not refresh context overhead: " + ex.Message);
             }
         }
 

@@ -264,8 +264,8 @@ namespace SimpleLLMChatCLI
                         ["description"] = "Must be " + PlanMode.GetPlanFilePath()
                             + " while in plan mode."
                     };
-                    if (props["filename"] != null)
-                        props["filename"] = planPathProperty;
+                    if (props[PlanMode.PlanWriterPathArgument] != null)
+                        props[PlanMode.PlanWriterPathArgument] = planPathProperty;
                 }
 
                 JObject tool = new JObject
@@ -460,7 +460,7 @@ namespace SimpleLLMChatCLI
 
             if (PlanMode.IsPlanWriterTool(toolName))
             {
-                string target = ReadStringArgument(arguments, "filename");
+                string target = ReadStringArgument(arguments, PlanMode.PlanWriterPathArgument);
                 string workingDirectory = def.ExecutablePath == null
                     ? null
                     : Path.GetDirectoryName(def.ExecutablePath);

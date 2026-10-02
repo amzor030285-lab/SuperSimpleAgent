@@ -61,7 +61,7 @@ public static class PlanMode
     };
 
     /// <summary>Argument name carrying the target path for the plan writer tools.</summary>
-    private const string PlanWriterPathArgument = "filename";
+    public const string PlanWriterPathArgument = "filename";
 
     /// <summary>Absolute path of the plan file, next to the executable.</summary>
     public static string GetPlanFilePath()
