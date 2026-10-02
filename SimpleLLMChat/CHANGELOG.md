@@ -35,7 +35,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   (`.../v1`), or the chat path may be set separately in `chatpath`; the CLI detects it when the
   field is left empty, which is right for every provider that keeps the version in the base URL.
   System settings can be saved as a named preset and recalled instead of retyping a provider,
-  model and key.
+   model and key.
+
+- **Response and stall timeouts in Options** - two boxes on the System page of Options, next to
+  `Context Window Size`, let you override `requesttimeout` (the whole-answer cap, default 300 s)
+  and `streamstalltimeout` (the silent-stream cap, default 120 s) in seconds. Both keys already
+  existed in `LLMSettings.ini` with no way to change them from the app, so a slow model that blew
+  past the 120 s stall or the 300 s request cap could only be fixed by hand-editing the config.
 
 ### Changed
 

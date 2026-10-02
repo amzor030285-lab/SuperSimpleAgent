@@ -77,7 +77,9 @@ namespace SimpleLLMChatGUI
             string model,
             string sysPrompt,
             int contextWindowSize,
-            bool repetitionGuard = false)
+            bool repetitionGuard = false,
+            int requestTimeout = 300,
+            int streamStallTimeout = 120)
         {
             return new List<string>
             {
@@ -87,6 +89,8 @@ namespace SimpleLLMChatGUI
                 "llmserver=" + (llmServer ?? string.Empty),
                 "model=" + (model ?? string.Empty),
                 "repetitionguard=" + (repetitionGuard ? "1" : "0"),
+                "requesttimeout=" + requestTimeout,
+                "streamstalltimeout=" + streamStallTimeout,
                 "sysprompt=\"" + EscapePromptForStorage(sysPrompt) + "\"",
             };
         }

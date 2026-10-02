@@ -19,6 +19,8 @@ namespace SimpleLLMChatGUI
         private string _sysPrompt;
         private int _contextWindowSize;
         private bool _repetitionGuardEnabled;
+        private int _streamStallTimeout;
+        private int _responseTimeout;
         private string _assistantName;
         private string _thinkingDisplayModeText = "Collapsed";
         private string _toolCallDisplayModeText = "Collapsed";
@@ -116,6 +118,18 @@ namespace SimpleLLMChatGUI
         {
             get { return _repetitionGuardEnabled; }
             set { _repetitionGuardEnabled = value; OnPropertyChanged(nameof(RepetitionGuardEnabled)); }
+        }
+
+        public int StreamStallTimeout
+        {
+            get { return _streamStallTimeout; }
+            set { _streamStallTimeout = value; OnPropertyChanged(nameof(StreamStallTimeout)); }
+        }
+
+        public int ResponseTimeout
+        {
+            get { return _responseTimeout; }
+            set { _responseTimeout = value; OnPropertyChanged(nameof(ResponseTimeout)); }
         }
 
         public string AssistantName
@@ -503,6 +517,10 @@ namespace SimpleLLMChatGUI
             // Same key and same default as the CLI reads in LLMClient, so the box
             // cannot show one state while the tool runs with another.
             RepetitionGuardEnabled = config.GetConfigInt("repetitionguard", 0) != 0;
+            // Same keys and same defaults as the CLI reads in LLMClient, so the boxes
+            // cannot show one value while the tool runs with another.
+            StreamStallTimeout = config.GetConfigInt("streamstalltimeout", 120);
+            ResponseTimeout = config.GetConfigInt("requesttimeout", 300);
             AssistantName = config.GetConfigValue("assistantname");
             if (string.IsNullOrWhiteSpace(AssistantName))
                 AssistantName = AppConstants.DefaultAssistantName;
@@ -677,7 +695,7 @@ namespace SimpleLLMChatGUI
                     "ragmaxresults=" + RagMaxResults,
                     "ragretrievemode=" + (RagRetrieveMode ?? "newchat"),
                 }),
-                new KeyValuePair<string, List<string>>("System", SettingsIniWriter.GetSystemSettings(ApiKey, ServerURL, ChatPath, Model, SysPrompt, ContextWindowSize, RepetitionGuardEnabled)),
+                new KeyValuePair<string, List<string>>("System", SettingsIniWriter.GetSystemSettings(ApiKey, ServerURL, ChatPath, Model, SysPrompt, ContextWindowSize, RepetitionGuardEnabled, ResponseTimeout, StreamStallTimeout)),
                 new KeyValuePair<string, List<string>>("Tools", GetToolSettings()),
             };
             AddDynamicToolSettings(sections);

@@ -627,6 +627,21 @@ namespace SimpleLLMChatGUI.Tests
             value.SetValue(text ?? "");
         }
 
+        /// <summary>
+        /// Reads a text box without touching it, so a test can assert on the value the
+        /// app came up with rather than on a value it asked for.
+        /// </summary>
+        public string GetTextBoxTextInWindow(string windowTitle, string automationId, int timeoutMs)
+        {
+            AutomationElement el = FindByIdInWindow(windowTitle, automationId, timeoutMs);
+            if (el == null)
+                throw new TestFailureException("Text input not found: " + automationId + " in " + windowTitle);
+            ValuePattern value = el.GetCurrentPattern(ValuePattern.Pattern) as ValuePattern;
+            if (value == null)
+                throw new TestFailureException(automationId + " does not support ValuePattern");
+            return value.Current.Value;
+        }
+
         public void ClickButtonInWindow(string windowTitle, string automationId, int timeoutMs)
         {
             AutomationElement el = FindByIdInWindow(windowTitle, automationId, timeoutMs);

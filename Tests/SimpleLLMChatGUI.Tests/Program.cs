@@ -1101,6 +1101,53 @@ namespace SimpleLLMChatGUI.Tests
                 }
             });
 
+            TestRunner.Run("gui.response_timeout_boxes_survive_a_restart", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+                    string iniPath = Path.Combine(ws.Path, "LLMSettings.ini");
+
+                    // A slow local model can blow past the 120 s stall / 300 s request
+                    // caps, so the user must be able to raise them in Options and have
+                    // the value reach the INI the CLI reads.
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "System", 10000);
+                        TestAssert.Equal("120", gui.GetTextBoxTextInWindow("Options", "StreamStallTimeoutTextBox", 10000),
+                            "stall default");
+                        TestAssert.Equal("300", gui.GetTextBoxTextInWindow("Options", "ResponseTimeoutTextBox", 10000),
+                            "request default");
+                        gui.SetTextBoxInWindow("Options", "StreamStallTimeoutTextBox", "240", 10000);
+                        gui.SetTextBoxInWindow("Options", "ResponseTimeoutTextBox", "500", 10000);
+                        gui.ClickButtonInWindow("Options", "optionsOkButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+
+                    // The values must land in the INI the CLI reads.
+                    ConfigHandler saved = new ConfigHandler(iniPath);
+                    TestAssert.Equal("240", saved.GetConfigValue("streamstalltimeout"), "stall saved");
+                    TestAssert.Equal("500", saved.GetConfigValue("requesttimeout"), "request saved");
+
+                    // ...and come back when the app starts again.
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "System", 10000);
+                        TestAssert.Equal("240", gui.GetTextBoxTextInWindow("Options", "StreamStallTimeoutTextBox", 10000),
+                            "stall after restart");
+                        TestAssert.Equal("500", gui.GetTextBoxTextInWindow("Options", "ResponseTimeoutTextBox", 10000),
+                            "request after restart");
+                        gui.ClickButtonInWindow("Options", "optionsCancelButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+                }
+            });
+
             TestRunner.Run("gui.colors_dialog_exposes_every_setting", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
