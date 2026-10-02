@@ -1486,6 +1486,204 @@ namespace SimpleLLMChatCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.plan_mode_readonly_tools", () =>
+            {
+                // Reads are allowed.
+                TestAssert.True(PlanMode.IsReadOnlyTool("read_file"), "read_file allowed");
+                TestAssert.True(PlanMode.IsReadOnlyTool("run_web_search"), "run_web_search allowed");
+                TestAssert.True(PlanMode.IsReadOnlyTool("screenshot"), "screenshot allowed");
+                TestAssert.True(PlanMode.IsReadOnlyTool("list_controls"), "list_controls allowed");
+
+                // Everything that can act on the machine or change state is refused.
+                // write_file/edit_file are absent on purpose: they write the plan
+                // file and are checked by target path instead.
+                string[] forbidden =
+                {
+                    "run_shell_command", "run_python_script", "download_file", "download_video",
+                    "delete_file", "move_file", "copy_file", "extract_file",
+                    "navigate", "set_control_text", "send_keys",
+                    "save_memory", "delete_memory", "create_skill", "edit_skill", "remove_skill",
+                };
+                foreach (string name in forbidden)
+                {
+                    TestAssert.True(
+                        PlanMode.IsForbiddenTool(name),
+                        name + " must be refused in plan mode");
+                }
+
+                // The plan writers are the one documented exception.
+                TestAssert.True(PlanMode.IsPlanWriterTool("write_file"), "write_file writes the plan");
+                TestAssert.True(PlanMode.IsPlanWriterTool("edit_file"), "edit_file writes the plan");
+                TestAssert.True(
+                    !PlanMode.IsForbiddenTool("write_file"),
+                    "write_file is not blanket-forbidden; its target is checked instead");
+            });
+
+            TestRunner.Run("cli.plan_mode_write_target", () =>
+            {
+                string planPath = PlanMode.GetPlanFilePath();
+
+                // The exact plan file is allowed.
+                TestAssert.True(
+                    !PlanMode.IsPlanWriteOutsidePlanFile("write_file", planPath, null),
+                    "writing the plan file itself is allowed");
+
+                // Anything else is refused.
+                TestAssert.True(
+                    PlanMode.IsPlanWriteOutsidePlanFile("write_file", "C:\\Windows\\evil.txt", null),
+                    "writing outside the plan file is refused");
+
+                // A missing path cannot be trusted.
+                TestAssert.True(
+                    PlanMode.IsPlanWriteOutsidePlanFile("write_file", null, null),
+                    "a write with no path is refused");
+                TestAssert.True(
+                    PlanMode.IsPlanWriteOutsidePlanFile("write_file", "", null),
+                    "a write with an empty path is refused");
+
+                // Relative paths resolve against the tool's working directory, the
+                // same way FileTools resolves them. A traversal that lands on the
+                // plan file is legitimately allowed; one that does not is refused.
+                TestAssert.True(
+                    PlanMode.IsPlanWriteOutsidePlanFile(
+                        "write_file", "..\\..\\..\\..\\Windows\\evil.txt", "C:\\tools\\FileTools"),
+                    "a traversal out of the tool folder is refused");
+                TestAssert.True(
+                    !PlanMode.IsPlanWriteOutsidePlanFile(
+                        "write_file", "plan.md", Path.GetDirectoryName(planPath)),
+                    "plan.md in the plans folder resolves to the plan file");
+
+                // Case and separator spelling must not matter.
+                TestAssert.True(
+                    !PlanMode.IsPlanWriteOutsidePlanFile(
+                        "write_file", planPath.ToUpperInvariant(), null),
+                    "plan path is compared case-insensitively");
+            });
+
+            TestRunner.Run("cli.plan_mode_mode_cycle", () =>
+            {
+                // ask -> auto -> config -> plan -> ask
+                TestAssert.Equal(
+                    ToolApproval.ModeAuto, ToolApproval.NextModeInCycle(ToolApproval.ModeAsk), "ask cycles to auto");
+                TestAssert.Equal(
+                    ToolApproval.ModeConfig, ToolApproval.NextModeInCycle(ToolApproval.ModeAuto), "auto cycles to config");
+                TestAssert.Equal(
+                    PlanMode.ModePlan, ToolApproval.NextModeInCycle(ToolApproval.ModeConfig), "config cycles to plan");
+
+                // Leaving plan lands on ask: the most conservative mode, so exiting
+                // plan never silently loosens anything.
+                TestAssert.Equal(
+                    ToolApproval.ModeAsk, ToolApproval.NextModeInCycle(PlanMode.ModePlan), "plan cycles back to ask");
+
+                // plan is a valid approval mode and IsPlanMode recognises only it.
+                TestAssert.True(ToolApproval.IsValidMode("plan"), "plan is a valid mode");
+                TestAssert.Equal("plan", ToolApproval.NormalizeMode("PLAN"), "plan normalises to lowercase");
+                TestAssert.True(ToolApproval.IsPlanMode("plan"), "IsPlanMode matches plan");
+                TestAssert.True(!ToolApproval.IsPlanMode(ToolApproval.ModeAsk), "ask is not plan mode");
+                TestAssert.True(!ToolApproval.IsPlanMode(null), "null is not plan mode");
+            });
+
+            TestRunner.Run("cli.plan_mode_refuses_write_end_to_end", () =>
+            {
+                string fileToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "FileTools", "bin", "Release"));
+                string fileToolsExe = Path.Combine(fileToolsDir, "FileTools.exe");
+                if (!File.Exists(fileToolsExe))
+                {
+                    TestRunner.Skip("FileTools.exe not built: " + fileToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The model asks to write to a file that is not the plan. Plan
+                    // mode must refuse it, and the file must not appear: this is the
+                    // guarantee the mode exists for.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "write_file";
+                    string victim = Path.Combine(ws.Path, "must-not-exist.txt");
+                    var args = new JObject();
+                    args["filename"] = victim;
+                    args["content"] = "plan mode should never write this";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(fileToolsExe, Path.Combine(toolsDir, "FileTools.exe"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "FileTools.json"), Path.Combine(toolsDir, "FileTools.json"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                    File.Copy(Path.Combine(fileToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "read_file,write_file");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval plan"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("write the file");
+                        CliRunner.WaitForText(cli, "not available in plan mode", 60000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+
+                        TestAssert.True(
+                            !File.Exists(victim),
+                            "plan mode refused the write, so the file was never created");
+
+                        // No approval prompt either: plan mode either reads or refuses.
+                        TestAssert.True(
+                            cli.Stdout.IndexOf(ToolApproval.ApprovalPrompt, StringComparison.Ordinal) < 0,
+                            "plan mode shows no approval prompt");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.plan_mode_history_marker", () =>
+            {
+                // The system prompt is rebuilt every turn, so it carries no record of
+                // when the mode last changed. On a mid-session toggle the model would
+                // otherwise have to guess what it was doing a turn ago, so the toggle
+                // must also drop a marker into the conversation history (the same
+                // trick OpenCode uses for its synthetic mode-switch parts).
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.StreamDelayMs = 5;
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "read_file");
+
+                    string exe = Path.Combine(ws.Path, "SimpleLLMChatCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        // Distinct reply per turn: a shared FixedReply would let the
+                        // second wait match the first turn's text already on screen.
+                        server.FixedReply = "Turn one reply.";
+                        cli.WriteLine("/plan on");
+                        cli.WriteLine("make a plan for my app");
+                        CliRunner.WaitForText(cli, server.FixedReply, 60000);
+
+                        TestAssert.True(
+                            AnyBodyHasMessageText(server.ReceivedBodies, "You have switched to PLAN MODE"),
+                            "enabling plan injects the in-history plan marker");
+                        TestAssert.True(
+                            AnyBodyHasMessageText(server.ReceivedBodies, "PLAN MODE IS ACTIVE"),
+                            "enabling plan puts the block in the system prompt");
+
+                        server.FixedReply = "Turn two reply.";
+                        cli.WriteLine("/plan off");
+                        cli.WriteLine("now implement it");
+                        CliRunner.WaitForText(cli, server.FixedReply, 60000);
+
+                        TestAssert.True(
+                            AnyBodyHasMessageText(server.ReceivedBodies, "You have switched out of PLAN MODE"),
+                            "disabling plan injects the exit marker");
+                    }
+                }
+            });
+
             TestRunner.Run("cli.tool_cancelled_by_user", () =>
             {
                 string shellToolsDir = Path.GetFullPath(Path.Combine(
@@ -2684,6 +2882,28 @@ namespace SimpleLLMChatCLI.Tests
         {
             JArray messages = payload["messages"] as JArray;
             return messages ?? new JArray();
+        }
+
+        /// <summary>
+        /// True when any captured request body has a message whose decoded content
+        /// contains the needle. Used to assert the in-history plan-mode markers that
+        /// land in the conversation (as opposed to the per-turn system prompt).
+        /// </summary>
+        static bool AnyBodyHasMessageText(List<string> bodies, string needle)
+        {
+            foreach (string body in bodies)
+            {
+                foreach (JToken token in MessagesOf(JObject.Parse(body)))
+                {
+                    JObject msg = token as JObject;
+                    if (msg == null)
+                        continue;
+                    string content = (string)msg["content"];
+                    if (content != null && content.IndexOf(needle, StringComparison.Ordinal) >= 0)
+                        return true;
+                }
+            }
+            return false;
         }
 
         static int CountReasoning(JObject payload)

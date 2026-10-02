@@ -223,7 +223,7 @@
                     MinHeight="40"
                     Margin="0,0,5,0"
                     VerticalAlignment="Stretch"
-                    ToolTip="Tool approval mode. ask = confirm every tool call, auto = never confirm, config = confirm only the tools listed in toolsRequiringApproval. Click to switch."
+                    ToolTip="Tool mode. ask = confirm every tool call, auto = never confirm, config = confirm only the tools listed in toolsRequiringApproval, plan = read-only: the model may read files, search the web and inspect windows, and may only write plans\plan.md. Click to switch."
                     Click="approvalModeButton_Click" />
 
             <ToggleButton Name="attachButton"

@@ -22,7 +22,8 @@ This project is a continuation of the original [SimpleLLMChat](https://github.co
 -   **Streaming Responses** - Responses are streamed from the LLM server in real-time.
 -   **Context Compaction** - Long chats are managed automatically before the context window fills: old tool output is dropped first, then the old part of the conversation is summarized into a recap (the newest ~8k tokens are kept verbatim) before anything is destroyed, with bounded truncation only as a last resort. `/compact` and `/compactfull` run the same passes on demand.
 -   **Session Management** - Sessions can be saved, loaded, renamed and deleted (`/save`, `/load`, `/sessions`, `/rename`, `/delete`). The current chat is mirrored to a `lastsession` file after every turn and restored automatically on the next launch.
--   **Tool Approval** - Tool calls can be gated: `config` (default, prompts for the tools listed in `toolsrequiringapproval`), `ask` (prompts for every tool call), or `auto` (never prompts). Set via `--approval` (CLI), `/approval` (REPL), or the toggle button in the GUI.
+-   **Tool Approval** - Tool calls can be gated: `config` (default, prompts for the tools listed in `toolsrequiringapproval`), `ask` (prompts for every tool call), `auto` (never prompts), or `plan` (read-only). Set via `--approval` (CLI), `/approval` or `/plan on|off` (REPL), or the toggle button in the GUI, which cycles `ask` -> `auto` -> `config` -> `plan`.
+-   **Plan Mode** - A read-only phase for planning work. The model may read files, search the web, inspect windows and query memory or skills; the only thing it may write is `plans\plan.md` next to the executable, where it puts the plan for you to read and approve. Anything that could change state - shell commands, scripts, downloads, edits, deletes, window clicks and keystrokes - is refused before the tool starts, so a plan cannot quietly become an edit. Turning plan mode off returns the button to `ask`.
 -   **Encrypted Settings** - API keys are stored on disk protected with Windows DPAPI instead of plain text.
 -   **Bounded Execution** - File reads and process output are capped so a single huge result cannot exhaust memory, and every tool runs in a Windows job object so cancel or timeout kills the whole process tree, not just the direct child.
 -   **Tools** - A modular, extensible tool system is available. For information about the included tools, see [Tools](#tools).
@@ -100,7 +101,7 @@ On first use, if `LLMSettings.ini` does not exist, the GUI setup wizard creates 
 -   `model`: Model name to use for text generation (if supported by the endpoint)
 -   `sysprompt`: System prompt for the LLM
 -   `contextWindowSize`: If known, can be set here to enable automatic context management when context fills
--   `approvalmode`: Tool approval mode (`ask`, `auto`, or `config`; default `config`)
+-   `approvalmode`: Tool approval mode (`ask`, `auto`, `config`, or `plan`; default `config`)
 -   `streamstalltimeout`: Seconds a stream may stay silent before it is abandoned (default `120`)
 -   `requesttimeout`: Seconds before the whole request is abandoned (default `300`)
 -   `repetitionguard`: Stop a generation that has degenerated into repeating the same block of text (default `0`, off). How prone a model is to loop is a property of the model, so this is off by default and enabled per model in `Options` -> `System`, next to `Context Window Size`
@@ -127,7 +128,7 @@ Tool-specific configuration options for the included tools are available in the 
 
 Interactive mode provides the following commands:
 
--   `/approval [ask|auto|config]`: Gets or sets the tool approval mode
+-   `/approval [ask|auto|config|plan]`: Gets or sets the tool approval mode
 -   `/buildindex`: Reconciles the knowledge index (adds/updates/removes changed files)
 -   `/clear`: Clears chat context
 -   `/clearindex`: Clears the on-disk knowledge index
@@ -137,6 +138,7 @@ Interactive mode provides the following commands:
 -   `/exit`: Exits the application
 -   `/image`: Sends an image to the model alongside the next message, used as `/image "path" prompt`
 -   `/load keyword`: Loads a saved session
+-   `/plan [on|off]`: Shortcut for read-only plan mode (`/plan` alone reports the current state)
 -   `/reasoning`: Sets reasoning effort for supported models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`); `/reasoning` alone uses the API default
 -   `/reload`: Reloads configuration in place (doesn't clear chat)
 -   `/rename old new`: Renames a saved session

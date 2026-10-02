@@ -76,14 +76,50 @@ public static class ToolApproval
     public const string ModeConfig = "config";
 
     /// <summary>
+    /// The four tool-approval modes in GUI cycle order. Plan mode is last, so
+    /// leaving plan lands on ask - the most conservative approval mode.
+    /// </summary>
+    private static readonly string[] ModeCycle =
+    {
+        ModeAsk,
+        ModeAuto,
+        ModeConfig,
+        PlanMode.ModePlan,
+    };
+
+    /// <summary>
     /// Validates a tool-approval mode name: ask = confirm every tool call,
-    /// auto = never confirm, config = confirm only the toolsRequiringApproval tools.
+    /// auto = never confirm, config = confirm only the toolsRequiringApproval tools,
+    /// plan = read-only except for the plan file.
     /// </summary>
     public static bool IsValidMode(string mode)
     {
         return string.Equals(mode, ModeAsk, StringComparison.OrdinalIgnoreCase)
             || string.Equals(mode, ModeAuto, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mode, ModeConfig, StringComparison.OrdinalIgnoreCase);
+            || string.Equals(mode, ModeConfig, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, PlanMode.ModePlan, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>The mode following <paramref name="mode"/> in the GUI cycle.</summary>
+    public static string NextModeInCycle(string mode)
+    {
+        string normalized = NormalizeMode(mode);
+        if (normalized == null)
+            return ModeAsk;
+
+        for (int i = 0; i < ModeCycle.Length; i++)
+        {
+            if (string.Equals(ModeCycle[i], normalized, StringComparison.Ordinal))
+                return ModeCycle[(i + 1) % ModeCycle.Length];
+        }
+
+        return ModeAsk;
+    }
+
+    /// <summary>True while the read-only plan mode is selected.</summary>
+    public static bool IsPlanMode(string mode)
+    {
+        return string.Equals(mode, PlanMode.ModePlan, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Canonical lowercase mode name, or null when the input is not a mode.</summary>

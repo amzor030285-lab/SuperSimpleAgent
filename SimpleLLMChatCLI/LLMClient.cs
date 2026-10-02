@@ -21,8 +21,23 @@ public class LLMClient
 
     public string ReasoningEffort { get; set; }
 
-    /// <summary>ask = confirm every tool call, auto = never confirm, config = confirm the listed tools.</summary>
-    public string ApprovalMode { get; set; }
+    /// <summary>
+    /// ask = confirm every tool call, auto = never confirm,
+    /// config = confirm the listed tools, plan = read-only except the plan file.
+    /// Setting plan also flips the registry's enforcement flag, so the two can
+    /// never disagree about whether the read-only phase is on.
+    /// </summary>
+    public string ApprovalMode
+    {
+        get { return approvalMode; }
+        set
+        {
+            approvalMode = value;
+            registry.planModeActive = ToolApproval.IsPlanMode(value);
+        }
+    }
+
+    private string approvalMode;
 
     public LLMClient(ConfigHandler config, ToolRegistry registry)
     {
@@ -327,10 +342,17 @@ public class LLMClient
                 {
                     ToolRegistry.ToolCall call = response.ToolCalls[i];
                     string approvalMode = ApprovalMode ?? AppConstants.DefaultApprovalMode;
-                    bool needsApproval = string.Equals(approvalMode, ToolApproval.ModeAuto, StringComparison.OrdinalIgnoreCase)
+
+                    // Plan mode has no approval prompts: its allowlist either runs
+                    // the read tool silently or refuses the write in
+                    // ToolRegistry. Asking here would put a dialog in front of a
+                    // tool whose only legal action is reading.
+                    bool needsApproval = ToolApproval.IsPlanMode(approvalMode)
                         ? false
-                        : string.Equals(approvalMode, ToolApproval.ModeAsk, StringComparison.OrdinalIgnoreCase)
-                            || approvalSet.Contains(call.Name);
+                        : string.Equals(approvalMode, ToolApproval.ModeAuto, StringComparison.OrdinalIgnoreCase)
+                            ? false
+                            : string.Equals(approvalMode, ToolApproval.ModeAsk, StringComparison.OrdinalIgnoreCase)
+                                || approvalSet.Contains(call.Name);
 
                     if (needsApproval && outputOnly)
                     {
@@ -1025,6 +1047,15 @@ public class LLMClient
             if (sysprompt.Length > 0)
                 sysprompt += "\n\n";
             sysprompt += ragHint;
+        }
+
+        // Rebuilt on every request, so toggling /plan mid-session takes effect on
+        // the next turn without a restart.
+        if (ToolApproval.IsPlanMode(ApprovalMode))
+        {
+            if (sysprompt.Length > 0)
+                sysprompt += "\n\n";
+            sysprompt += PlanMode.BuildPromptBlock();
         }
 
         return sysprompt;

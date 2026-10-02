@@ -56,6 +56,12 @@ namespace SimpleLLMChatCLI
         // Config values to pass to tool executables
         private readonly ConfigHandler config;
 
+        /// <summary>
+        /// True while the read-only plan mode is selected. Toggled by /plan and by
+        /// the GUI mode button, checked on every tool call.
+        /// </summary>
+        public bool planModeActive;
+
         public ToolRegistry(ConfigHandler config)
         {
             this.config = config;
@@ -204,6 +210,12 @@ namespace SimpleLLMChatCLI
                 if (!Tools.TryGetValue(toolName, out def))
                     continue;
 
+                // Plan mode hides state-changing tools from the model entirely, so
+                // it never plans around them. ExecuteToolCall still refuses them -
+                // this is the second of the two layers, not the only one.
+                if (planModeActive && PlanMode.IsForbiddenTool(toolName))
+                    continue;
+
                 JObject props = new JObject();
                 JArray required = new JArray();
 
@@ -235,6 +247,26 @@ namespace SimpleLLMChatCLI
                     ["description"] = def.Description,
                     ["parameters"] = parameters
                 };
+
+                // write_file/edit_file stay in the schema in plan mode, but only for
+                // the plan file. Say so in the description and pin the argument, so
+                // the model is not left guessing where it may write.
+                if (planModeActive && PlanMode.IsPlanWriterTool(toolName))
+                {
+                    func["description"] = def.Description
+                        + " In plan mode this may only be used to write the plan to "
+                        + PlanMode.GetPlanFilePath()
+                        + "; any other path is refused.";
+
+                    JObject planPathProperty = new JObject
+                    {
+                        ["type"] = "string",
+                        ["description"] = "Must be " + PlanMode.GetPlanFilePath()
+                            + " while in plan mode."
+                    };
+                    if (props["filename"] != null)
+                        props["filename"] = planPathProperty;
+                }
 
                 JObject tool = new JObject
                 {
@@ -414,6 +446,63 @@ namespace SimpleLLMChatCLI
         }
 
         /// <summary>
+        /// Applies the plan-mode allowlist to one tool call.
+        /// </summary>
+        /// <returns>Refusal text to hand back to the model, or null when allowed.</returns>
+        private string EvaluatePlanMode(string toolName, string arguments, ToolDefinition def)
+        {
+            if (PlanMode.IsForbiddenTool(toolName))
+            {
+                return PlanMode.FormatRefusal(
+                    toolName,
+                    "It changes state, so plan mode refuses it.");
+            }
+
+            if (PlanMode.IsPlanWriterTool(toolName))
+            {
+                string target = ReadStringArgument(arguments, "filename");
+                string workingDirectory = def.ExecutablePath == null
+                    ? null
+                    : Path.GetDirectoryName(def.ExecutablePath);
+
+                if (PlanMode.IsPlanWriteOutsidePlanFile(toolName, target, workingDirectory))
+                {
+                    return PlanMode.FormatRefusal(
+                        toolName,
+                        "It can only write " + PlanMode.PlanFileName
+                        + " in the " + PlanMode.PlansDirectoryName + " directory, and '"
+                        + (string.IsNullOrEmpty(target) ? "(no path)" : target) + "' is not that file.");
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Reads one string property out of a tool call's argument JSON. Returns
+        /// null when the JSON is malformed or the property is absent, which plan
+        /// mode treats as a missing path rather than trusting it.
+        /// </summary>
+        internal static string ReadStringArgument(string argumentsJson, string name)
+        {
+            if (string.IsNullOrWhiteSpace(argumentsJson))
+                return null;
+
+            try
+            {
+                JToken token = JToken.Parse(argumentsJson);
+                JToken value = token[name];
+                if (value == null || value.Type == JTokenType.Null)
+                    return null;
+                return value.ToString();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
         /// Executes a tool by spawning its executable with the tool name as argv[1]
         /// and passing argument JSON + config via stdin.
         /// </summary>
@@ -431,6 +520,20 @@ namespace SimpleLLMChatCLI
                 toolContent = FormatCommandResult(toolName, "error: unknown tool '" + toolName + "'.", 1);
                 exitCode = 1;
                 return;
+            }
+
+            // Plan mode refuses anything that could change state, before the tool
+            // process is started, so a denied write never reaches the filesystem
+            // no matter what the model asked for.
+            if (planModeActive)
+            {
+                string refusal = EvaluatePlanMode(toolName, arguments, def);
+                if (refusal != null)
+                {
+                    toolContent = FormatCommandResult(toolName, refusal, 1);
+                    exitCode = 1;
+                    return;
+                }
             }
 
             try

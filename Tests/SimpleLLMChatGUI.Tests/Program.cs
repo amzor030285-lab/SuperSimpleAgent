@@ -511,8 +511,9 @@ namespace SimpleLLMChatGUI.Tests
                 using (TempWorkspace ws = PackageGuiWorkspace())
                 {
                     // The bottom-left button shows the current tool-approval mode and
-                    // cycles config -> ask -> auto; each click sends /approval <mode>
-                    // to the CLI. With no approvalmode in the INI the default is config.
+                    // cycles config -> plan -> ask -> auto -> config; each click sends
+                    // /approval <mode> to the CLI. With no approvalmode in the INI the
+                    // default is config.
                     server.FixedReply = "ok";
                     WriteGuiIni(ws.Path, server.BaseUrl);
 
@@ -522,9 +523,11 @@ namespace SimpleLLMChatGUI.Tests
 
                         TestAssert.Equal("config", gui.MainButtonName("approvalModeButton"), "default mode");
                         gui.ClickMainButton("approvalModeButton");
-                        TestAssert.Equal("ask", gui.MainButtonName("approvalModeButton"), "after first click");
+                        TestAssert.Equal("plan", gui.MainButtonName("approvalModeButton"), "after first click");
                         gui.ClickMainButton("approvalModeButton");
-                        TestAssert.Equal("auto", gui.MainButtonName("approvalModeButton"), "after second click");
+                        TestAssert.Equal("ask", gui.MainButtonName("approvalModeButton"), "after second click");
+                        gui.ClickMainButton("approvalModeButton");
+                        TestAssert.Equal("auto", gui.MainButtonName("approvalModeButton"), "after third click");
                         gui.ClickMainButton("approvalModeButton");
                         TestAssert.Equal("config", gui.MainButtonName("approvalModeButton"), "cycles back");
 

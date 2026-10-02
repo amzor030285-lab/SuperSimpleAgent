@@ -151,12 +151,7 @@ namespace SimpleLLMChatGUI
 
         private void approvalModeButton_Click(object sender, RoutedEventArgs e)
         {
-            string nextMode = string.Equals(_approvalMode, ToolApproval.ModeAsk, StringComparison.OrdinalIgnoreCase)
-                ? ToolApproval.ModeAuto
-                : string.Equals(_approvalMode, ToolApproval.ModeAuto, StringComparison.OrdinalIgnoreCase)
-                    ? ToolApproval.ModeConfig
-                    : ToolApproval.ModeAsk;
-            SetApprovalMode(nextMode);
+            SetApprovalMode(ToolApproval.NextModeInCycle(_approvalMode));
         }
 
         private void SetApprovalMode(string mode)

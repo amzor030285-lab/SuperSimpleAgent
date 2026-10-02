@@ -10,6 +10,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Plan mode, a fourth tool mode** - `ask` -> `auto` -> `config` -> `plan` on the GUI toggle, or
+  `/plan on|off`, or `--approval plan`. While it is on the model may read files, search the web,
+  inspect windows and query memory or skills, and the only thing it may write is `plans\plan.md`
+  where it puts the plan for you to read and approve. Everything that could change state is
+  refused in `ToolRegistry.ExecuteToolCall` before the tool process starts, checked by target path
+  rather than by tool name, so a plan cannot quietly turn into an edit. Modelled on OpenCode's
+  plan mode, but with the guarantee OpenCode's non-experimental mode does not have: OpenCode only
+  asks the model to behave (`edit` and `bash` stay `allow`, the tool list is unchanged), so a
+  determined model can still write there. Turning plan mode off returns the button to `ask`.
+  The system prompt is rebuilt every turn, so it never records *when* the mode changed; turning
+  plan mode on or off therefore also drops a short reminder into the conversation itself, so the
+  model sees the switch in context rather than having to infer it.
+
 - **Per-model repetitive-output guard, off by default** - a `Stop repetitive output automatically`
   box on the System page of Options, next to `Context Window Size`, writes `repetitionguard` to
   `LLMSettings.ini`. The key already existed and defaulted to on, so the guard was running with no

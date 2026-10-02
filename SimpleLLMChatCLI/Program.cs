@@ -22,7 +22,7 @@ namespace SimpleLLMChatCLI
         {
             ChatOutput.WriteLine("================== SimpleLLMChat ==================");
             ChatOutput.WriteLine("| Commands:                                       |");
-            ChatOutput.WriteLine("| /approval [ask|auto|config]: Tool approval mode |");
+            ChatOutput.WriteLine("| /approval [ask|auto|config|plan]: Tool approval mode |");
             ChatOutput.WriteLine("| /buildindex: Reconcile knowledge index          |");
             ChatOutput.WriteLine("| /clear: Clear chat context                      |");
             ChatOutput.WriteLine("| /clearindex: Clear knowledge index              |");
@@ -32,6 +32,7 @@ namespace SimpleLLMChatCLI
             ChatOutput.WriteLine("| /exit: Exit the application                     |");
             ChatOutput.WriteLine("| /image \"path\" prompt: Send an image             |");
             ChatOutput.WriteLine("| /load keyword: Load a saved session             |");
+            ChatOutput.WriteLine("| /plan [on|off]: Read-only plan mode            |");
             ChatOutput.WriteLine("| /reasoning [effort]: Set reasoning effort       |");
             ChatOutput.WriteLine("| /reload: Reload configuration                   |");
             ChatOutput.WriteLine("| /rename old new: Rename a saved session         |");
@@ -69,6 +70,55 @@ namespace SimpleLLMChatCLI
                     return true;
             }
             return false;
+        }
+
+        /// <summary>True for the arguments that turn plan mode on.</summary>
+        static bool IsPlanToggleOn(string value)
+        {
+            return string.Equals(value, "on", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, PlanMode.ModePlan, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>True for the arguments that turn plan mode off.</summary>
+        static bool IsPlanToggleOff(string value)
+        {
+            return string.Equals(value, "off", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "0", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(value, "build", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Applies an approval mode and keeps the token/status figures honest.
+        /// The tools array and the system prompt both shrink or grow when plan
+        /// mode goes on or off, so the cached overhead has to be recomputed.
+        /// </summary>
+        static void ApplyApprovalMode(LLMClient client, string mode, List<string> enabledTools, List<LLMClient.ChatMessage> conversation)
+        {
+            bool wasPlan = ToolApproval.IsPlanMode(client.ApprovalMode);
+            client.ApprovalMode = mode;
+            bool isPlan = ToolApproval.IsPlanMode(mode);
+
+            if (wasPlan != isPlan && conversation != null)
+                conversation.Add(new LLMClient.ChatMessage
+                {
+                    Role = "user",
+                    Content = isPlan ? PlanMode.EnterPlanMessage() : PlanMode.ExitPlanMessage()
+                });
+
+            if (enabledTools == null)
+                return;
+
+            try
+            {
+                client.RefreshBaseCharacterOverhead(enabledTools);
+            }
+            catch (Exception)
+            {
+                // The status figures are cosmetic; never fail the mode change over them.
+            }
         }
 
         /// <summary>
@@ -262,7 +312,7 @@ namespace SimpleLLMChatCLI
                         string mode = ToolApproval.NormalizeMode(args[++i]);
                         if (mode == null)
                         {
-                            Console.Error.WriteLine("Error: Invalid approval mode. Valid values: ask, auto, config.");
+                            Console.Error.WriteLine("Error: Invalid approval mode. Valid values: ask, auto, config, plan.");
                             return;
                         }
 
@@ -429,9 +479,41 @@ namespace SimpleLLMChatCLI
                     {
                         string mode = ToolApproval.NormalizeMode(requestedMode);
                         if (mode == null)
-                            Console.Error.WriteLine("Error: Invalid approval mode. Valid values: ask, auto, config.");
+                            Console.Error.WriteLine("Error: Invalid approval mode. Valid values: ask, auto, config, plan.");
                         else
-                            client.ApprovalMode = mode;
+                            ApplyApprovalMode(client, mode, enabledTools, conversation);
+                    }
+
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
+
+                // Plan mode is the /approval plan state under a short name, because
+                // typing "/plan on" is what you reach for. /plan with no argument
+                // reports the state; /plan off lands on ask (same as the GUI button).
+                if (userInput == "/plan" || userInput.StartsWith("/plan "))
+                {
+                    string requested = userInput.Length > 5 ? userInput.Substring(5).Trim() : string.Empty;
+                    if (string.IsNullOrEmpty(requested))
+                    {
+                        ChatOutput.WriteLine(ToolApproval.IsPlanMode(client.ApprovalMode)
+                            ? "Plan mode: on (read-only, plan goes to " + PlanMode.PlanFileName + ")"
+                            : "Plan mode: off (approval mode is " + client.ApprovalMode + ")");
+                    }
+                    else if (IsPlanToggleOn(requested))
+                    {
+                        ApplyApprovalMode(client, PlanMode.ModePlan, enabledTools, conversation);
+                    }
+                    else if (IsPlanToggleOff(requested))
+                    {
+                        // Same landing state as the GUI button cycle, which goes
+                        // plan -> ask. ask is the most conservative approval mode,
+                        // so leaving plan never silently loosens anything.
+                        ApplyApprovalMode(client, ToolApproval.ModeAsk, enabledTools, conversation);
+                    }
+                    else
+                    {
+                        Console.Error.WriteLine("Error: Invalid plan argument. Valid values: on, off.");
                     }
 
                     ChatOutput.MarkSeparated();
