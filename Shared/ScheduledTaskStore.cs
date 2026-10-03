@@ -23,42 +23,97 @@ public static class ScheduledTaskStore
         public List<ScheduledTask> Tasks;
     }
 
+    // Returns the persisted tasks. A missing file yields an empty list (first run).
+    // A present-but-unreadable/corrupt file throws so the caller can refuse to
+    // overwrite it, instead of silently clearing every task on the next save.
     public static List<ScheduledTask> Load(string baseDir)
     {
-        List<ScheduledTask> result = new List<ScheduledTask>();
+        string path = DefaultPath(baseDir);
+        if (!File.Exists(path))
+            return new List<ScheduledTask>();
+
+        string json;
         try
         {
-            string path = DefaultPath(baseDir);
-            if (!File.Exists(path))
-                return result;
-
-            Envelope envelope = JsonConvert.DeserializeObject<Envelope>(File.ReadAllText(path, Encoding.UTF8));
-            if (envelope != null && envelope.Tasks != null)
-                result = envelope.Tasks;
+            json = File.ReadAllText(path, Encoding.UTF8);
         }
-        catch
+        catch (Exception ex)
         {
+            throw new IOException("Failed to read scheduled tasks file: " + path, ex);
+        }
+
+        Envelope envelope;
+        try
+        {
+            envelope = JsonConvert.DeserializeObject<Envelope>(json);
+        }
+        catch (Exception ex)
+        {
+            throw new IOException("Scheduled tasks file is not valid JSON: " + path, ex);
+        }
+
+        if (envelope == null || envelope.Tasks == null)
+            throw new IOException("Scheduled tasks file is missing its task list: " + path);
+        if (envelope.Version != CurrentVersion)
+            throw new InvalidOperationException("Unsupported scheduled tasks file version: " + envelope.Version);
+
+        List<ScheduledTask> result = new List<ScheduledTask>();
+        foreach (ScheduledTask task in envelope.Tasks)
+        {
+            if (task == null)
+                continue;
+            Normalize(task);
+            result.Add(task);
         }
         return result;
     }
 
+    // Writes atomically: the payload goes to a sibling .tmp file first, then is
+    // renamed/replaced over the real file, so a crash mid-write can never leave a
+    // truncated file that the next Load would misread.
     public static bool Save(string baseDir, List<ScheduledTask> tasks)
     {
+        string path = DefaultPath(baseDir);
+        string tmp = path + ".tmp";
         try
         {
-            string path = DefaultPath(baseDir);
             Envelope envelope = new Envelope
             {
                 Version = CurrentVersion,
                 Tasks = tasks ?? new List<ScheduledTask>()
             };
-            File.WriteAllText(path, JsonConvert.SerializeObject(envelope, Formatting.Indented), Encoding.UTF8);
+            File.WriteAllText(tmp, JsonConvert.SerializeObject(envelope, Formatting.Indented), Encoding.UTF8);
+        }
+        catch
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            return false;
+        }
+
+        try
+        {
+            if (File.Exists(path))
+                File.Replace(tmp, path, null);
+            else
+                File.Move(tmp, path);
             return true;
         }
         catch
         {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
             return false;
         }
+    }
+
+    // Repairs values that hand-edited (or older) files may leave unset.
+    private static void Normalize(ScheduledTask task)
+    {
+        if (task.RecentRuns == null)
+            task.RecentRuns = new List<RunRecord>();
+        if (task.MaxConsecutiveErrors <= 0)
+            task.MaxConsecutiveErrors = ScheduledTaskEngine.DefaultMaxConsecutiveErrors;
+        if (string.IsNullOrEmpty(task.Id))
+            task.Id = Guid.NewGuid().ToString("N");
     }
 
     public static ScheduledTask Create(string name, string schedule, string prompt, string sessionName, DateTime nowUtc)
@@ -76,7 +131,7 @@ public static class ScheduledTaskStore
             SessionName = safeSession,
             CreatedAtUtc = nowUtc,
             TimeoutSeconds = 0,
-            MaxConsecutiveErrors = 3,
+            MaxConsecutiveErrors = ScheduledTaskEngine.DefaultMaxConsecutiveErrors,
             RecentRuns = new List<RunRecord>()
         };
     }

@@ -260,25 +260,46 @@ namespace SimpleLLMChatCLI
             // is scanned before the restore so the right conversation is loaded.
             string sessionTarget = "lastsession";
             bool explicitSession = false;
+            int sessionIndex = -1;
             for (int i = 0; i < args.Length; i++)
             {
-                if (args[i] == "--session" && i + 1 < args.Length)
+                string tok = args[i];
+                if (tok == "--session")
                 {
+                    if (i + 1 >= args.Length)
+                    {
+                        Console.Error.WriteLine("Error: --session flag requires a value.");
+                        return;
+                    }
                     sessionTarget = args[i + 1];
                     explicitSession = true;
+                    sessionIndex = i;
                     break;
                 }
+                // A flag that consumes the next token: skip both.
+                if (tok == "--reasoning-effort" || tok == "--approval" || tok == "--image")
+                {
+                    i++;
+                    continue;
+                }
+                // Flag that takes no value.
+                if (tok == "--no-banners" || tok == "-o" || tok == "--output-only")
+                    continue;
+                // First prompt word reached: any later "--session" is prompt content,
+                // not a flag, so stop scanning for it here.
+                break;
             }
 
             // Restore the most recent session so a freshly reopened app picks up
             // where the user left off instead of silently starting a blank chat
             // (which previously overwrote "lastsession" on the first new message).
             List<LLMClient.ChatMessage> restored = null;
+            int restoredCount = 0;
             if (SessionStore.Load(sessionsDir, sessionTarget, out restored)
                 && restored.Count > 0)
             {
                 conversation.AddRange(restored);
-                ChatOutput.WriteLine("\n-- restored " + sessionTarget + ": " + restored.Count + " messages --");
+                restoredCount = restored.Count;
             }
 
             bool showBanners = true;
@@ -306,14 +327,12 @@ namespace SimpleLLMChatCLI
                     }
 
                     // "--session <name>" is consumed by the pre-scan above; skip its
-                    // value here so it is not mistaken for part of the prompt.
-                    if (arg == "--session")
+                    // value here so it is not mistaken for part of the prompt. Only
+                    // the recognized position (sessionIndex) is a flag; a "--session"
+                    // that appears after prompt words is prompt content and falls
+                    // through to promptParts below.
+                    if (arg == "--session" && i == sessionIndex)
                     {
-                        if (i + 1 >= args.Length)
-                        {
-                            Console.Error.WriteLine("Error: --session flag requires a value.");
-                            return;
-                        }
                         i++;
                         continue;
                     }
@@ -418,9 +437,15 @@ namespace SimpleLLMChatCLI
             }
 
             if (showBanners)
-            {
                 PrintCliInstructions();
-            }
+
+            // The restore notice is printed only when we actually enter interactive
+            // mode: a headless one-shot (the in-app scheduler) returns before this
+            // point, keeping its stdout clean for the Output snippet. It is
+            // independent of --no-banners, which only suppresses the instructions
+            // header above.
+            if (restoredCount > 0)
+                ChatOutput.WriteLine("\n-- restored " + sessionTarget + ": " + restoredCount + " messages --");
 
             while (true)
             {
@@ -726,8 +751,12 @@ namespace SimpleLLMChatCLI
                 // file so closing the app / starting a new chat never loses it.
                 // The mirror is size-capped (oldest messages dropped first) so the
                 // file cannot grow without bound in long chats.
+                // Mirror to the named session when one was requested (so interactive
+                // turns land where the conversation was restored from); otherwise
+                // keep the default "lastsession" mirror.
                 if (conversation != null && conversation.Count > 0)
-                    SessionStore.SaveCapped(sessionsDir, "lastsession", conversation,
+                    SessionStore.SaveCapped(sessionsDir,
+                        explicitSession ? sessionTarget : "lastsession", conversation,
                         SessionStore.MaxLastSessionBytes, out _);
             }
         }

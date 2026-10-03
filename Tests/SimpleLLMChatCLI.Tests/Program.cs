@@ -165,6 +165,31 @@ namespace SimpleLLMChatCLI.Tests
                 TestAssert.True(threw, "unknown time zone must be rejected");
             });
 
+            TestRunner.Run("Schedule.cron_dst_and_leap_year", () =>
+            {
+                // A daily 09:00 job in a DST zone: the same wall-clock hour maps to a
+                // different UTC instant in winter (EST, UTC-5) than in summer (EDT, UTC-4).
+                Schedule.Parsed daily = Schedule.Parse(
+                    "0 9 * * * America/New_York", new DateTime(2026, 1, 15, 8, 0, 0, DateTimeKind.Utc));
+                TestAssert.True(
+                    daily.NextRunAfter(new DateTime(2026, 1, 15, 8, 0, 0, DateTimeKind.Utc)).Value
+                        == new DateTime(2026, 1, 15, 14, 0, 0, DateTimeKind.Utc),
+                    "winter 09:00 local is 14:00 UTC (EST)");
+                TestAssert.True(
+                    daily.NextRunAfter(new DateTime(2026, 7, 15, 8, 0, 0, DateTimeKind.Utc)).Value
+                        == new DateTime(2026, 7, 15, 13, 0, 0, DateTimeKind.Utc),
+                    "summer 09:00 local is 13:00 UTC (EDT)");
+
+                // Feb 29 only exists in leap years: a non-leap reference must skip
+                // 2026 and 2027 and land on 2028.
+                Schedule.Parsed leap = Schedule.Parse(
+                    "0 0 29 2 * UTC", new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+                TestAssert.True(
+                    leap.NextRunAfter(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)).Value
+                        == new DateTime(2028, 2, 29, 0, 0, 0, DateTimeKind.Utc),
+                    "skips 2026/2027 to the next leap year");
+            });
+
             // --- Scheduled task store + engine ---------------------------------------
 
             TestRunner.Run("ScheduledTaskStore.roundtrips", () =>
@@ -340,6 +365,9 @@ namespace SimpleLLMChatCLI.Tests
                         Stopwatch sw = Stopwatch.StartNew();
                         while (!cli.HasExited && sw.ElapsedMilliseconds < 30000)
                             Thread.Sleep(50);
+                        // A hang would leave the session unsaved with an empty reply;
+                        // assert the child actually exited so a hang is a clear failure.
+                        TestAssert.True(cli.HasExited, "one-shot --session CLI exited instead of hanging");
                     }
 
                     string sessionsDir = Path.Combine(ws.Path, "sessions");

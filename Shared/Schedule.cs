@@ -158,12 +158,15 @@ public static class Schedule
             throw new FormatException("Empty schedule.");
 
         string lower = s.ToLowerInvariant();
-        if (lower.StartsWith("at ", StringComparison.Ordinal))
-            return ParseAt(s.Substring(3).Trim(), nowUtc, s);
-        if (lower.StartsWith("every ", StringComparison.Ordinal))
-            return ParseEvery(s.Substring(6).Trim(), nowUtc, s);
-        if (lower.StartsWith("cron ", StringComparison.Ordinal))
-            return ParseCron(s.Substring(5).Trim(), s);
+        int atEnd = KeywordEnd(lower, "at");
+        if (atEnd >= 0)
+            return ParseAt(s.Substring(atEnd).Trim(), nowUtc, s);
+        int everyEnd = KeywordEnd(lower, "every");
+        if (everyEnd >= 0)
+            return ParseEvery(s.Substring(everyEnd).Trim(), nowUtc, s);
+        int cronEnd = KeywordEnd(lower, "cron");
+        if (cronEnd >= 0)
+            return ParseCron(s.Substring(cronEnd).Trim(), s);
 
         if (lower.StartsWith("@", StringComparison.Ordinal))
             return ParseCron(s, s);
@@ -176,6 +179,26 @@ public static class Schedule
 
         throw new FormatException(
             "Unrecognized schedule '" + s + "'. Use 'at <time|offset>', 'every <interval>' or 'cron <5-field [tz]>'.");
+    }
+
+    // Index of the first body character after a leading keyword, or -1. The
+    // keyword must stand alone as a token (followed by whitespace) and a body must
+    // follow; this makes "at\t20m" and "at   20m" behave like "at 20m" while
+    // leaving words that merely start with the keyword (e.g. "attention") alone.
+    private static int KeywordEnd(string lower, string keyword)
+    {
+        if (!lower.StartsWith(keyword, StringComparison.Ordinal))
+            return -1;
+        int i = keyword.Length;
+        if (i >= lower.Length)
+            return -1;
+        if (!char.IsWhiteSpace(lower[i]))
+            return -1;
+        while (i < lower.Length && char.IsWhiteSpace(lower[i]))
+            i++;
+        if (i >= lower.Length)
+            return -1;
+        return i;
     }
 
     private static Parsed ParseAt(string body, DateTime nowUtc, string source)
@@ -209,6 +232,12 @@ public static class Schedule
         }
         else
         {
+            // A bare time like "14:30" carries no date; pinning it to today and then
+            // firing it as soon as that instant passes is a silent surprise. An
+            // explicit ISO date is required, which is what the GUI always sends.
+            if (!Regex.IsMatch(body, @"^\s*\d{4}-\d{1,2}-\d{1,2}[\sT]"))
+                throw new FormatException(
+                    "Absolute 'at' time needs a date, e.g. 2026-10-05 14:30: " + body);
             DateTime dt;
             if (!DateTime.TryParse(body, CultureInfo.InvariantCulture, DateTimeStyles.None, out dt))
                 throw new FormatException("Invalid 'at' time: " + body);
@@ -312,8 +341,7 @@ public static class Schedule
         {
             case "@midnight": return new string[] { "0", "0", "*", "*", "*" };
             case "@hourly": return new string[] { "0", "*", "*", "*", "*" };
-            case "@daily":
-            case "@daily ": return new string[] { "0", "0", "*", "*", "*" };
+            case "@daily": return new string[] { "0", "0", "*", "*", "*" };
             case "@weekly": return new string[] { "0", "0", "*", "*", "0" };
             case "@monthly": return new string[] { "0", "0", "1", "*", "*" };
             case "@yearly":

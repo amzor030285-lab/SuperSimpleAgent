@@ -1243,6 +1243,25 @@ namespace SimpleLLMChatGUI.Tests
                         TestAssert.True(storeText.IndexOf("Nightly digest", StringComparison.Ordinal) >= 0,
                             "job store written: " + Tail(storeText));
 
+                        // Disable it: the row stays selected and gains a "(disabled)"
+                        // marker once the scheduler persists the change + refreshes.
+                        gui.ClickButtonInWindow("Scheduled tasks", "toggleEnableButton", 10000);
+                        gui.SelectListItemInWindow("Scheduled tasks", "scheduledTasksList", "(disabled)", 10000);
+
+                        // Remove it: the selected task disappears from the store.
+                        gui.ClickButtonInWindow("Scheduled tasks", "removeTaskButton", 10000);
+                        string afterRemove = string.Empty;
+                        for (int i = 0; i < 50; i++)
+                        {
+                            if (File.Exists(storePath))
+                                afterRemove = File.ReadAllText(storePath);
+                            if (afterRemove.IndexOf("Nightly digest", StringComparison.Ordinal) < 0)
+                                break;
+                            Thread.Sleep(100);
+                        }
+                        TestAssert.True(afterRemove.IndexOf("Nightly digest", StringComparison.Ordinal) < 0,
+                            "task removed from the store: " + Tail(afterRemove));
+
                         gui.ClickButtonInWindow("Scheduled tasks", "closeButton", 10000);
                         gui.WaitForDialogClosed("Scheduled tasks", 10000);
                     }

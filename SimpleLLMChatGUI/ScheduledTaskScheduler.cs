@@ -24,12 +24,25 @@ namespace SimpleLLMChatGUI
         private readonly object _listLock = new object();
         private bool _busy;
         private bool _started;
+        private bool _persistOk;
+        private bool _disposed;
 
         public ScheduledTaskScheduler()
         {
             _ui = Dispatcher.CurrentDispatcher;
             _baseDir = AppDomain.CurrentDomain.BaseDirectory;
-            _jobs = ScheduledTaskStore.Load(_baseDir);
+            try
+            {
+                _jobs = ScheduledTaskStore.Load(_baseDir);
+                _persistOk = true;
+            }
+            catch
+            {
+                // The file is unreadable/corrupt: keep an empty in-memory list but do NOT
+                // let later saves overwrite the file the user still owns.
+                _jobs = new List<ScheduledTask>();
+                _persistOk = false;
+            }
             _timer = new DispatcherTimer(DispatcherPriority.Background)
             {
                 Interval = TimeSpan.FromSeconds(20)
@@ -39,13 +52,16 @@ namespace SimpleLLMChatGUI
 
         public event Action JobsChanged;
 
-        // A consistent view of the task list for display (a shallow copy of the list; the
-        // job objects are shared and read-only from the UI's perspective).
+        // A consistent view of the task list for display. Each job is cloned so the UI
+        // never reads (or iterates) a live task while the worker thread mutates it.
         public List<ScheduledTask> GetJobs()
         {
             lock (_listLock)
             {
-                return new List<ScheduledTask>(_jobs);
+                List<ScheduledTask> clones = new List<ScheduledTask>(_jobs.Count);
+                foreach (ScheduledTask job in _jobs)
+                    clones.Add(job.Clone());
+                return clones;
             }
         }
 
@@ -112,15 +128,28 @@ namespace SimpleLLMChatGUI
 
         private void Save()
         {
+            if (!_persistOk)
+                return;
+            List<ScheduledTask> snapshot;
             lock (_listLock)
             {
-                ScheduledTaskStore.Save(_baseDir, _jobs);
+                snapshot = new List<ScheduledTask>(_jobs.Count);
+                foreach (ScheduledTask job in _jobs)
+                    snapshot.Add(job.Clone());
             }
+            ScheduledTaskStore.Save(_baseDir, snapshot);
         }
 
         private void OnTimerTick()
         {
             if (_busy)
+                return;
+            int count;
+            lock (_listLock)
+            {
+                count = _jobs.Count;
+            }
+            if (count == 0)
                 return;
             _busy = true;
 
@@ -142,7 +171,17 @@ namespace SimpleLLMChatGUI
                 finally
                 {
                     _busy = false;
-                    _ui.BeginInvoke(DispatcherPriority.Normal, new Action(RaiseChanged));
+                    if (!_disposed)
+                    {
+                        try
+                        {
+                            _ui.BeginInvoke(DispatcherPriority.Normal, new Action(RaiseChanged));
+                        }
+                        catch
+                        {
+                            // The dispatcher is shutting down; dropping the notify is fine.
+                        }
+                    }
                 }
             };
             Thread worker = new Thread(work);
@@ -182,26 +221,41 @@ namespace SimpleLLMChatGUI
                 using (Process p = Process.Start(psi))
                 {
                     StringBuilder output = new StringBuilder();
+                    StringBuilder error = new StringBuilder();
                     p.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e)
                     {
                         if (e.Data != null)
                             output.AppendLine(e.Data);
                     };
+                    // Drain stderr too: RedirectStandardError=true but never reading it
+                    // deadlocks the child once >4KB of stderr is produced.
+                    p.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e)
+                    {
+                        if (e.Data != null)
+                            error.AppendLine(e.Data);
+                    };
                     p.BeginOutputReadLine();
+                    p.BeginErrorReadLine();
 
+                    Stopwatch sw = Stopwatch.StartNew();
                     if (!p.WaitForExit(timeout * 1000))
                     {
                         try { p.Kill(); } catch { }
                         return new ScheduledTaskEngine.RunResult { Success = false, Error = "timed out after " + timeout + "s" };
                     }
+                    sw.Stop();
+                    int durationMs = (int)sw.ElapsedMilliseconds;
 
                     string text = output.ToString();
                     if (p.ExitCode == 0)
-                        return new ScheduledTaskEngine.RunResult { Success = true, Output = text };
+                        return new ScheduledTaskEngine.RunResult { Success = true, Output = text, DurationMs = durationMs };
+                    string errText = error.ToString().Trim();
+                    string detail = errText.Length > 0 ? errText : text;
                     return new ScheduledTaskEngine.RunResult
                     {
                         Success = false,
-                        Error = "exit code " + p.ExitCode + ": " + ScheduledTaskEngine.MakeSnippet(text)
+                        Error = "exit code " + p.ExitCode + ": " + ScheduledTaskEngine.MakeSnippet(detail),
+                        DurationMs = durationMs
                     };
                 }
             }
@@ -211,14 +265,19 @@ namespace SimpleLLMChatGUI
             }
         }
 
+        // Escapes for CommandLineToArgvW so embedded quotes/backslashes in a session
+        // name or prompt can't corrupt the child's argv or inject flags.
         private static string Quote(string value)
         {
-            return "\"" + (value ?? string.Empty) + "\"";
+            string v = value ?? string.Empty;
+            v = v.Replace("\\", "\\\\").Replace("\"", "\\\"");
+            return "\"" + v + "\"";
         }
 
         public void Dispose()
         {
             _timer.Stop();
+            _disposed = true;
         }
     }
 }

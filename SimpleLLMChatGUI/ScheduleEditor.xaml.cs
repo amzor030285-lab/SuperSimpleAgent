@@ -8,8 +8,6 @@ namespace SimpleLLMChatGUI
     // live-validates it against Schedule.Parse and shows the next run time.
     public partial class ScheduleEditor : UserControl
     {
-        public event EventHandler Changed;
-
         // The raw schedule string, or null when the current settings are invalid/empty.
         public string ScheduleText { get; private set; }
         public bool IsValid { get; private set; }
@@ -120,10 +118,7 @@ namespace SimpleLLMChatGUI
             ValidationMessage = message;
 
             exprText.Text = "Expression: " + (expr.Length > 0 ? expr : "(empty)");
-            nextRunText.Text = valid ? next : "X " + message;
-
-            if (Changed != null)
-                Changed(this, EventArgs.Empty);
+            nextRunText.Text = valid ? next : "Invalid: " + message;
         }
 
         private void UpdateVisibility()
@@ -198,7 +193,14 @@ namespace SimpleLLMChatGUI
                 case 0: return min + " " + hour + " * * *";            // daily
                 case 1: return min + " " + hour + " * * 1-5";          // weekdays
                 case 2: return min + " " + hour + " * * " + C(cronDow, 0); // weekly
-                case 3: return min + " " + hour + " " + C(cronDom, 1) + " * *"; // monthly
+                case 3:
+                {
+                    // The ComboBox items are the day values 1..31, not 0-based indices;
+                    // using SelectedIndex would pick a day one earlier than shown.
+                    object dom = cronDom.SelectedItem;
+                    int day = (dom is int) ? (int)dom : 1;
+                    return min + " " + hour + " " + day + " * *"; // monthly
+                }
                 default: return cronCustom.Text.Trim();                // custom
             }
         }

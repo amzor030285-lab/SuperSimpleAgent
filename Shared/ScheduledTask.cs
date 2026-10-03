@@ -35,4 +35,31 @@ public sealed class ScheduledTask
     public int ConsecutiveErrors;
     public bool AutoDisabled;
     public List<RunRecord> RecentRuns;
+
+    // A defensive copy so the UI never reads a live task while the worker thread
+    // mutates it. RecentRuns is copied (its RunRecords are never mutated after creation).
+    public ScheduledTask Clone()
+    {
+        return new ScheduledTask
+        {
+            Id = Id,
+            Name = Name,
+            Enabled = Enabled,
+            Schedule = Schedule,
+            Prompt = Prompt,
+            SessionName = SessionName,
+            CreatedAtUtc = CreatedAtUtc,
+            TimeoutSeconds = TimeoutSeconds,
+            MaxConsecutiveErrors = MaxConsecutiveErrors,
+            NextRunAtUtc = NextRunAtUtc,
+            LastRunAtUtc = LastRunAtUtc,
+            LastStatus = LastStatus,
+            LastError = LastError,
+            LastOutputSnippet = LastOutputSnippet,
+            LastDurationMs = LastDurationMs,
+            ConsecutiveErrors = ConsecutiveErrors,
+            AutoDisabled = AutoDisabled,
+            RecentRuns = RecentRuns != null ? new List<RunRecord>(RecentRuns) : null
+        };
+    }
 }

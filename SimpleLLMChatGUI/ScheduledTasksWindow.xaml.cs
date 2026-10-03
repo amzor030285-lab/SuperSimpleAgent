@@ -29,6 +29,11 @@ namespace SimpleLLMChatGUI
         {
             _jobs = _scheduler.GetJobs();
             RefreshList();
+            // RefreshList re-selects the same item by id but that may not re-raise
+            // SelectionChanged, so push the freshly-read state into the summary panel.
+            ScheduledTask job = SelectedJob();
+            if (job != null)
+                selectedTaskStatus.Text = BuildSummary(job);
         }
 
         private void RefreshList()

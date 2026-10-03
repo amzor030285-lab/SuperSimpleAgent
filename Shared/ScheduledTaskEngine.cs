@@ -25,6 +25,7 @@ public static class ScheduledTaskEngine
         public bool Success;
         public string Output;
         public string Error;
+        public int DurationMs;
     }
 
     public sealed class TickResult
@@ -48,84 +49,100 @@ public static class ScheduledTaskEngine
             }
             catch (FormatException ex)
             {
-                job.LastStatus = "error";
-                job.LastError = "Bad schedule: " + ex.Message;
-                job.AutoDisabled = true;
-                job.Enabled = false;
+                MarkBadSchedule(job, ex);
                 continue;
             }
 
-            // First tick (or a task whose clock was cleared): compute the next run.
-            if (job.NextRunAtUtc == null)
+            try
             {
+                // First tick (or a task whose clock was cleared): compute the next run.
+                if (job.NextRunAtUtc == null)
+                {
+                    job.NextRunAtUtc = parsed.NextRunAfter(nowUtc);
+                    if (job.NextRunAtUtc != null)
+                    {
+                        continue; // future occurrence: wait for it
+                    }
+
+                    if (parsed.Kind == Schedule.Kind.At)
+                    {
+                        // A one-shot alarm whose instant already passed still fires once
+                        // (per policy); fall through so it runs now and disables below.
+                        job.NextRunAtUtc = parsed.AtUtc;
+                    }
+                    else
+                    {
+                        job.AutoDisabled = true;
+                        job.Enabled = false;
+                        continue;
+                    }
+                }
+
+                if (job.NextRunAtUtc > nowUtc)
+                    continue; // not due yet
+
+                // Due (possibly overdue).
+                if (ShouldRun(job, parsed, nowUtc))
+                {
+                    RunResult result = runJob != null ? runJob(job) : new RunResult { Success = false, Error = "no runner" };
+                    job.LastRunAtUtc = nowUtc;
+                    job.LastDurationMs = result.DurationMs;
+
+                    if (result.Success)
+                    {
+                        job.LastStatus = "ok";
+                        job.LastError = null;
+                        job.LastOutputSnippet = MakeSnippet(result.Output);
+                        job.ConsecutiveErrors = 0;
+                    }
+                    else
+                    {
+                        job.LastStatus = "error";
+                        job.LastError = result.Error;
+                        job.ConsecutiveErrors++;
+                    }
+                    AddRecentRun(job, nowUtc, nowUtc.AddMilliseconds(Math.Max(0, result.DurationMs)), result.Success ? "ok" : "error", result.Error, MakeSnippet(result.Output));
+                    ran.Add(job.Id);
+
+                    int maxErrors = job.MaxConsecutiveErrors <= 0 ? DefaultMaxConsecutiveErrors : job.MaxConsecutiveErrors;
+                    if (job.ConsecutiveErrors >= maxErrors)
+                    {
+                        job.AutoDisabled = true;
+                        job.Enabled = false;
+                    }
+                }
+                else
+                {
+                    // Catch-up: the window to run it closed, so skip and advance.
+                    job.LastStatus = "skipped";
+                }
+
+                // Advance to the next occurrence strictly after now.
                 job.NextRunAtUtc = parsed.NextRunAfter(nowUtc);
-                if (job.NextRunAtUtc != null)
-                {
-                    continue; // future occurrence: wait for it
-                }
-
-                if (parsed.Kind == Schedule.Kind.At)
-                {
-                    // A one-shot alarm whose instant already passed still fires once
-                    // (per policy); fall through so it runs now and disables below.
-                    job.NextRunAtUtc = parsed.AtUtc;
-                }
-                else
-                {
-                    job.AutoDisabled = true;
-                    job.Enabled = false;
-                    continue;
-                }
-            }
-
-            if (job.NextRunAtUtc > nowUtc)
-                continue; // not due yet
-
-            // Due (possibly overdue).
-            if (ShouldRun(job, parsed, nowUtc))
-            {
-                RunResult result = runJob != null ? runJob(job) : new RunResult { Success = false, Error = "no runner" };
-                job.LastRunAtUtc = nowUtc;
-                job.LastDurationMs = 0; // the runner does not report duration; the GUI sets it
-
-                if (result.Success)
-                {
-                    job.LastStatus = "ok";
-                    job.LastError = null;
-                    job.LastOutputSnippet = MakeSnippet(result.Output);
-                    job.ConsecutiveErrors = 0;
-                }
-                else
-                {
-                    job.LastStatus = "error";
-                    job.LastError = result.Error;
-                    job.ConsecutiveErrors++;
-                }
-                AddRecentRun(job, nowUtc, nowUtc, result.Success ? "ok" : "error", result.Error, MakeSnippet(result.Output));
-                ran.Add(job.Id);
-
-                if (job.ConsecutiveErrors >= job.MaxConsecutiveErrors)
+                if (job.NextRunAtUtc == null)
                 {
                     job.AutoDisabled = true;
                     job.Enabled = false;
                 }
             }
-            else
+            catch (FormatException ex)
             {
-                // Catch-up: the window to run it closed, so skip and advance.
-                job.LastStatus = "skipped";
-            }
-
-            // Advance to the next occurrence strictly after now.
-            job.NextRunAtUtc = parsed.NextRunAfter(nowUtc);
-            if (job.NextRunAtUtc == null)
-            {
-                job.AutoDisabled = true;
-                job.Enabled = false;
+                // An impossible schedule (e.g. "0 0 31 2 *") throws from NextRunAfter;
+                // disable the task instead of letting the exception escape the worker.
+                MarkBadSchedule(job, ex);
+                continue;
             }
         }
 
         return new TickResult { Jobs = jobs, RanJobIds = ran };
+    }
+
+    private static void MarkBadSchedule(ScheduledTask job, Exception ex)
+    {
+        job.LastStatus = "error";
+        job.LastError = "Bad schedule: " + ex.Message;
+        job.AutoDisabled = true;
+        job.Enabled = false;
     }
 
     private static bool ShouldRun(ScheduledTask job, Schedule.Parsed parsed, DateTime nowUtc)

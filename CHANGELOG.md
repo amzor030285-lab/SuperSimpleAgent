@@ -97,8 +97,32 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   backticks inside a table row could latch the code-fence state and freeze the comparison
   window for the rest of the answer, and a frozen window kept re-confirming a stale repeat,
   so a long code block that followed a bounded repeat was cut as if it were a loop; table
-  rows are now held out of the fence state and a hit only counts when the window actually
-  grows.
+   rows are now held out of the fence state and a hit only counts when the window actually
+   grows.
+
+- **Scheduled tasks: persistence, threading and execution hardening** - the in-app scheduler's
+  defects found in review are fixed. `scheduled-tasks.json` is now written atomically (payload to
+  a sibling `.tmp`, then renamed over the real file) so a crash mid-write can no longer truncate
+  it, and a corrupt or unreadable file is surfaced instead of being silently cleared and re-saved
+  empty; the reader returns an empty list only for a missing file, checks the version, and repairs
+  unset fields on load. The worker thread no longer races the UI: `GetJobs` and the save path hand
+  the window a deep copy of each task, so the list and its run history can't be read while a run is
+  mutating them. The child CLI's `stderr` is drained (a redirected-but-unread stream deadlocks
+  past ~4 KB), session names and prompts are escaped for `CommandLineToArgvW` (embedded quotes can't
+  corrupt the argv or inject flags), an impossible schedule (e.g. `0 0 31 2 *`) disables its task
+  instead of throwing out of the worker, `MaxConsecutiveErrors <= 0` falls back to the default
+  instead of auto-disabling after one success, run duration is now measured around the child
+   process, the monthly cron preset no longer picks a day one earlier than shown, the schedule
+   keywords now accept tab or any whitespace run (so `at\t20m` parses like `at 20m`), a date-less
+   absolute `at` (e.g. `at 14:30`) now requires an explicit date instead of silently pinning to the
+   parse day, and the worker stops calling `BeginInvoke` on a shutting-down dispatcher.
+
+- **CLI `--session` handling and clean headless output** - `--session` is only honored as a flag
+  before the first prompt word, so a `--session` typed inside a multi-word prompt is prompt text
+  rather than being misread as the flag; an interactive session opened with `--session` now saves
+  its turns to the named session instead of the `lastsession` mirror; and the `-- restored ...`
+  banner is no longer written to stdout for a headless one-shot, so the scheduler's captured Output
+  snippet is not polluted by startup chatter.
 
 ## [1.0.4] - 2026-09-29
 
