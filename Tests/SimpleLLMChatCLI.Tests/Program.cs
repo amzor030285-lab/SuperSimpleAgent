@@ -23,9 +23,349 @@ namespace SimpleLLMChatCLI.Tests
             return SuiteMain.Run("SimpleLLMChatCLI", args, Run);
         }
 
-      static void Run()
-      {
-          TestRunner.Run("RepetitionGuard.detects_degenerate_loop", () =>
+        static void Run()
+        {
+            // --- Schedule parser: at / every / cron ----------------------------------
+
+            TestRunner.Run("Schedule.at_relative_offset", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("at 20m", now);
+                TestAssert.True(p.Kind == Schedule.Kind.At, "kind At");
+                TestAssert.True(p.AtUtc == now.AddMinutes(20), "resolved to now+20m");
+                TestAssert.True(p.NextRunAfter(now).Value == now.AddMinutes(20), "next run is now+20m");
+                TestAssert.True(p.NextRunAfter(now.AddMinutes(21)) == null, "passed one-shot has no next run");
+            });
+
+            TestRunner.Run("Schedule.at_absolute_utc", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("at 2026-10-05T10:00:00Z", now);
+                DateTime expected = new DateTime(2026, 10, 5, 10, 0, 0, DateTimeKind.Utc);
+                TestAssert.True(p.AtUtc == expected, "absolute instant parsed as UTC");
+                TestAssert.True(p.NextRunAfter(new DateTime(2026, 10, 5, 9, 0, 0, DateTimeKind.Utc)).Value == expected, "next run before instant");
+                TestAssert.True(p.NextRunAfter(new DateTime(2026, 10, 5, 10, 0, 1, DateTimeKind.Utc)) == null, "past instant has no next run");
+            });
+
+            TestRunner.Run("Schedule.every_grid", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("every 10m", now);
+                TestAssert.True(p.Kind == Schedule.Kind.Every, "kind Every");
+                TestAssert.True(p.Every == TimeSpan.FromMinutes(10), "interval is 10m");
+                TestAssert.True(p.NextRunAfter(now).Value == now.AddMinutes(10), "first fire is +10m");
+                TestAssert.True(p.NextRunAfter(now.AddMinutes(5)).Value == now.AddMinutes(10), "next on the grid");
+                TestAssert.True(p.NextRunAfter(now.AddMinutes(10)).Value == now.AddMinutes(20), "strictly after");
+                TestAssert.True(p.NextRunAfter(now.AddMinutes(15)).Value == now.AddMinutes(20), "next grid slot");
+            });
+
+            TestRunner.Run("Schedule.cron_weekday_time", () =>
+            {
+                // 2026-01-01 is a Thursday. "0 9 * * 1 UTC" = Monday 09:00 UTC.
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("cron 0 9 * * 1 UTC", now);
+                TestAssert.True(p.NextRunAfter(now).Value == new DateTime(2026, 1, 5, 9, 0, 0, DateTimeKind.Utc), "next Monday 09:00");
+            });
+
+            TestRunner.Run("Schedule.cron_today_if_still_ahead", () =>
+            {
+                // Friday 14:30 UTC; reference is the same day before 14:30, so it fires today.
+                DateTime now = new DateTime(2026, 1, 2, 14, 0, 0, DateTimeKind.Utc); // a Friday
+                Schedule.Parsed p = Schedule.Parse("30 14 * * 5 UTC", now);
+                TestAssert.True(p.NextRunAfter(now).Value == new DateTime(2026, 1, 2, 14, 30, 0, DateTimeKind.Utc), "fires later today");
+            });
+
+            TestRunner.Run("Schedule.cron_first_of_month", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("0 0 1 * * UTC", now);
+                TestAssert.True(p.NextRunAfter(now).Value == new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc), "next 1st of month");
+            });
+
+            TestRunner.Run("Schedule.cron_step_minutes", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 10, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("*/15 * * * * UTC", now);
+                TestAssert.True(p.NextRunAfter(now).Value == new DateTime(2026, 1, 1, 8, 15, 0, DateTimeKind.Utc), "next 15-minute mark");
+            });
+
+            TestRunner.Run("Schedule.cron_hour_range_step", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("0 9-17/2 * * * UTC", now);
+                TestAssert.True(p.NextRunAfter(now).Value == new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc), "9:00");
+                TestAssert.True(p.NextRunAfter(new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc)).Value == new DateTime(2026, 1, 1, 11, 0, 0, DateTimeKind.Utc), "11:00");
+            });
+
+            TestRunner.Run("Schedule.cron_dom_dow_or_rule", () =>
+            {
+                // "0 0 1 * 1 UTC" = day 1 OR Monday. After 2026-01-01 08:00 the next
+                // candidate is 2026-01-05 (Monday); the next day-1 is 2026-02-01.
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("0 0 1 * 1 UTC", now);
+                TestAssert.True(p.NextRunAfter(now).Value == new DateTime(2026, 1, 5, 0, 0, 0, DateTimeKind.Utc), "OR rule picks the Monday");
+            });
+
+            TestRunner.Run("Schedule.cron_names", () =>
+            {
+                // Sunday 00:00 UTC by name; reference is 2026-01-01 (Thursday).
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("0 0 * * SUN UTC", now);
+                TestAssert.True(p.NextRunAfter(now).Value == new DateTime(2026, 1, 4, 0, 0, 0, DateTimeKind.Utc), "Sunday by name");
+
+                // "7" is Sunday; Sunday 12:00 UTC.
+                Schedule.Parsed p7 = Schedule.Parse("0 12 * * 7 UTC", now);
+                TestAssert.True(p7.NextRunAfter(now).Value == new DateTime(2026, 1, 4, 12, 0, 0, DateTimeKind.Utc), "7 maps to Sunday");
+            });
+
+            TestRunner.Run("Schedule.cron_month_name_range", () =>
+            {
+                // "0 0 1 JAN * UTC" = Jan 1 00:00 UTC; reference in February -> next is 2027.
+                DateTime now = new DateTime(2026, 2, 15, 0, 0, 0, DateTimeKind.Utc);
+                Schedule.Parsed p = Schedule.Parse("0 0 1 JAN * UTC", now);
+                TestAssert.True(p.NextRunAfter(now).Value == new DateTime(2027, 1, 1, 0, 0, 0, DateTimeKind.Utc), "rolls into next year");
+            });
+
+            TestRunner.Run("Schedule.cron_aliases", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 10, 0, DateTimeKind.Utc);
+                TestAssert.True(Schedule.Parse("@hourly UTC", now).NextRunAfter(now).Value == new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc), "@hourly");
+                TestAssert.True(Schedule.Parse("@daily UTC", now).NextRunAfter(now).Value == new DateTime(2026, 1, 2, 0, 0, 0, DateTimeKind.Utc), "@daily");
+            });
+
+            TestRunner.Run("Schedule.cron_bare_and_bare_with_tz", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                // No keyword: five fields is a cron expression.
+                TestAssert.True(Schedule.Parse("0 9 * * 1", now).Kind == Schedule.Kind.Cron, "bare 5-field is cron");
+                // Six tokens: five fields plus a time zone id.
+                Schedule.Parsed p = Schedule.Parse("0 9 * * 1 UTC", now);
+                TestAssert.True(p.NextRunAfter(now).Value == new DateTime(2026, 1, 5, 9, 0, 0, DateTimeKind.Utc), "cron with explicit UTC zone");
+            });
+
+            TestRunner.Run("Schedule.rejects_malformed", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                string[] bad = { "", "nonsense", "every 10", "at 20x", "cron 60 9 * * 1", "cron 0 9 * * 8", "cron 1 2 3 4" };
+                for (int i = 0; i < bad.Length; i++)
+                {
+                    bool threw = false;
+                    try { Schedule.Parse(bad[i], now); }
+                    catch (FormatException) { threw = true; }
+                    TestAssert.True(threw, "expected FormatException for '" + bad[i] + "'");
+                }
+            });
+
+            TestRunner.Run("Schedule.rejects_unknown_timezone", () =>
+            {
+                DateTime now = new DateTime(2026, 1, 1, 8, 0, 0, DateTimeKind.Utc);
+                bool threw = false;
+                try { Schedule.Parse("cron 0 9 * * 1 Mars/Phobos", now); }
+                catch (FormatException) { threw = true; }
+                TestAssert.True(threw, "unknown time zone must be rejected");
+            });
+
+            // --- Scheduled task store + engine ---------------------------------------
+
+            TestRunner.Run("ScheduledTaskStore.roundtrips", () =>
+            {
+                string dir = Path.Combine(Path.GetTempPath(), "sllc-sched-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(dir);
+                try
+                {
+                    DateTime created = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                    List<ScheduledTask> jobs = new List<ScheduledTask>();
+                    jobs.Add(ScheduledTaskStore.Create("digest", "cron 0 9 * * * UTC", "summarize today", "digest", created));
+                    ScheduledTaskStore.Save(dir, jobs);
+
+                    List<ScheduledTask> loaded = ScheduledTaskStore.Load(dir);
+                    TestAssert.True(loaded.Count == 1, "one task loaded");
+                    TestAssert.True(loaded[0].Name == "digest", "name");
+                    TestAssert.True(loaded[0].Schedule == "cron 0 9 * * * UTC", "schedule");
+                    TestAssert.True(loaded[0].Prompt == "summarize today", "prompt");
+                    TestAssert.True(loaded[0].SessionName == "digest", "session");
+                    TestAssert.True(loaded[0].CreatedAtUtc == created, "created");
+                }
+                finally { try { Directory.Delete(dir, true); } catch { } }
+            });
+
+            TestRunner.Run("ScheduledTaskStore.missing_file_is_empty", () =>
+            {
+                string dir = Path.Combine(Path.GetTempPath(), "sllc-sched-none-" + Guid.NewGuid().ToString("N"));
+                Directory.CreateDirectory(dir);
+                try
+                {
+                    TestAssert.True(ScheduledTaskStore.Load(dir).Count == 0, "no file -> empty list");
+                }
+                finally { try { Directory.Delete(dir, true); } catch { } }
+            });
+
+            TestRunner.Run("Engine.at_fires_once_then_disables", () =>
+            {
+                DateTime created = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                List<ScheduledTask> jobs = new List<ScheduledTask>();
+                jobs.Add(ScheduledTaskStore.Create("alarm", "at 2026-01-01T00:30:00Z", "wake me", "alarm", created));
+                string id = jobs[0].Id;
+                ScheduledTaskEngine.RunResult ok = new ScheduledTaskEngine.RunResult { Success = true, Output = "ran" };
+
+                ScheduledTaskEngine.TickResult first = ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), (j) => ok);
+                TestAssert.True(first.RanJobIds.Count == 0, "first tick only establishes the next run");
+                TestAssert.True(jobs[0].NextRunAtUtc != null && jobs[0].NextRunAtUtc.Value == new DateTime(2026, 1, 1, 0, 30, 0, DateTimeKind.Utc), "next run is the alarm time");
+
+                ScheduledTaskEngine.TickResult fire = ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 0, 31, 0, DateTimeKind.Utc), (j) => ok);
+                TestAssert.True(fire.RanJobIds.Contains(id), "fires when due");
+                TestAssert.True(jobs[0].LastStatus == "ok", "status ok");
+                TestAssert.True(jobs[0].AutoDisabled && !jobs[0].Enabled, "one-shot disables itself");
+
+                ScheduledTaskEngine.TickResult again = ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 1, 0, 0, DateTimeKind.Utc), (j) => ok);
+                TestAssert.True(again.RanJobIds.Count == 0, "does not fire twice");
+            });
+
+            TestRunner.Run("Engine.at_missed_alarm_fires_once", () =>
+            {
+                DateTime created = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                List<ScheduledTask> jobs = new List<ScheduledTask>();
+                jobs.Add(ScheduledTaskStore.Create("missed", "at 2026-01-01T00:30:00Z", "late alarm", "missed", created));
+                string id = jobs[0].Id;
+                ScheduledTaskEngine.RunResult ok = new ScheduledTaskEngine.RunResult { Success = true, Output = "late" };
+
+                // The app was closed past 00:30; the first tick at 01:00 must still
+                // fire the missed alarm once, then disable it.
+                ScheduledTaskEngine.TickResult first = ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 1, 0, 0, DateTimeKind.Utc), (j) => ok);
+                TestAssert.True(first.RanJobIds.Contains(id), "missed alarm fires on first tick");
+                TestAssert.True(jobs[0].LastStatus == "ok", "status ok");
+                TestAssert.True(jobs[0].AutoDisabled && !jobs[0].Enabled, "disables after the missed run");
+
+                ScheduledTaskEngine.TickResult again = ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 1, 1, 0, DateTimeKind.Utc), (j) => ok);
+                TestAssert.True(again.RanJobIds.Count == 0, "does not fire twice");
+            });
+
+            TestRunner.Run("Engine.every_fires_and_advances", () =>
+            {
+                DateTime created = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                List<ScheduledTask> jobs = new List<ScheduledTask>();
+                jobs.Add(ScheduledTaskStore.Create("beat", "every 10m", "ping", "beat", created));
+                string id = jobs[0].Id;
+                ScheduledTaskEngine.RunResult ok = new ScheduledTaskEngine.RunResult { Success = true, Output = "pung" };
+
+                ScheduledTaskEngine.Tick(jobs, created, (j) => ok);
+                TestAssert.True(jobs[0].NextRunAtUtc != null && jobs[0].NextRunAtUtc.Value == new DateTime(2026, 1, 1, 0, 10, 0, DateTimeKind.Utc), "establishes +10m");
+
+                ScheduledTaskEngine.TickResult fire = ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 0, 10, 30, DateTimeKind.Utc), (j) => ok);
+                TestAssert.True(fire.RanJobIds.Contains(id), "fires on the grid");
+                TestAssert.True(jobs[0].NextRunAtUtc != null && jobs[0].NextRunAtUtc.Value == new DateTime(2026, 1, 1, 0, 20, 0, DateTimeKind.Utc), "advances to +20m");
+            });
+
+            TestRunner.Run("Engine.cron_fires_when_due", () =>
+            {
+                DateTime created = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                List<ScheduledTask> jobs = new List<ScheduledTask>();
+                jobs.Add(ScheduledTaskStore.Create("daily", "cron 0 9 * * * UTC", "morning brief", "daily", created));
+                string id = jobs[0].Id;
+                ScheduledTaskEngine.RunResult ok = new ScheduledTaskEngine.RunResult { Success = true, Output = "brief" };
+
+                ScheduledTaskEngine.Tick(jobs, created, (j) => ok);
+                TestAssert.True(jobs[0].NextRunAtUtc != null && jobs[0].NextRunAtUtc.Value == new DateTime(2026, 1, 1, 9, 0, 0, DateTimeKind.Utc), "next is 09:00");
+
+                ScheduledTaskEngine.TickResult fire = ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 9, 0, 30, DateTimeKind.Utc), (j) => ok);
+                TestAssert.True(fire.RanJobIds.Contains(id), "fires at 09:00");
+                TestAssert.True(jobs[0].NextRunAtUtc != null && jobs[0].NextRunAtUtc.Value == new DateTime(2026, 1, 2, 9, 0, 0, DateTimeKind.Utc), "advances to next day");
+            });
+
+            TestRunner.Run("Engine.catchup_skips_overdue_every", () =>
+            {
+                DateTime created = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                List<ScheduledTask> jobs = new List<ScheduledTask>();
+                jobs.Add(ScheduledTaskStore.Create("beat", "every 10m", "ping", "beat", created));
+                bool ran = false;
+                ScheduledTaskEngine.RunResult ok = new ScheduledTaskEngine.RunResult { Success = true, Output = "pung" };
+
+                ScheduledTaskEngine.Tick(jobs, created, (j) => ok); // next = 00:10
+                ScheduledTaskEngine.TickResult skip = ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 0, 30, 0, DateTimeKind.Utc), (j) => { ran = true; return ok; });
+                TestAssert.True(!ran, "missed window is skipped, not run");
+                TestAssert.True(jobs[0].LastStatus == "skipped", "recorded as skipped");
+                TestAssert.True(jobs[0].NextRunAtUtc != null && jobs[0].NextRunAtUtc.Value == new DateTime(2026, 1, 1, 0, 40, 0, DateTimeKind.Utc), "advances past the miss");
+            });
+
+            TestRunner.Run("Engine.auto_disable_after_errors", () =>
+            {
+                DateTime created = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                List<ScheduledTask> jobs = new List<ScheduledTask>();
+                jobs.Add(ScheduledTaskStore.Create("flaky", "every 1m", "do it", "flaky", created));
+                ScheduledTaskEngine.RunResult err = new ScheduledTaskEngine.RunResult { Success = false, Error = "boom" };
+
+                ScheduledTaskEngine.Tick(jobs, created, (j) => err); // next = 00:01
+                for (int i = 0; i < 3; i++)
+                {
+                    DateTime t = new DateTime(2026, 1, 1, 0, i * 2 + 2, 0, DateTimeKind.Utc); // 00:02, 00:04, 00:06
+                    ScheduledTaskEngine.Tick(jobs, t, (j) => err);
+                }
+                TestAssert.True(jobs[0].ConsecutiveErrors == 3, "three errors");
+                TestAssert.True(jobs[0].AutoDisabled && !jobs[0].Enabled, "auto-disabled");
+
+                bool ranAfterDisable = false;
+                ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 0, 8, 0, DateTimeKind.Utc), (j) => { ranAfterDisable = true; return err; });
+                TestAssert.True(!ranAfterDisable, "disabled task does not run");
+            });
+
+            TestRunner.Run("Engine.not_due_does_not_run", () =>
+            {
+                DateTime created = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+                List<ScheduledTask> jobs = new List<ScheduledTask>();
+                jobs.Add(ScheduledTaskStore.Create("hourly", "every 1h", "tick", "hourly", created));
+                bool ran = false;
+                ScheduledTaskEngine.RunResult ok = new ScheduledTaskEngine.RunResult { Success = true, Output = "t" };
+
+                ScheduledTaskEngine.Tick(jobs, created, (j) => ok); // next = 01:00
+                ScheduledTaskEngine.TickResult r = ScheduledTaskEngine.Tick(jobs, new DateTime(2026, 1, 1, 0, 30, 0, DateTimeKind.Utc), (j) => { ran = true; return ok; });
+                TestAssert.True(!ran && r.RanJobIds.Count == 0, "not due -> no run");
+            });
+
+            TestRunner.Run("cli.session_flag_targets_dedicated_session", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.FixedReply = "Scheduled reply.";
+                    server.StreamDelayMs = 0;
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    using (CliRunner cli = new CliRunner(
+                        Path.Combine(ws.Path, "SimpleLLMChatCLI.exe"), ws.Path,
+                        "--session digest \"run the digest\""))
+                    {
+                        CliRunner.WaitForText(cli, "Scheduled reply.", 30000);
+                        // The reply streams, so wait for the one-shot process to fully
+                        // exit (which persists the session) before disposing.
+                        Stopwatch sw = Stopwatch.StartNew();
+                        while (!cli.HasExited && sw.ElapsedMilliseconds < 30000)
+                            Thread.Sleep(50);
+                    }
+
+                    string sessionsDir = Path.Combine(ws.Path, "sessions");
+                    List<JObject> digest = null;
+                    TestAssert.True(SessionStore.Load(sessionsDir, "digest", out digest),
+                        "the --session run was saved to its dedicated session");
+                    TestAssert.True(digest != null && digest.Count >= 2,
+                        "user + assistant messages stored");
+                    if (digest != null && digest.Count >= 1)
+                    {
+                        string content = (string)digest[0]["Content"];
+                        TestAssert.True(content != null && content.IndexOf("run the digest", StringComparison.Ordinal) >= 0,
+                            "the job prompt is stored in the session");
+                    }
+
+                    // The reserved lastsession mirror must not be clobbered by a
+                    // --session one-shot run.
+                    List<JObject> last = null;
+                    TestAssert.True(!SessionStore.Load(sessionsDir, "lastsession", out last)
+                        || (last != null && last.Count == 0),
+                        "lastsession untouched by a --session run");
+                }
+            });
+
+            // --- RepetitionGuard -----------------------------------------------------
+            TestRunner.Run("RepetitionGuard.detects_degenerate_loop", () =>
           {
               RepetitionGuard guard = new RepetitionGuard();
               // A model looping on a single sentence, streamed token by token.

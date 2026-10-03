@@ -255,15 +255,30 @@ namespace SimpleLLMChatCLI
 
             string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
+            // An explicit "--session <name>" (used by the in-app scheduler) targets a
+            // dedicated session file instead of the reserved "lastsession" mirror. It
+            // is scanned before the restore so the right conversation is loaded.
+            string sessionTarget = "lastsession";
+            bool explicitSession = false;
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (args[i] == "--session" && i + 1 < args.Length)
+                {
+                    sessionTarget = args[i + 1];
+                    explicitSession = true;
+                    break;
+                }
+            }
+
             // Restore the most recent session so a freshly reopened app picks up
             // where the user left off instead of silently starting a blank chat
             // (which previously overwrote "lastsession" on the first new message).
             List<LLMClient.ChatMessage> restored = null;
-            if (SessionStore.Load(sessionsDir, "lastsession", out restored)
+            if (SessionStore.Load(sessionsDir, sessionTarget, out restored)
                 && restored.Count > 0)
             {
                 conversation.AddRange(restored);
-                ChatOutput.WriteLine("\n-- restored lastsession: " + restored.Count + " messages --");
+                ChatOutput.WriteLine("\n-- restored " + sessionTarget + ": " + restored.Count + " messages --");
             }
 
             bool showBanners = true;
@@ -287,6 +302,19 @@ namespace SimpleLLMChatCLI
                     if (arg == "--no-banners")
                     {
                         showBanners = false;
+                        continue;
+                    }
+
+                    // "--session <name>" is consumed by the pre-scan above; skip its
+                    // value here so it is not mistaken for part of the prompt.
+                    if (arg == "--session")
+                    {
+                        if (i + 1 >= args.Length)
+                        {
+                            Console.Error.WriteLine("Error: --session flag requires a value.");
+                            return;
+                        }
+                        i++;
                         continue;
                     }
 
@@ -378,6 +406,13 @@ namespace SimpleLLMChatCLI
                         enabledTools,
                         toolsRequiringApproval,
                         outputOnly);
+
+                    // A one-shot run targets a dedicated session only when asked to
+                    // (the in-app scheduler passes "--session"). The default one-shot
+                    // behavior (no "--session") is left untouched.
+                    if (explicitSession && conversation != null && conversation.Count > 0)
+                        SessionStore.SaveCapped(sessionsDir, sessionTarget, conversation,
+                            SessionStore.MaxLastSessionBytes, out _);
                     return;
                 }
             }

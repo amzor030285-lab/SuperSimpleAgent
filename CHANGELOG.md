@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **In-app scheduled tasks** - The GUI's `Scheduled` button opens a manager for timed tasks. A task runs its prompt on a schedule - `at <time|offset>` (one-shot), `every <interval>` (recurring), or a 5-field cron expression / `@hourly`-style alias, optionally with a time zone - as a separate headless `SimpleLLMChatCLI.exe --session <name>` pass, so it never disturbs the live chat and writes to its own session file. Each task records its next run, last status, last output snippet and a recent-run history; a task that fails repeatedly is auto-disabled, and a one-shot `at` alarm whose instant was missed while the app was closed still fires once. Tasks persist in `scheduled-tasks.json` next to the executable. A new `--session <name>` CLI flag loads/saves the named session (used by the scheduler); the default one-shot behavior is unchanged.
+
+- **Schedule builder in the scheduled-tasks form** - the raw "Schedule" text field is replaced by a small visual control with three modes (one-shot, recurring, cron). One-shot offers either "after N seconds/minutes/hours/days" or an exact local date and time; recurring offers "every N ..."; cron offers daily / weekday / weekly / monthly presets plus a custom 5-field expression. The control live-validates the expression against the same parser the engine uses and shows the exact schedule string together with the next run time (or the parse error), so an invalid schedule cannot be added.
+
 - **Plan mode, a fourth tool mode** - `ask` -> `auto` -> `config` -> `plan` on the GUI toggle, or
   `/plan on|off`, or `--approval plan`. While it is on the model may read files, search the web,
   inspect windows and query memory or skills, and the only thing it may write is `plans\plan.md`

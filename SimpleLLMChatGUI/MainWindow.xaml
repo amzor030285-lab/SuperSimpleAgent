@@ -153,6 +153,16 @@
                         ToolTip="Switch to dark theme"
                         Click="themeButton_Click" />
 
+                <Button Name="scheduledButton"
+                        AutomationProperties.AutomationId="scheduledButton"
+                        Content="Scheduled"
+                        MinWidth="80"
+                        MinHeight="25"
+                        Margin="0,0,5,0"
+                        VerticalAlignment="Center"
+                        ToolTip="Manage scheduled tasks"
+                        Click="scheduledButton_Click" />
+
                 <Button Name="optionsButton"
                         AutomationProperties.AutomationId="optionsButton"
                         Content="Options"

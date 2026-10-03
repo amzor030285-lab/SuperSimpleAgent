@@ -17,6 +17,7 @@ namespace SimpleLLMChatGUI
     {
         private ProcessHandler processHandler;
         private readonly ImageHandler imageHandler;
+        private ScheduledTaskScheduler scheduledTasks;
         private string _reasoningEffort = "";
 
         private string _approvalMode = AppConstants.DefaultApprovalMode;
@@ -107,6 +108,9 @@ namespace SimpleLLMChatGUI
                 attachButton.ToolTip = "Attach Image";
                 attachButton.IsChecked = false;
             };
+
+            scheduledTasks = new ScheduledTaskScheduler();
+            scheduledTasks.Start();
         }
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
@@ -836,6 +840,13 @@ namespace SimpleLLMChatGUI
         {
             base.OnClosed(e);
 
+            if (scheduledTasks != null)
+            {
+                scheduledTasks.Stop();
+                scheduledTasks.Dispose();
+                scheduledTasks = null;
+            }
+
             if (processHandler != null)
             {
                 processHandler.Dispose();
@@ -1177,6 +1188,13 @@ namespace SimpleLLMChatGUI
                 else
                     ClearChatAndRestart();
             }
+        }
+
+        private void scheduledButton_Click(object sender, RoutedEventArgs e)
+        {
+            ScheduledTasksWindow window = new ScheduledTasksWindow(scheduledTasks);
+            window.Owner = this;
+            window.ShowDialog();
         }
     }
 }

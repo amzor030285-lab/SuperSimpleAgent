@@ -1,0 +1,97 @@
+<UserControl x:Class="SimpleLLMChatGUI.ScheduleEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel>
+        <!-- Mode -->
+        <Grid Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="220"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="Type:" Margin="0,0,8,0" VerticalAlignment="Center"/>
+            <ComboBox x:Name="modeCombo" Grid.Column="1" SelectedIndex="1" SelectionChanged="AnyChanged">
+                <ComboBoxItem>One-shot (at)</ComboBoxItem>
+                <ComboBoxItem>Recurring (every)</ComboBoxItem>
+                <ComboBoxItem>Cron</ComboBoxItem>
+            </ComboBox>
+        </Grid>
+
+        <!-- One-shot (at) -->
+        <StackPanel x:Name="atPanel" Visibility="Collapsed" Margin="0,0,0,6">
+            <RadioButton x:Name="atInRadio" Content="After" GroupName="atmode" IsChecked="True"
+                         Checked="AnyChanged" VerticalAlignment="Center"/>
+            <StackPanel x:Name="atInRow" Orientation="Horizontal" Margin="22,3,0,3">
+                <TextBox x:Name="atInValue" Width="56" MinHeight="24" Text="15" TextChanged="AnyChanged"/>
+                <ComboBox x:Name="atInUnit" Width="90" Margin="8,0,0,0" SelectedIndex="1" SelectionChanged="AnyChanged">
+                    <ComboBoxItem>seconds</ComboBoxItem>
+                    <ComboBoxItem>minutes</ComboBoxItem>
+                    <ComboBoxItem>hours</ComboBoxItem>
+                    <ComboBoxItem>days</ComboBoxItem>
+                </ComboBox>
+            </StackPanel>
+            <RadioButton x:Name="atAbsRadio" Content="At an exact time (local)" GroupName="atmode"
+                         Checked="AnyChanged" VerticalAlignment="Center"/>
+            <StackPanel x:Name="atAbsRow" Orientation="Horizontal" Margin="22,3,0,3">
+                <DatePicker x:Name="atDate" Width="140" SelectedDateChanged="AnyChanged"/>
+                <ComboBox x:Name="atHour" Width="60" Margin="8,0,0,0" SelectionChanged="AnyChanged"/>
+                <ComboBox x:Name="atMinute" Width="60" Margin="8,0,0,0" SelectionChanged="AnyChanged"/>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Recurring (every) -->
+        <StackPanel x:Name="everyPanel" Visibility="Visible" Margin="0,0,0,6">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Every:" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                <TextBox x:Name="everyValue" Width="56" MinHeight="24" Text="15" TextChanged="AnyChanged"/>
+                <ComboBox x:Name="everyUnit" Width="90" Margin="8,0,0,0" SelectedIndex="1" SelectionChanged="AnyChanged">
+                    <ComboBoxItem>seconds</ComboBoxItem>
+                    <ComboBoxItem>minutes</ComboBoxItem>
+                    <ComboBoxItem>hours</ComboBoxItem>
+                    <ComboBoxItem>days</ComboBoxItem>
+                </ComboBox>
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Cron -->
+        <StackPanel x:Name="cronPanel" Visibility="Collapsed" Margin="0,0,0,6">
+            <ComboBox x:Name="cronPreset" Width="240" HorizontalAlignment="Left" SelectedIndex="0" SelectionChanged="AnyChanged">
+                <ComboBoxItem>Daily</ComboBoxItem>
+                <ComboBoxItem>Weekdays (Mon-Fri)</ComboBoxItem>
+                <ComboBoxItem>Weekly</ComboBoxItem>
+                <ComboBoxItem>Monthly</ComboBoxItem>
+                <ComboBoxItem>Custom cron...</ComboBoxItem>
+            </ComboBox>
+            <StackPanel x:Name="cronTimeRow" Orientation="Horizontal" Margin="0,5,0,2">
+                <TextBlock Text="Time (local):" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                <ComboBox x:Name="cronHour" Width="60" SelectionChanged="AnyChanged"/>
+                <ComboBox x:Name="cronMinute" Width="60" Margin="8,0,0,0" SelectionChanged="AnyChanged"/>
+            </StackPanel>
+            <StackPanel x:Name="cronDowRow" Orientation="Horizontal" Visibility="Collapsed" Margin="0,2,0,2">
+                <TextBlock Text="On:" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                <ComboBox x:Name="cronDow" Width="90" SelectedIndex="0" SelectionChanged="AnyChanged">
+                    <ComboBoxItem>Sun</ComboBoxItem>
+                    <ComboBoxItem>Mon</ComboBoxItem>
+                    <ComboBoxItem>Tue</ComboBoxItem>
+                    <ComboBoxItem>Wed</ComboBoxItem>
+                    <ComboBoxItem>Thu</ComboBoxItem>
+                    <ComboBoxItem>Fri</ComboBoxItem>
+                    <ComboBoxItem>Sat</ComboBoxItem>
+                </ComboBox>
+            </StackPanel>
+            <StackPanel x:Name="cronDomRow" Orientation="Horizontal" Visibility="Collapsed" Margin="0,2,0,2">
+                <TextBlock Text="On day:" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                <ComboBox x:Name="cronDom" Width="60" SelectedIndex="1" SelectionChanged="AnyChanged"/>
+            </StackPanel>
+            <TextBox x:Name="cronCustom" Visibility="Collapsed" MinHeight="24" Margin="0,5,0,0"
+                     ToolTip="5 fields: minute hour day-of-month month day-of-week, e.g. '0 9 * * 1-5'"
+                     TextChanged="AnyChanged"/>
+        </StackPanel>
+
+        <!-- Live preview / validation -->
+        <TextBlock x:Name="exprText" Margin="0,6,0,0" TextWrapping="Wrap"
+                   AutomationProperties.AutomationId="scheduleExpr"/>
+        <TextBlock x:Name="nextRunText" Margin="0,2,0,0" TextWrapping="Wrap"
+                   AutomationProperties.AutomationId="scheduleNextRun"/>
+    </StackPanel>
+</UserControl>

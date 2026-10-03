@@ -118,6 +118,18 @@
     <Compile Include="..\Shared\SessionStore.cs">
       <Link>Shared\SessionStore.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\Schedule.cs">
+      <Link>Shared\Schedule.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\ScheduledTask.cs">
+      <Link>Shared\ScheduledTask.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\ScheduledTaskStore.cs">
+      <Link>Shared\ScheduledTaskStore.cs</Link>
+    </Compile>
+    <Compile Include="..\Shared\ScheduledTaskEngine.cs">
+      <Link>Shared\ScheduledTaskEngine.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\StatusPipe\StatusPipe.cs">
       <Link>Shared\StatusPipe\StatusPipe.cs</Link>
     </Compile>
@@ -161,6 +173,14 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <Page Include="ScheduledTasksWindow.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
+    <Page Include="ScheduleEditor.xaml">
+      <SubType>Designer</SubType>
+      <Generator>MSBuild:Compile</Generator>
+    </Page>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ChatTurn.cs" />
@@ -184,7 +204,14 @@
       <DependentUpon>ModelChooserDialog.xaml</DependentUpon>
     </Compile>
     <Compile Include="ProcessHandler.cs" />
+    <Compile Include="ScheduledTaskScheduler.cs" />
     <Compile Include="SessionDialogs.cs" />
+    <Compile Include="ScheduledTasksWindow.xaml.cs">
+      <DependentUpon>ScheduledTasksWindow.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="ScheduleEditor.xaml.cs">
+      <DependentUpon>ScheduleEditor.xaml</DependentUpon>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs">
       <SubType>Code</SubType>
     </Compile>

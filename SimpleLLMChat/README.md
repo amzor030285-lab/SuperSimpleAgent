@@ -22,6 +22,7 @@ This project is a continuation of the original [SimpleLLMChat](https://github.co
 -   **Streaming Responses** - Responses are streamed from the LLM server in real-time.
 -   **Context Compaction** - Long chats are managed automatically before the context window fills: old tool output is dropped first, then the old part of the conversation is summarized into a recap (the newest ~8k tokens are kept verbatim) before anything is destroyed, with bounded truncation only as a last resort. `/compact` and `/compactfull` run the same passes on demand.
 -   **Session Management** - Sessions can be saved, loaded, renamed and deleted (`/save`, `/load`, `/sessions`, `/rename`, `/delete`). The current chat is mirrored to a `lastsession` file after every turn and restored automatically on the next launch.
+-   **Scheduled Tasks** - The GUI runs prompts on a schedule (`at <time|offset>`, `every <interval>`, or a 5-field cron expression / `@hourly`-style alias). Each task runs as a separate headless CLI pass into its own session file, independent of the live chat, and keeps a per-task run history with the last output.
 -   **Tool Approval** - Tool calls can be gated: `config` (default, prompts for the tools listed in `toolsrequiringapproval`), `ask` (prompts for every tool call), `auto` (never prompts), or `plan` (read-only). Set via `--approval` (CLI), `/approval` or `/plan on|off` (REPL), or the toggle button in the GUI, which cycles `ask` -> `auto` -> `config` -> `plan`.
 -   **Plan Mode** - A read-only phase for planning work. The model may read files, search the web, inspect windows and query memory or skills; the only thing it may write is `plans\plan.md` next to the executable, where it puts the plan for you to read and approve. Anything that could change state - shell commands, scripts, downloads, edits, deletes, window clicks and keystrokes - is refused before the tool starts, so a plan cannot quietly become an edit. Turning plan mode off returns the button to `ask`.
 -   **Encrypted Settings** - API keys are stored on disk protected with Windows DPAPI instead of plain text.
@@ -123,6 +124,7 @@ Tool-specific configuration options for the included tools are available in the 
 -   To clear the chat, press `Clear Chat`.
 -   To send a message, type it into the input box and press `Enter` or `Send`. To create multi-line messages, press `Shift+Enter`.
 -   The button in the bottom-left corner cycles the tool approval mode (`config` -> `ask` -> `auto`); the compaction button in the header runs a full compaction (equivalent to `/compactfull`).
+-   To manage scheduled tasks, press `Scheduled` in the header. Add a task by choosing a name, a schedule and a prompt. The schedule is picked with a small builder rather than typed in: one-shot (`at`, either "after N" or an exact local date/time), recurring (`every N`), or cron (daily / weekdays / weekly / monthly presets, or a custom 5-field expression). It validates as you type and shows the exact expression plus the next run time before you can add. Then enable/disable, remove, or inspect a task's next run, last status and recent runs.
 
 **CLI**: To run the CLI in interactive/REPL mode, open `SimpleLLMChatCLI.exe` directly or from a terminal.
 
@@ -154,6 +156,7 @@ To pass in an image alongside a prompt, use `SimpleLLMChatCLI.exe --image <path>
 CLI mode provides the following additional flags:
 
 -   `--no-banners`: Suppresses instructional prompts
+-   `--session name`: For a one-shot prompt, loads `name` (instead of the default `lastsession`) and saves the conversation back to it when done, so a scheduled or scripted run does not disturb the interactive session
 -   `-o`, `--output-only`: Outputs only the model's response text (no thinking, tool-call, or tool-output UI). Tools that do not require approval still run silently. If the model calls a tool that requires approval, the session ends with `Error: Model called <tool> which requires approval`.
 -   `--reasoning-effort`: Sets initial reasoning effort for supported models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`)
 -   `--approval ask|auto|config`: Sets the initial tool approval mode

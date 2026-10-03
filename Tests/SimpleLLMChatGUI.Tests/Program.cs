@@ -1205,6 +1205,49 @@ namespace SimpleLLMChatGUI.Tests
                     }
                 }
             });
+
+            TestRunner.Run("gui.scheduled_tasks_window_and_add", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+                    string storePath = Path.Combine(ws.Path, "scheduled-tasks.json");
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+
+                        gui.ClickMainButton("scheduledButton");
+                        GuiDriver.FindWindowByTitle("Scheduled tasks", 10000);
+
+                        // Add a task through the form. The schedule editor defaults to a
+                        // valid "every 15m", so only name + prompt need to be filled in.
+                        gui.SetTextBoxInWindow("Scheduled tasks", "newTaskName", "Nightly digest", 10000);
+                        gui.SetTextBoxInWindow("Scheduled tasks", "newTaskPrompt", "Summarize the day.", 10000);
+                        gui.ClickButtonInWindow("Scheduled tasks", "addTaskButton", 10000);
+
+                        // It shows up in the task list.
+                        gui.SelectListItemInWindow("Scheduled tasks", "scheduledTasksList", "Nightly digest", 10000);
+
+                        // Persisted to the job store next to the GUI exe.
+                        string storeText = string.Empty;
+                        for (int i = 0; i < 50; i++)
+                        {
+                            if (File.Exists(storePath))
+                                storeText = File.ReadAllText(storePath);
+                            if (storeText.IndexOf("Nightly digest", StringComparison.Ordinal) >= 0)
+                                break;
+                            Thread.Sleep(100);
+                        }
+                        TestAssert.True(storeText.IndexOf("Nightly digest", StringComparison.Ordinal) >= 0,
+                            "job store written: " + Tail(storeText));
+
+                        gui.ClickButtonInWindow("Scheduled tasks", "closeButton", 10000);
+                        gui.WaitForDialogClosed("Scheduled tasks", 10000);
+                    }
+                }
+            });
         }
 
         static string ThemeSetting(string colorsPath)

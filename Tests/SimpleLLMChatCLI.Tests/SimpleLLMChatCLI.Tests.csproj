@@ -48,6 +48,18 @@
     <Compile Include="..\..\Shared\TokenEstimator.cs">
       <Link>Shared\TokenEstimator.cs</Link>
     </Compile>
+    <Compile Include="..\..\Shared\Schedule.cs">
+      <Link>Shared\Schedule.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\ScheduledTask.cs">
+      <Link>Shared\ScheduledTask.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\ScheduledTaskStore.cs">
+      <Link>Shared\ScheduledTaskStore.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Shared\ScheduledTaskEngine.cs">
+      <Link>Shared\ScheduledTaskEngine.cs</Link>
+    </Compile>
     <Compile Include="..\..\Shared\RepetitionGuard.cs">
       <Link>Shared\RepetitionGuard.cs</Link>
     </Compile>
