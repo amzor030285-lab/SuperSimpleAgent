@@ -465,6 +465,24 @@ namespace SimpleLLMChatGUI.Tests
                 TestAssert.True(threw, "should throw");
             });
 
+            TestRunner.Run("FontHandler.emoji_font_bundled", () =>
+            {
+                // The font ships next to the exe (Resources\NotoEmoji-Regular.ttf);
+                // a missing file means build-tests.bat failed to stage it.
+                string fontPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "NotoEmoji-Regular.ttf");
+                TestAssert.True(File.Exists(fontPath), "emoji font staged next to the test exe");
+
+                // The same file-URI mechanism the product uses must resolve to a
+                // usable typeface (family "Noto Emoji"); otherwise emoji would
+                // silently fall back to the default font and render as tofu on XP.
+                string fileUri = new Uri(fontPath).AbsoluteUri;
+                var family = new System.Windows.Media.FontFamily(fileUri + "#Noto Emoji");
+                int count = 0;
+                foreach (var t in family.GetTypefaces())
+                    count++;
+                TestAssert.True(count > 0, "emoji font family resolves to a typeface");
+            });
+
             TestRunner.Run("gui.stop_button_interrupts", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

@@ -184,7 +184,7 @@ namespace SimpleLLMChatGUI
                 for (int i = 0; i < lines.Count; i++)
                 {
                     var paragraph = new Paragraph();
-                    paragraph.Inlines.Add(new Run(lines[i]));
+                    AddTextRuns(paragraph.Inlines, lines[i]);
                     document.Blocks.Add(paragraph);
                 }
                 return;
@@ -636,7 +636,7 @@ namespace SimpleLLMChatGUI
             LiteralInline literal = inline as LiteralInline;
             if (literal != null)
             {
-                target.Add(new Run(literal.Content.ToString()));
+                AddTextRuns(target, literal.Content.ToString());
                 return;
             }
 
@@ -681,7 +681,7 @@ namespace SimpleLLMChatGUI
                     // Images render as their alt text.
                     string alt = link.Label != null ? link.Label : string.Empty;
                     if (alt.Length > 0)
-                        target.Add(new Run(alt));
+                        AddTextRuns(target, alt);
                     return;
                 }
 
@@ -697,7 +697,7 @@ namespace SimpleLLMChatGUI
                     if (url.Length > 0 && !string.Equals(text, url, StringComparison.Ordinal))
                         text = text.Length > 0 ? text + " (" + url + ")" : url;
                     if (text.Length > 0)
-                        target.Add(new Run(text));
+                        AddTextRuns(target, text);
                     return;
                 }
 
@@ -721,10 +721,10 @@ namespace SimpleLLMChatGUI
                 Hyperlink hyperlink = CreateHyperlink(autolink.Url);
                 if (hyperlink == null)
                 {
-                    target.Add(new Run(autolink.Url));
+                    AddTextRuns(target, autolink.Url);
                     return;
                 }
-                hyperlink.Inlines.Add(new Run(autolink.Url));
+                AddTextRuns(hyperlink.Inlines, autolink.Url);
                 target.Add(hyperlink);
                 return;
             }
@@ -770,7 +770,7 @@ namespace SimpleLLMChatGUI
             var sb = new StringBuilder();
             AppendPlainText(sb, inline);
             if (sb.Length > 0)
-                target.Add(new Run(sb.ToString()));
+                AddTextRuns(target, sb.ToString());
         }
 
         private static Span CreateCodeSpan(string text)
@@ -1042,6 +1042,84 @@ namespace SimpleLLMChatGUI
             var formatted = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
                 typeface, fontSize, Brushes.Black);
             return Math.Max(formatted.Width, formatted.WidthIncludingTrailingWhitespace);
+        }
+
+        /// <summary>
+        /// True when a code point is an emoji (or an emoji-building character
+        /// such as a variation selector, ZWJ, skin tone or regional indicator) —
+        /// used to route emoji text to the bundled monochrome emoji font so it
+        /// renders on Windows XP instead of showing as tofu.
+        /// </summary>
+        private static bool IsEmojiFamily(int codePoint)
+        {
+            if (codePoint >= 0x1F000 && codePoint <= 0x1FAFF) return true;  // emoji + flags + modifiers
+            if (codePoint >= 0x2600 && codePoint <= 0x27BF) return true;     // misc symbols + dingbats
+            if (codePoint >= 0x2300 && codePoint <= 0x23FF) return true;     // misc technical (stopwatch, alarm)
+            if (codePoint >= 0x2B00 && codePoint <= 0x2BFF) return true;     // misc symbols and arrows
+            if (codePoint >= 0x2190 && codePoint <= 0x21FF) return true;     // arrows
+            if (codePoint == 0x203C || codePoint == 0x2049 ||
+                codePoint == 0x2122 || codePoint == 0x2139) return true;
+            if (codePoint == 0x200D || codePoint == 0xFE0F || codePoint == 0x20E3)
+                return true;   // ZWJ / variation selector / keycap
+            return false;
+        }
+
+        /// <summary>
+        /// The Unicode code point at <paramref name="index"/>, combining a
+        /// surrogate pair when present.
+        /// </summary>
+        private static int CodePointAt(string text, int index)
+        {
+            char c = text[index];
+            if (char.IsHighSurrogate(c) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1]))
+                return (c - 0xD800) * 0x400 + (text[index + 1] - 0xDC00) + 0x10000;
+            return c;
+        }
+
+        /// <summary>
+        /// Appends <paramref name="text"/> as one or more <see cref="Run"/>s,
+        /// routing emoji (surrogate pairs, ZWJ sequences, skin tones and
+        /// variation selectors) to the bundled emoji font so they render on
+        /// Windows XP. All runs inherit the surrounding font size.
+        /// </summary>
+        private static void AddTextRuns(InlineCollection target, string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return;
+
+            FontFamily emojiFont = FontHandler.EmojiFontFamily;
+            if (emojiFont == null)
+            {
+                target.Add(new Run(text));
+                return;
+            }
+
+            int i = 0;
+            int start = 0;
+            int n = text.Length;
+            while (i < n)
+            {
+                int codePoint = CodePointAt(text, i);
+                if (IsEmojiFamily(codePoint))
+                {
+                    if (i > start)
+                        target.Add(new Run(text.Substring(start, i - start)));
+
+                    int emojiStart = i;
+                    while (i < n && IsEmojiFamily(CodePointAt(text, i)))
+                        i += (CodePointAt(text, i) > 0xFFFF) ? 2 : 1;
+
+                    target.Add(new Run(text.Substring(emojiStart, i - emojiStart)) { FontFamily = emojiFont });
+                    start = i;
+                }
+                else
+                {
+                    i += (codePoint > 0xFFFF) ? 2 : 1;
+                }
+            }
+
+            if (start < n)
+                target.Add(new Run(text.Substring(start)));
         }
     }
 }

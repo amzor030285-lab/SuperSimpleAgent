@@ -669,6 +669,9 @@ namespace SimpleLLMChatGUI
 
             string theme = ColorHelper.GetTheme(App.ColorsFileName);
             themeButton.Content = ColorHelper.IsDarkTheme(theme) ? "☾" : "☀";
+            var emojiFont = FontHandler.EmojiFontFamily;
+            if (emojiFont != null)
+                themeButton.FontFamily = emojiFont;
             themeButton.ToolTip = "Theme: " + ColorHelper.GetThemeDisplayName(theme);
         }
 

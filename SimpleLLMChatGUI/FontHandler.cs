@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -52,6 +53,42 @@ namespace SimpleLLMChatGUI
 
             return null;
         }
+
+        /// <summary>
+        /// The monochrome emoji font bundled next to the executable
+        /// (Resources\NotoEmoji-Regular.ttf, SIL OFL 1.1). Referenced from a
+        /// file URI so it is never installed system-wide. Loaded lazily and
+        /// cached; returns null when the file is missing so callers fall back
+        /// to the default chat font.
+        /// </summary>
+        public static FontFamily EmojiFontFamily
+        {
+            get
+            {
+                if (_emojiFontFamily != null)
+                    return _emojiFontFamily;
+
+                try
+                {
+                    string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "NotoEmoji-Regular.ttf");
+                    if (!File.Exists(path))
+                        return null;
+
+                    string fileUri = new Uri(Path.GetFullPath(path)).AbsoluteUri;
+                    FontFamily family = new FontFamily(fileUri + "#Noto Emoji");
+                    if (family.GetTypefaces().Any())
+                        _emojiFontFamily = family;
+                }
+                catch
+                {
+                    // Missing/corrupt font: fall back to the default font.
+                }
+
+                return _emojiFontFamily;
+            }
+        }
+
+        private static FontFamily _emojiFontFamily;
 
         public static void ApplyFontSizeToControl(Control control, int fontSize)
         {
