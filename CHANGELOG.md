@@ -14,7 +14,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   moon/sun glyph on the theme button now render on Windows XP, where GDI has no color-emoji
   font. A monochrome `NotoEmoji-Regular.ttf` (Noto Emoji, SIL OFL 1.1) ships in `Resources\`
   next to the executable; the GUI resolves it through a `file://` `FontFamily` and routes
-  emoji code points to it, so they draw as black-and-white outlines instead of tofu.
+  emoji code points to it, so they draw as black-and-white outlines instead of tofu. The
+  routing is only active when the OS has no emoji font of its own - on Windows 7+ (Segoe UI
+  Emoji) the app leaves emoji to the system, so color emoji there are unaffected.
 
 - **In-app scheduled tasks** - The GUI's `Scheduled` button opens a manager for timed tasks. A task runs its prompt on a schedule - `at <time|offset>` (one-shot), `every <interval>` (recurring), or a 5-field cron expression / `@hourly`-style alias, optionally with a time zone - as a separate headless `SimpleLLMChatCLI.exe --session <name>` pass, so it never disturbs the live chat and writes to its own session file. Each task records its next run, last status, last output snippet and a recent-run history; a task that fails repeatedly is auto-disabled, and a one-shot `at` alarm whose instant was missed while the app was closed still fires once. Tasks persist in `scheduled-tasks.json` next to the executable. A new `--session <name>` CLI flag loads/saves the named session (used by the scheduler); the default one-shot behavior is unchanged.
 

@@ -56,28 +56,33 @@ namespace SimpleLLMChatGUI
 
         /// <summary>
         /// The monochrome emoji font bundled next to the executable
-        /// (Resources\NotoEmoji-Regular.ttf, SIL OFL 1.1). Referenced from a
-        /// file URI so it is never installed system-wide. Loaded lazily and
-        /// cached; returns null when the file is missing so callers fall back
-        /// to the default chat font.
+        /// (Resources\NotoEmoji-Regular.ttf, SIL OFL 1.1), used only on systems
+        /// that have no emoji font of their own (Windows XP). On Windows 7+ the
+        /// OS ships Segoe UI Emoji, so this returns null and the system renders
+        /// emoji normally; forcing the bundled font there would turn working
+        /// color emoji into tofu. Loaded lazily and cached.
         /// </summary>
         public static FontFamily EmojiFontFamily
         {
             get
             {
-                if (_emojiFontFamily != null)
+                if (_emojiFontDecided)
                     return _emojiFontFamily;
+                _emojiFontDecided = true;
 
                 try
                 {
-                    string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "NotoEmoji-Regular.ttf");
-                    if (!File.Exists(path))
+                    if (HasSystemEmojiFont())
                         return null;
 
-                    string fileUri = new Uri(Path.GetFullPath(path)).AbsoluteUri;
-                    FontFamily family = new FontFamily(fileUri + "#Noto Emoji");
-                    if (family.GetTypefaces().Any())
-                        _emojiFontFamily = family;
+                    string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "NotoEmoji-Regular.ttf");
+                    if (File.Exists(path))
+                    {
+                        string fileUri = new Uri(Path.GetFullPath(path)).AbsoluteUri;
+                        FontFamily family = new FontFamily(fileUri + "#Noto Emoji");
+                        if (family.GetTypefaces().Any())
+                            _emojiFontFamily = family;
+                    }
                 }
                 catch
                 {
@@ -88,7 +93,22 @@ namespace SimpleLLMChatGUI
             }
         }
 
+        // True when the OS already provides an emoji font (Segoe UI Emoji,
+        // Windows 7+). When true the bundled font must not be forced.
+        private static bool HasSystemEmojiFont()
+        {
+            try
+            {
+                return new FontFamily("Segoe UI Emoji").GetTypefaces().Any();
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         private static FontFamily _emojiFontFamily;
+        private static bool _emojiFontDecided;
 
         public static void ApplyFontSizeToControl(Control control, int fontSize)
         {
