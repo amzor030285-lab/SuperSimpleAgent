@@ -190,7 +190,17 @@ namespace SimpleLLMChatCLI
         static void Main(string[] args)
         {
             Console.InputEncoding = Encoding.UTF8;
+            // Keep the console itself in UTF-8 mode so Cyrillic banners render when
+            // the CLI is run standalone (no-op when stdout is a pipe).
             Console.OutputEncoding = Encoding.UTF8;
+            // Route stdout through a plain UTF-8 StreamWriter (no BOM). Relying on
+            // Console.OutputEncoding alone is unsafe on Windows XP: the console text
+            // stack mangles supplementary (surrogate-pair) characters into '?' even
+            // when the encoding is UTF-8, while BMP characters pass through. A plain
+            // StreamWriter encodes via UTF8Encoding (pure managed code), so the GUI's
+            // UTF-8 pipe reader always sees the true code points on every OS.
+            Console.SetOut(new StreamWriter(
+                Console.OpenStandardOutput(), new UTF8Encoding(false)));
             TlsConfig.EnsureModernProtocols();
 
             // Load configuration

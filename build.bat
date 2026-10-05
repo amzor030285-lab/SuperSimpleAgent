@@ -22,11 +22,6 @@ copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\SimpleLLMChatGUI.exe" "%OUT%\" >nul
 copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\Markdig.dll" "%OUT%\" >nul
 copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\Newtonsoft.Json.dll"  "%OUT%\" >nul
 
-:: Bundled monochrome emoji font (SIL OFL 1.1) so emoji render on Windows XP
-:: instead of tofu. Its license ships via THIRD_PARTY_LICENSES below.
-mkdir "%OUT%\Resources"
-copy /Y "%ROOT%SimpleLLMChatGUI\Resources\NotoEmoji-Regular.ttf" "%OUT%\Resources\" >nul
-
 for %%T in (FileTools PythonTools ShellTools WebTools MemoryTools SkillTools DesktopTools SearchTools) do (
     mkdir "%OUT%\tools\%%T"
     copy /Y "%ROOT%Tools\%%T\bin\Release\%%T.exe"           "%OUT%\tools\%%T\" >nul

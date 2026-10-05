@@ -133,10 +133,6 @@ copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\SimpleLLMChatCLI.exe" "%TESTBUILD%\S
 
 copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
 
-:: Bundled monochrome emoji font so the emoji-rendering test finds it beside the test exe
-mkdir "%TESTBUILD%\SimpleLLMChatGUI.Tests\Resources"
-copy /Y "%ROOT%SimpleLLMChatGUI\Resources\NotoEmoji-Regular.ttf" "%TESTBUILD%\SimpleLLMChatGUI.Tests\Resources\" >nul
-
 :: Intermediate obj/ is only needed during compile
 if exist "%TESTBUILD%\obj" rmdir /s /q "%TESTBUILD%\obj"
 

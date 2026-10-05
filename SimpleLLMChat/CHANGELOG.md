@@ -10,14 +10,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **Bundled monochrome emoji font for Windows XP** - Emoji in model replies and the
-  moon/sun glyph on the theme button now render on Windows XP, where GDI has no color-emoji
-  font. A monochrome `NotoEmoji-Regular.ttf` (Noto Emoji, SIL OFL 1.1) ships in `Resources\`
-  next to the executable; the GUI resolves it through a `file://` `FontFamily` and routes
-  emoji code points to it, so they draw as black-and-white outlines instead of tofu. The
-  routing is only active when the OS has no emoji font of its own - on Windows 7+ (Segoe UI
-  Emoji) the app leaves emoji to the system, so color emoji there are unaffected.
-
 - **In-app scheduled tasks** - The GUI's `Scheduled` button opens a manager for timed tasks. A task runs its prompt on a schedule - `at <time|offset>` (one-shot), `every <interval>` (recurring), or a 5-field cron expression / `@hourly`-style alias, optionally with a time zone - as a separate headless `SimpleLLMChatCLI.exe --session <name>` pass, so it never disturbs the live chat and writes to its own session file. Each task records its next run, last status, last output snippet and a recent-run history; a task that fails repeatedly is auto-disabled, and a one-shot `at` alarm whose instant was missed while the app was closed still fires once. Tasks persist in `scheduled-tasks.json` next to the executable. A new `--session <name>` CLI flag loads/saves the named session (used by the scheduler); the default one-shot behavior is unchanged.
 
 - **Schedule builder in the scheduled-tasks form** - the raw "Schedule" text field is replaced by a small visual control with three modes (one-shot, recurring, cron). One-shot offers either "after N seconds/minutes/hours/days" or an exact local date and time; recurring offers "every N ..."; cron offers daily / weekday / weekly / monthly presets plus a custom 5-field expression. The control live-validates the expression against the same parser the engine uses and shows the exact schedule string together with the next run time (or the parse error), so an invalid schedule cannot be added.
@@ -56,6 +48,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   past the 120 s stall or the 300 s request cap could only be fixed by hand-editing the config.
 
 ### Changed
+
+- **The header `Scheduled` button is now an alarm icon** - the text button (min width 80 px) is
+  a compact `⏰` icon button (min width 40 px, like the theme button), so it takes less space in
+  the header row. The button keeps its AutomationId, tooltip and click behavior.
 
 - **A repeating response is cut after a few copies, not 4000 characters** - the guard counted
   characters of an unbroken repeat, so a model looping an 80-character block had to get through
@@ -131,6 +127,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   its turns to the named session instead of the `lastsession` mirror; and the `-- restored ...`
   banner is no longer written to stdout for a headless one-shot, so the scheduler's captured Output
   snippet is not polluted by startup chatter.
+
+- **Emoji and other non-BMP characters survive CLI output on Windows XP** - reply
+  text left the CLI through `Console.Write`, and on Windows XP the console's text
+  path replaces surrogate pairs (any code point above U+FFFF - most emoji) with `?`
+  even when `Console.OutputEncoding` is UTF-8, while BMP characters passed through
+  fine. The reply now goes out through a plain UTF-8 `StreamWriter` on the
+  standard-output stream, which encodes every code point to correct UTF-8 bytes
+  without touching the console text stack, so the GUI - and any UTF-8 reader of the
+  pipe - receives the full text.
 
 ## [1.0.4] - 2026-09-29
 
