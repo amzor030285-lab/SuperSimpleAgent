@@ -359,20 +359,7 @@ namespace SimpleLLMChatCLI
             try
             {
                 string stdinData = BuildStdinPayload(executablePath, null);
-
-                ProcessStartInfo psi = new ProcessStartInfo
-                {
-                    FileName = executablePath,
-                    Arguments = commandName,
-                    WorkingDirectory = Path.GetDirectoryName(executablePath),
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    RedirectStandardInput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8
-                };
+                ProcessStartInfo psi = BuildToolProcessInfo(executablePath, commandName);
 
                 IntPtr job = IntPtr.Zero;
                 using (Process process = Process.Start(psi))
@@ -422,6 +409,23 @@ namespace SimpleLLMChatCLI
         /// keys, server URLs, prompts and other unrelated settings never reach
         /// tool processes.
         /// </summary>
+        private static ProcessStartInfo BuildToolProcessInfo(string executablePath, string commandName)
+        {
+            return new ProcessStartInfo
+            {
+                FileName = executablePath,
+                Arguments = commandName,
+                WorkingDirectory = Path.GetDirectoryName(executablePath),
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                RedirectStandardInput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
+            };
+        }
+
         internal string BuildStdinPayload(string executablePath, string argumentsJson)
         {
             JObject stdinPayload = new JObject();
@@ -539,20 +543,7 @@ namespace SimpleLLMChatCLI
             try
             {
                 string stdinData = BuildStdinPayload(def.ExecutablePath, arguments);
-
-                ProcessStartInfo psi = new ProcessStartInfo
-                {
-                    FileName = def.ExecutablePath,
-                    Arguments = toolName,
-                    WorkingDirectory = Path.GetDirectoryName(def.ExecutablePath),
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    RedirectStandardInput = true,
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    StandardOutputEncoding = Encoding.UTF8,
-                    StandardErrorEncoding = Encoding.UTF8
-                };
+                ProcessStartInfo psi = BuildToolProcessInfo(def.ExecutablePath, toolName);
 
                 // Determine per-tool timeout from config (key: tooltimeout.<toolname>)
                 string timeoutVal = config.GetConfigValue("tooltimeout." + toolName.ToLowerInvariant());

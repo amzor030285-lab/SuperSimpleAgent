@@ -108,27 +108,6 @@ namespace SimpleLLMChatGUI
 
         /// <summary>Trimmed session name; empty when the user wants an auto name.</summary>
         public string SessionName { get; private set; }
-
-        private sealed class SessionListItem
-        {
-            public SessionListItem(SessionStore.SessionInfo info)
-            {
-                Info = info;
-            }
-
-            public SessionStore.SessionInfo Info { get; }
-
-            public override string ToString()
-            {
-                DateTime savedUtc = SessionStore.EffectiveSavedAtUtc(Info);
-                DateTime local = savedUtc != DateTime.MinValue
-                    ? savedUtc.ToLocalTime()
-                    : DateTime.MinValue;
-                string when = local != DateTime.MinValue ? local.ToString("yyyy-MM-dd HH:mm") : "unknown";
-                double kb = (double)Info.SizeBytes / 1024.0;
-                return Info.Name + "  (" + when + ", " + Info.MessageCount + " msgs, " + kb.ToString("F1") + " KB)";
-            }
-        }
     }
 
     /// <summary>
@@ -217,31 +196,30 @@ namespace SimpleLLMChatGUI
             get
             {
                 SessionListItem item = sessionList.SelectedItem as SessionListItem;
-                return item != null ? item.SessionName : null;
+                return item != null ? item.Info.Name : null;
             }
         }
+    }
 
-        private sealed class SessionListItem
+    /// <summary>Row of the session list boxes: the session plus its display text.</summary>
+    internal sealed class SessionListItem
+    {
+        public SessionListItem(SessionStore.SessionInfo info)
         {
-            public SessionListItem(SessionStore.SessionInfo info)
-            {
-                SessionName = info.Name;
-                Info = info;
-            }
+            Info = info;
+        }
 
-            public string SessionName { get; }
-            public SessionStore.SessionInfo Info { get; }
+        public SessionStore.SessionInfo Info { get; }
 
-            public override string ToString()
-            {
-                DateTime savedUtc = SessionStore.EffectiveSavedAtUtc(Info);
-                DateTime local = savedUtc != DateTime.MinValue
-                    ? savedUtc.ToLocalTime()
-                    : DateTime.MinValue;
-                string when = local != DateTime.MinValue ? local.ToString("yyyy-MM-dd HH:mm") : "unknown";
-                double kb = (double)Info.SizeBytes / 1024.0;
-                return SessionName + "  (" + when + ", " + Info.MessageCount + " msgs, " + kb.ToString("F1") + " KB)";
-            }
+        public override string ToString()
+        {
+            DateTime savedUtc = SessionStore.EffectiveSavedAtUtc(Info);
+            DateTime local = savedUtc != DateTime.MinValue
+                ? savedUtc.ToLocalTime()
+                : DateTime.MinValue;
+            string when = local != DateTime.MinValue ? local.ToString("yyyy-MM-dd HH:mm") : "unknown";
+            double kb = (double)Info.SizeBytes / 1024.0;
+            return Info.Name + "  (" + when + ", " + Info.MessageCount + " msgs, " + kb.ToString("F1") + " KB)";
         }
     }
 }

@@ -73,19 +73,24 @@ namespace DesktopTools
     public static List<ControlInfo> Collect(IntPtr windowHwnd, int maxDepth, int maxControls)
     {
       List<ControlInfo> controls = null;
+      List<ControlInfo> native = null;
       // Inspect only familiar native hosts. Unknown/custom and virtual controls retain UIA.
       string host = Win32Interop.GetControlClass(windowHwnd);
       if (host == "#32770" || host.StartsWith("WindowsForms10.", StringComparison.OrdinalIgnoreCase))
       {
-        List<ControlInfo> native = CollectWin32(windowHwnd, maxDepth);
+        native = CollectWin32(windowHwnd, maxDepth);
         if (native.Count > 0 && native.TrueForAll(c => c.SupportsNativeDiscovery))
           controls = native;
       }
       if (controls == null)
         controls = UiaInterop.WalkTree(windowHwnd, maxDepth);
 
+      // The Win32 walk is the last resort when UIA yields nothing; reuse the
+      // familiar-host result above instead of walking the tree a second time.
+      if (controls.Count == 0 && native == null)
+        native = CollectWin32(windowHwnd, maxDepth);
       if (controls.Count == 0)
-        controls = CollectWin32(windowHwnd, maxDepth);
+        controls = native;
 
       int before = controls.Count;
       TruncateDeepest(controls, maxControls);

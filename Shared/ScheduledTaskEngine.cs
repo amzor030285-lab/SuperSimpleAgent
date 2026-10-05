@@ -30,7 +30,6 @@ public static class ScheduledTaskEngine
 
     public sealed class TickResult
     {
-        public List<ScheduledTask> Jobs;
         public List<string> RanJobIds;
     }
 
@@ -38,7 +37,7 @@ public static class ScheduledTaskEngine
     {
         List<string> ran = new List<string>();
         if (jobs == null)
-            return new TickResult { Jobs = new List<ScheduledTask>(), RanJobIds = ran };
+            return new TickResult { RanJobIds = ran };
 
         foreach (ScheduledTask job in jobs)
         {
@@ -84,9 +83,8 @@ public static class ScheduledTaskEngine
                 // Due (possibly overdue).
                 if (ShouldRun(job, parsed, nowUtc))
                 {
-                    RunResult result = runJob != null ? runJob(job) : new RunResult { Success = false, Error = "no runner" };
+                    RunResult result = runJob(job);
                     job.LastRunAtUtc = nowUtc;
-                    job.LastDurationMs = result.DurationMs;
 
                     if (result.Success)
                     {
@@ -134,7 +132,7 @@ public static class ScheduledTaskEngine
             }
         }
 
-        return new TickResult { Jobs = jobs, RanJobIds = ran };
+        return new TickResult { RanJobIds = ran };
     }
 
     private static void MarkBadSchedule(ScheduledTask job, Exception ex)

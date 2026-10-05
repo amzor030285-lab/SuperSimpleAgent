@@ -41,10 +41,9 @@ namespace WebTools
                 {
                     text = HtmlToReadableText(html, URL, maxLinks, maxContentLength);
                 }
-                catch
+                catch (Exception)
                 {
-                    // Conversion failed: fall back to the older HTML stripper so the LLM still gets something.
-                    text = CapReadableOutput(FallbackPlainText(html), maxContentLength);
+                    text = "Error converting page to text.\n";
                 }
 
                 if (string.IsNullOrWhiteSpace(text))
@@ -80,7 +79,7 @@ namespace WebTools
 
                 string response = CurlHelper.PostJson(
                     scrapeUrl, payload.ToString(Formatting.None), out exitCode,
-                    combineErrorOutput: false, CurlHelper.FirecrawlAuthHeaders(apiKey));
+                    CurlHelper.FirecrawlAuthHeaders(apiKey));
 
                 if (exitCode != 0 || string.IsNullOrWhiteSpace(response))
                     return false;
@@ -103,10 +102,10 @@ namespace WebTools
                 string desc = "";
                 if (metadata != null)
                 {
-                    title = FirstNonEmpty(
+                    title = ToolHelper.FirstNonEmpty(
                         metadata["title"]?.ToString(),
                         metadata["ogTitle"]?.ToString());
-                    desc = FirstNonEmpty(
+                    desc = ToolHelper.FirstNonEmpty(
                         metadata["description"]?.ToString(),
                         metadata["ogDescription"]?.ToString());
                 }
@@ -128,18 +127,6 @@ namespace WebTools
             }
         }
 
-        private static string FirstNonEmpty(params string[] values)
-        {
-            if (values == null)
-                return "";
-            for (int i = 0; i < values.Length; i++)
-            {
-                if (!string.IsNullOrWhiteSpace(values[i]))
-                    return values[i].Trim();
-            }
-            return "";
-        }
-
         /// <summary>
         /// Keep images inline (rewritten to [Image: alt](src)); move [text](url) into Links and leave text in body.
         /// </summary>
@@ -155,14 +142,14 @@ namespace WebTools
                 @"(?<!!)\[([^\]]*)\]\(([^)\s]+)(?:\s+""[^""]*"")?\)",
                 m => CollectLinkBodyLabel(
                     collected, seenUrls, maxLinks,
-                    NormalizeWhitespace(m.Groups[1].Value),
+                    ToolHelper.NormalizeWhitespace(m.Groups[1].Value),
                     m.Groups[2].Value.Trim()));
 
             // Images stay inline, rewritten to match the curl HTML path
             body = Regex.Replace(body,
                 @"!\[([^\]]*)\]\(([^)\s]+)(?:\s+""[^""]*"")?\)",
                 m => FormatImageMarkup(
-                    NormalizeWhitespace(m.Groups[1].Value),
+                    ToolHelper.NormalizeWhitespace(m.Groups[1].Value),
                     m.Groups[2].Value.Trim()));
 
             body = Regex.Replace(body, @"\n{3,}", "\n\n");
@@ -179,7 +166,7 @@ namespace WebTools
             string title = "";
             Match titleMatch = Regex.Match(html, @"<title\b[^>]*>(.*?)</title>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             if (titleMatch.Success)
-                title = NormalizeWhitespace(StripTags(HttpUtility.HtmlDecode(titleMatch.Groups[1].Value)));
+                title = ToolHelper.NormalizeWhitespace(StripTags(HttpUtility.HtmlDecode(titleMatch.Groups[1].Value)));
 
             string desc = ExtractMetaDescription(html);
 
@@ -199,7 +186,7 @@ namespace WebTools
                 m =>
                 {
                     string href = ResolveUrl(baseUri, HttpUtility.HtmlDecode(m.Groups[2].Value.Trim()));
-                    string label = NormalizeWhitespace(StripTags(HttpUtility.HtmlDecode(m.Groups[3].Value)));
+                    string label = ToolHelper.NormalizeWhitespace(StripTags(HttpUtility.HtmlDecode(m.Groups[3].Value)));
                     return CollectLinkBodyLabel(links, seenUrls, maxLinks, label, href);
                 },
                 RegexOptions.IgnoreCase | RegexOptions.Singleline);
@@ -216,7 +203,7 @@ namespace WebTools
                 string hashes = new string('#', level);
                 html = Regex.Replace(html,
                     @"<h" + level + @"\b[^>]*>(.*?)</h" + level + @">",
-                    m => "\n\n" + hashes + " " + NormalizeWhitespace(StripTags(HttpUtility.HtmlDecode(m.Groups[1].Value))) + "\n\n",
+                    m => "\n\n" + hashes + " " + ToolHelper.NormalizeWhitespace(StripTags(HttpUtility.HtmlDecode(m.Groups[1].Value))) + "\n\n",
                     RegexOptions.IgnoreCase | RegexOptions.Singleline);
             }
 
@@ -309,40 +296,28 @@ namespace WebTools
 
         private static string ExtractMetaDescription(string html)
         {
-            Match m = Regex.Match(html,
-                @"<meta\b[^>]*\bname\s*=\s*(['""])description\1[^>]*\bcontent\s*=\s*(['""])(.*?)\2",
-                RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            string tag = FindMetaTag(html, "name", "description");
+            if (tag == null)
+                tag = FindMetaTag(html, "property", "og:description");
+            if (tag == null)
+                return "";
+            Match m = Regex.Match(tag, @"\bcontent\s*=\s*(['""])(.*?)\1", RegexOptions.IgnoreCase | RegexOptions.Singleline);
             if (!m.Success)
-            {
-                m = Regex.Match(html,
-                    @"<meta\b[^>]*\bcontent\s*=\s*(['""])(.*?)\1[^>]*\bname\s*=\s*(['""])description\3",
-                    RegexOptions.IgnoreCase | RegexOptions.Singleline);
-                if (m.Success)
-                    return NormalizeWhitespace(HttpUtility.HtmlDecode(m.Groups[2].Value));
-            }
-            else
-            {
-                return NormalizeWhitespace(HttpUtility.HtmlDecode(m.Groups[3].Value));
-            }
+                return "";
+            return ToolHelper.NormalizeWhitespace(HttpUtility.HtmlDecode(m.Groups[2].Value));
+        }
 
-            m = Regex.Match(html,
-                @"<meta\b[^>]*\bproperty\s*=\s*(['""])og:description\1[^>]*\bcontent\s*=\s*(['""])(.*?)\2",
+        private static string FindMetaTag(string html, string attribute, string value)
+        {
+            Match m = Regex.Match(html,
+                @"<meta\b[^>]*\b" + attribute + @"\s*=\s*(['""])(" + Regex.Escape(value) + @")\1[^>]*>",
                 RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            if (m.Success)
-                return NormalizeWhitespace(HttpUtility.HtmlDecode(m.Groups[3].Value));
-
-            m = Regex.Match(html,
-                @"<meta\b[^>]*\bcontent\s*=\s*(['""])(.*?)\1[^>]*\bproperty\s*=\s*(['""])og:description\3",
-                RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            if (m.Success)
-                return NormalizeWhitespace(HttpUtility.HtmlDecode(m.Groups[2].Value));
-
-            return "";
+            return m.Success ? m.Value : null;
         }
 
         private static string FormatImage(string attributes, Uri baseUri)
         {
-            string alt = NormalizeWhitespace(HttpUtility.HtmlDecode(ExtractAttribute(attributes, "alt")));
+            string alt = ToolHelper.NormalizeWhitespace(HttpUtility.HtmlDecode(ExtractAttribute(attributes, "alt")));
             string src = ResolveUrl(baseUri, HttpUtility.HtmlDecode(ExtractAttribute(attributes, "src")));
             return FormatImageMarkup(alt, src);
         }
@@ -466,7 +441,7 @@ namespace WebTools
                 if (!m.Success)
                     continue;
                 string region = m.Groups[1].Value;
-                int textLength = NormalizeWhitespace(StripTags(region)).Length;
+                int textLength = ToolHelper.NormalizeWhitespace(StripTags(region)).Length;
                 if (textLength < 100)
                     continue;
                 return region;
@@ -491,7 +466,7 @@ namespace WebTools
                 string p = parts[i].Trim();
                 if (p.Length == 0)
                     continue;
-                string key = NormalizeWhitespace(p);
+                string key = ToolHelper.NormalizeWhitespace(p);
                 if (!seen.Add(key))
                     continue;
                 if (sb.Length > 0)
@@ -501,83 +476,9 @@ namespace WebTools
             return sb.ToString();
         }
 
-        /// <summary>
-        /// Older HTML stripper used when readable-text conversion throws: remove fluff,
-        /// simplify tags, keep &lt;img src/alt&gt; and &lt;a href&gt;.
-        /// </summary>
-        private static string FallbackPlainText(string html)
-        {
-            html = StripNonContentBlocks(html);
-            html = Regex.Replace(html, @"<html\b[^>]*>", "<html>", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"<path\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"<meta\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"<link\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"<input\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-            // Keep img with src and alt only
-            html = Regex.Replace(html,
-                @"<img\b([^>]*)/?>",
-                m =>
-                {
-                    string src = ExtractAttribute(m.Groups[1].Value, "src");
-                    string alt = ExtractAttribute(m.Groups[1].Value, "alt");
-                    if (string.IsNullOrEmpty(src) && string.IsNullOrEmpty(alt))
-                        return "";
-                    StringBuilder tag = new StringBuilder("<img");
-                    if (!string.IsNullOrEmpty(src))
-                        tag.Append(" src=\"").Append(src).Append("\"");
-                    if (!string.IsNullOrEmpty(alt))
-                        tag.Append(" alt=\"").Append(alt).Append("\"");
-                    tag.Append(">");
-                    return tag.ToString();
-                },
-                RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-            // Keep a tags with href only
-            html = Regex.Replace(html,
-                @"<a\b[^>]*\bhref\s*=\s*(['""])([^'""]*)\1[^>]*>",
-                "<a href=\"$2\">",
-                RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-            // Remove inline JS/CSS noise attributes
-            html = Regex.Replace(html, @"\s(on\w+|style|class|id|method|role)\s*=\s*(['""]).*?\2", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"^\s*$[\r\n]*", "", RegexOptions.Multiline);
-            html = Regex.Replace(html, @"</?html\b[^>]*>", "", RegexOptions.IgnoreCase);
-            html = Regex.Replace(html, @"</?body\b[^>]*>", "", RegexOptions.IgnoreCase);
-
-            // Remove common wrappers but keep content
-            html = Regex.Replace(html, @"</?[pibPIB]\b[^>]*>", "", RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?u\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?ul\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?ol\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?li\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.RightToLeft);
-            html = Regex.Replace(html, @"</?div\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?strong\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?span\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?pre\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?table\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?thead\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?tbody\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?tfoot\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?tr\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?td\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-            html = Regex.Replace(html, @"</?th\b[^>]*>", "", RegexOptions.IgnoreCase | RegexOptions.Singleline);
-
-            html = Regex.Replace(html, @">\s+<", "><", RegexOptions.Singleline);
-            html = Regex.Replace(html, @"[ \t]+", " ", RegexOptions.Multiline);
-            html = Regex.Replace(html, @"^\s+|\s+$", "", RegexOptions.Multiline);
-
-            return html.Trim();
-        }
-
         private static string StripTags(string html)
         {
             return Regex.Replace(html, @"<[^>]+>", "");
-        }
-
-        private static string NormalizeWhitespace(string text)
-        {
-            return Regex.Replace(text ?? "", @"\s+", " ").Trim();
         }
 
         public static string RunWebSearch(string query, string searxngInstance,

@@ -37,19 +37,6 @@ public static class Schedule
         public DateTime EveryOriginUtc;   // Every only (creation time)
         public Cron Cron;                 // Cron only
         public TimeZoneInfo TimeZone;     // Cron only (host local when unset)
-        public string Source;             // original input, for display
-
-        public string Display
-        {
-            get
-            {
-                if (Kind == Kind.At)
-                    return "at " + AtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss") + " local";
-                if (Kind == Kind.Every)
-                    return "every " + DescribeInterval(Every);
-                return "cron " + (Cron != null ? Cron.Source : "");
-            }
-        }
 
         // Next fire time strictly after afterUtc, or null when the schedule can
         // no longer fire (a one-shot "at" whose instant has passed).
@@ -160,10 +147,10 @@ public static class Schedule
         string lower = s.ToLowerInvariant();
         int atEnd = KeywordEnd(lower, "at");
         if (atEnd >= 0)
-            return ParseAt(s.Substring(atEnd).Trim(), nowUtc, s);
+            return ParseAt(s.Substring(atEnd).Trim(), nowUtc);
         int everyEnd = KeywordEnd(lower, "every");
         if (everyEnd >= 0)
-            return ParseEvery(s.Substring(everyEnd).Trim(), nowUtc, s);
+            return ParseEvery(s.Substring(everyEnd).Trim(), nowUtc);
         int cronEnd = KeywordEnd(lower, "cron");
         if (cronEnd >= 0)
             return ParseCron(s.Substring(cronEnd).Trim(), s);
@@ -201,9 +188,9 @@ public static class Schedule
         return i;
     }
 
-    private static Parsed ParseAt(string body, DateTime nowUtc, string source)
+    private static Parsed ParseAt(string body, DateTime nowUtc)
     {
-        Parsed p = new Parsed { Kind = Kind.At, Source = source };
+        Parsed p = new Parsed { Kind = Kind.At };
 
         // Relative offset: a single number followed by s/m/h/d.
         Match m = Regex.Match(body, @"^\s*(\d+)\s*([smhdSMHD])\s*$");
@@ -247,9 +234,9 @@ public static class Schedule
         return p;
     }
 
-    private static Parsed ParseEvery(string body, DateTime nowUtc, string source)
+    private static Parsed ParseEvery(string body, DateTime nowUtc)
     {
-        Parsed p = new Parsed { Kind = Kind.Every, Source = source, EveryOriginUtc = nowUtc.ToUniversalTime() };
+        Parsed p = new Parsed { Kind = Kind.Every, EveryOriginUtc = nowUtc.ToUniversalTime() };
 
         // Allow a single number+unit or a simple "Nh Nm" style; keep it to one unit.
         Match m = Regex.Match(body, @"^\s*(\d+)\s*([smhdSMHD])\s*$");
@@ -318,7 +305,6 @@ public static class Schedule
         Parsed p = new Parsed
         {
             Kind = Kind.Cron,
-            Source = source,
             TimeZone = tz,
             Cron = new Cron
             {
@@ -502,16 +488,5 @@ public static class Schedule
         if (periods < 1)
             periods = 1;
         return originUtc.ToUniversalTime().AddMilliseconds(periods * intervalMs);
-    }
-
-    private static string DescribeInterval(TimeSpan ts)
-    {
-        if (ts.TotalDays % 1 == 0)
-            return (int)ts.TotalDays + "d";
-        if (ts.TotalHours % 1 == 0)
-            return (int)ts.TotalHours + "h";
-        if (ts.TotalMinutes % 1 == 0)
-            return (int)ts.TotalMinutes + "m";
-        return (int)ts.TotalSeconds + "s";
     }
 }

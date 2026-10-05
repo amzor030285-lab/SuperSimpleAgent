@@ -99,8 +99,8 @@
     <Compile Include="..\..\SimpleLLMChatCLI\ImageEncoder.cs">
       <Link>CLI\ImageEncoder.cs</Link>
     </Compile>
-    <Compile Include="..\..\Shared\StatusPipe\StatusPipe.Ready.cs">
-      <Link>Shared\StatusPipe\StatusPipe.Ready.cs</Link>
+    <Compile Include="..\..\Shared\StatusPipe\StatusPipe.cs">
+      <Link>Shared\StatusPipe\StatusPipe.cs</Link>
     </Compile>
     <Compile Include="..\..\SimpleLLMChatCLI\RAG\VectorStore.cs">
       <Link>CLI\VectorStore.cs</Link>

@@ -306,7 +306,8 @@ namespace FileTools
                 // Build 7za.exe arguments: x (extract with full paths) -o (output directory) -y (yes to all prompts)
                 string arguments = $"x \"{archivePath}\" -o\"{destinationPath}\" -y";
 
-                string output = ToolHelper.ExecuteProcess("7za.exe", arguments, out exitCode, ToolHelper.ResolveOutputEncoding());
+                string output = ToolHelper.ExecuteProcess("7za.exe", arguments, out exitCode,
+                    outputEncoding: ToolHelper.ResolveOutputEncoding());
 
                 if (exitCode != 0)
                 {

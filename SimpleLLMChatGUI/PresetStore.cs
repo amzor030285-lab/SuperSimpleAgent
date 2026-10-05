@@ -148,14 +148,6 @@ namespace SimpleLLMChatGUI
             return true;
         }
 
-        public static List<string> Names(IEnumerable<LlmPreset> presets)
-        {
-            var names = new List<string>();
-            foreach (LlmPreset preset in presets)
-                names.Add(preset.Name);
-            return names;
-        }
-
         /// <summary>
         /// Index of the preset with this name, or -1. Matching is by name on purpose:
         /// a list re-read from disk holds different instances than the one it came from,

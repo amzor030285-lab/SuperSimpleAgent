@@ -1692,7 +1692,7 @@ public class LLMClient
             }
 
             // Try curl fallback for HTTPS connection errors
-            if (CurlClient.CanFallback(serverUrl, ex))
+            if (TlsCurlFallback.CanAttempt(serverUrl, ex))
                 return CurlClient.SendRequest(chatUrl, config.GetConfigValue("apikey"), payload, guardedOutput, onReasoningChunk, onReasoningSummary, requestTimeoutMs / 1000, stallSeconds, toolCallCallback, onContentStart, startBlock);
 
             return new LLMCompletionResponse(reason, null, "request_failed");

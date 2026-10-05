@@ -16,11 +16,6 @@ namespace SimpleLLMChatCLI
     /// </summary>
     internal static class CurlClient
     {
-        public static bool CanFallback(string url, Exception ex)
-        {
-            return TlsCurlFallback.CanAttempt(url, ex);
-        }
-
         /// <summary>
         /// Non-streaming JSON POST. Used for embeddings (and similar one-shot APIs).
         /// <paramref name="timeoutSeconds"/> caps both the connect phase

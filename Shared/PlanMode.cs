@@ -244,15 +244,4 @@ public static class PlanMode
         }
     }
 
-    /// <summary>
-    /// Names shown by the GUI button tooltip, in cycle order. Kept next to the
-    /// tool lists so the two cannot drift apart silently.
-    /// </summary>
-    public static List<string> GetAllowedToolNames()
-    {
-        List<string> names = new List<string>(ReadOnlyTools);
-        foreach (string writer in PlanWriterTools)
-            names.Add(writer + " (" + PlanFileName + " only)");
-        return names;
-    }
 }

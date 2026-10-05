@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 public struct ToolResult
@@ -233,7 +234,8 @@ public static class ToolHelper
         }
     }
 
-    private static long ReadBoundedBytes(Stream stream, MemoryStream sink, int ceiling)
+    // ceiling < 0 means unlimited.
+    private static long ReadBytes(Stream stream, MemoryStream sink, int ceiling)
     {
         byte[] buffer = new byte[8192];
         long total = 0;
@@ -243,24 +245,14 @@ public static class ToolHelper
             if (read <= 0)
                 break;
             total += read;
-            int room = ceiling - (int)sink.Length;
-            if (room > 0)
-                sink.Write(buffer, 0, Math.Min(room, read));
-        }
-        return total;
-    }
-
-    private static long DrainAllBytes(Stream stream, MemoryStream sink)
-    {
-        byte[] buffer = new byte[8192];
-        long total = 0;
-        while (true)
-        {
-            int read = stream.Read(buffer, 0, buffer.Length);
-            if (read <= 0)
-                break;
-            sink.Write(buffer, 0, read);
-            total += read;
+            if (ceiling >= 0)
+            {
+                int room = ceiling - (int)sink.Length;
+                if (room > 0)
+                    sink.Write(buffer, 0, Math.Min(room, read));
+            }
+            else
+                sink.Write(buffer, 0, read);
         }
         return total;
     }
@@ -295,10 +287,8 @@ public static class ToolHelper
                 {
                     try
                     {
-                        if (capOutput)
-                            outTotal = ReadBoundedBytes(process.StandardOutput.BaseStream, outBuffer, ProcessOutputReadCeilingChars);
-                        else
-                            outTotal = DrainAllBytes(process.StandardOutput.BaseStream, outBuffer);
+                        outTotal = ReadBytes(process.StandardOutput.BaseStream, outBuffer,
+                            capOutput ? ProcessOutputReadCeilingChars : -1);
                     }
                     catch { }
                 });
@@ -306,10 +296,8 @@ public static class ToolHelper
                 {
                     try
                     {
-                        if (capOutput)
-                            errTotal = ReadBoundedBytes(process.StandardError.BaseStream, errBuffer, ProcessOutputReadCeilingChars);
-                        else
-                            errTotal = DrainAllBytes(process.StandardError.BaseStream, errBuffer);
+                        errTotal = ReadBytes(process.StandardError.BaseStream, errBuffer,
+                            capOutput ? ProcessOutputReadCeilingChars : -1);
                     }
                     catch { }
                 });
@@ -496,6 +484,23 @@ public static class ToolHelper
             + tail;
     }
 
+    public static string FirstNonEmpty(params string[] values)
+    {
+        if (values == null)
+            return "";
+        for (int i = 0; i < values.Length; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(values[i]))
+                return values[i].Trim();
+        }
+        return "";
+    }
+
+    public static string NormalizeWhitespace(string text)
+    {
+        return Regex.Replace(text ?? "", @"\s+", " ").Trim();
+    }
+
     /// <summary>
     /// Runs a process and returns its (optionally capped) output decoded as text.
     /// capOutput=false is for intermediate artifacts (e.g. raw HTML fetched for
@@ -529,11 +534,6 @@ public static class ToolHelper
             start = 3;
 
         return enc.GetString(bytes, start, bytes.Length - start);
-    }
-
-    public static string ExecuteProcess(string fileName, string arguments, out int exitCode, Encoding outputEncoding)
-    {
-        return ExecuteProcess(fileName, arguments, out exitCode, true, outputEncoding);
     }
 
     public static string JsonExtractString(string json, string key)

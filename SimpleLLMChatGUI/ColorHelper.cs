@@ -215,15 +215,6 @@ namespace SimpleLLMChatGUI
         }
 
         /// <summary>
-        /// Name of the preview element the Colors dialog shows for a brush key
-        /// ("ButtonBorderBrush" -> "ButtonBorderPreview").
-        /// </summary>
-        public static string PreviewNameFor(string resourceKey)
-        {
-            return resourceKey.Replace("Brush", "Preview");
-        }
-
-        /// <summary>
         /// Attempts to parse a color string (hex format) into a WPF Color.
         /// Supports both RGB (#RRGGBB) and ARGB (#AARRGGBB) formats.
         /// </summary>

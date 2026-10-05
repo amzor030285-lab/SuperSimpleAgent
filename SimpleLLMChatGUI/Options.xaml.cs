@@ -377,7 +377,7 @@ namespace SimpleLLMChatGUI
             BuildToolTimeoutsUI(config);
             RefreshPresetCombo(null);
 
-            IndexingStatusHub.Updated += OnIndexingStatusUpdated;
+            IndexingStatusHub.Updated += RefreshIndexingStatusUi;
             RefreshIndexingStatusUi();
                 Closed += Options_Closed;
             }
@@ -388,7 +388,8 @@ namespace SimpleLLMChatGUI
         /// </summary>
         private void RefreshPresetCombo(string selectName)
         {
-            List<string> names = PresetStore.Names(PresetStore.Load(PresetStore.DefaultPath));
+            List<string> names = PresetStore.Load(PresetStore.DefaultPath)
+                .Select(preset => preset.Name).ToList();
             PresetComboBox.ItemsSource = names;
             PresetComboBox.SelectedItem =
                 (string.IsNullOrEmpty(selectName) || !names.Contains(selectName)) ? null : selectName;
@@ -564,7 +565,7 @@ namespace SimpleLLMChatGUI
 
         private void Options_Closed(object sender, EventArgs e)
         {
-            IndexingStatusHub.Updated -= OnIndexingStatusUpdated;
+            IndexingStatusHub.Updated -= RefreshIndexingStatusUi;
 
             // A theme previewed here was never persisted unless the dialog was
             // saved, so put the saved theme back on cancel / window close.
@@ -587,11 +588,6 @@ namespace SimpleLLMChatGUI
             return (idx >= 0 && idx < ColorHelper.ThemeOrder.Length)
                 ? ColorHelper.ThemeOrder[idx]
                 : ColorHelper.ThemeSystem;
-        }
-
-        private void OnIndexingStatusUpdated()
-        {
-            RefreshIndexingStatusUi();
         }
 
         private void RefreshIndexingStatusUi()

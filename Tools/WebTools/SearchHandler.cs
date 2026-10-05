@@ -165,7 +165,7 @@ namespace WebTools
 
                 response = CurlHelper.PostJson(
                     searchUrl, payload.ToString(Formatting.None), out exitCode,
-                    combineErrorOutput: false, CurlHelper.FirecrawlAuthHeaders(apiKey));
+                    CurlHelper.FirecrawlAuthHeaders(apiKey));
             }
             catch (Exception ex)
             {
@@ -203,9 +203,9 @@ namespace WebTools
             foreach (JToken result in webResults)
             {
                 string url = (result["url"]?.ToString() ?? "").Trim();
-                string title = NormalizeWhitespace(result["title"]?.ToString());
-                string content = NormalizeWhitespace(
-                    FirstNonEmpty(
+                string title = ToolHelper.NormalizeWhitespace(result["title"]?.ToString());
+                string content = ToolHelper.NormalizeWhitespace(
+                    ToolHelper.FirstNonEmpty(
                         result["description"]?.ToString(),
                         result["snippet"]?.ToString(),
                         result["content"]?.ToString()));
@@ -218,23 +218,6 @@ namespace WebTools
                 return "";
 
             return results.ToString();
-        }
-
-        private static string NormalizeWhitespace(string text)
-        {
-            return Regex.Replace(text ?? "", @"\s+", " ").Trim();
-        }
-
-        private static string FirstNonEmpty(params string[] values)
-        {
-            if (values == null)
-                return "";
-            for (int i = 0; i < values.Length; i++)
-            {
-                if (!string.IsNullOrWhiteSpace(values[i]))
-                    return values[i];
-            }
-            return "";
         }
 
         // Searches the web with SearXNG

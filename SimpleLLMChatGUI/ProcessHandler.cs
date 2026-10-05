@@ -331,7 +331,11 @@ namespace SimpleLLMChatGUI
 
         private static int GetPartialSuffixLength(string text, string marker)
         {
-            int maxLength = Math.Min(marker.Length - 1, text.Length);
+            return PartialSuffixLength(text, marker, Math.Min(marker.Length - 1, text.Length));
+        }
+
+        private static int PartialSuffixLength(string text, string marker, int maxLength)
+        {
             for (int length = maxLength; length > 0; length--)
             {
                 if (text.EndsWith(marker.Substring(0, length), StringComparison.Ordinal))
@@ -448,13 +452,7 @@ namespace SimpleLLMChatGUI
         private static int GetPartialYouPromptSuffixLength(string text, int pos, bool streamAtStart)
         {
             string marker = (streamAtStart && pos == 0) ? YouPromptMarker : "\n" + YouPromptMarker;
-            int maxLength = Math.Min(marker.Length - 1, text.Length - pos);
-            for (int length = maxLength; length > 0; length--)
-            {
-                if (text.EndsWith(marker.Substring(0, length), StringComparison.Ordinal))
-                    return length;
-            }
-            return 0;
+            return PartialSuffixLength(text, marker, Math.Min(marker.Length - 1, text.Length - pos));
         }
 
         private void OutputText(string text)

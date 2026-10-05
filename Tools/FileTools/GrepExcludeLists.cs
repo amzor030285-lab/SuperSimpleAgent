@@ -19,29 +19,19 @@ namespace FileTools
             ".nuget", "TestResults"
         };
 
-        public static IEnumerable<string> ExcludedFileGlobs
+        public static readonly string[] ExcludedFileGlobs =
         {
-            get
-            {
-                string[] extensions =
-                {
-                    ".pyc", ".pyo", ".exe", ".dll",
-                    ".so", ".dylib", ".obj", ".o",
-                    ".a", ".lib", ".pdb", ".ilk",
-                    ".class", ".jar", ".war", ".ear",
-                    ".zip", ".tar", ".gz", ".rar",
-                    ".png", ".jpg", ".jpeg", ".gif",
-                    ".bmp", ".ico", ".svg", ".pdf",
-                    ".mp3", ".mp4", ".avi", ".mov",
-                    ".ttf", ".woff", ".woff2", ".eot",
-                    ".map", ".lock", ".cache"
-                };
-                foreach (string ext in extensions)
-                    yield return "*" + ext;
-
-                yield return "*.min.js";
-                yield return "*.min.css";
-            }
-        }
+            "*.pyc", "*.pyo", "*.exe", "*.dll",
+            "*.so", "*.dylib", "*.obj", "*.o",
+            "*.a", "*.lib", "*.pdb", "*.ilk",
+            "*.class", "*.jar", "*.war", "*.ear",
+            "*.zip", "*.tar", "*.gz", "*.rar",
+            "*.png", "*.jpg", "*.jpeg", "*.gif",
+            "*.bmp", "*.ico", "*.svg", "*.pdf",
+            "*.mp3", "*.mp4", "*.avi", "*.mov",
+            "*.ttf", "*.woff", "*.woff2", "*.eot",
+            "*.map", "*.lock", "*.cache",
+            "*.min.js", "*.min.css"
+        };
     }
 }

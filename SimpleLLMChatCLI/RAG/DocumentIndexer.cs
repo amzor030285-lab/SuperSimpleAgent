@@ -34,7 +34,7 @@ namespace SimpleLLMChatCLI.RAG
         {
             if (!_config.GetConfigBool("ragEnabled", false))
             {
-                Report(new IndexProgress { Phase = "error", Message = "RAG is disabled." });
+                _onProgress(new IndexProgress { Phase = "error", Message = "RAG is disabled." });
                 return;
             }
 
@@ -44,7 +44,7 @@ namespace SimpleLLMChatCLI.RAG
                 try { Directory.CreateDirectory(knowledgePath); }
                 catch (Exception ex)
                 {
-                    Report(new IndexProgress { Phase = "error", Message = "Cannot create knowledge folder: " + ex.Message });
+                    _onProgress(new IndexProgress { Phase = "error", Message = "Cannot create knowledge folder: " + ex.Message });
                     return;
                 }
             }
@@ -52,7 +52,7 @@ namespace SimpleLLMChatCLI.RAG
             EmbeddingsClient embeddings = EmbeddingsClient.CreateFromConfig(_config);
             if (embeddings == null)
             {
-                Report(new IndexProgress
+                _onProgress(new IndexProgress
                 {
                     Phase = "error",
                     Message = "Embeddings model is required when RAG is enabled."
@@ -70,7 +70,7 @@ namespace SimpleLLMChatCLI.RAG
 
             List<string> files = new List<string>(DocumentScanFilter.EnumerateFiles(
                 knowledgePath, DocumentScanFilter.GetAllowedExtensions(_config)));
-            Report(new IndexProgress { Phase = "start", Total = files.Count });
+            _onProgress(new IndexProgress { Phase = "start", Total = files.Count });
 
             int chunkLines = _config.GetConfigInt("indexChunkLines", 60);
             int overlap = _config.GetConfigInt("indexChunkOverlap", 10);
@@ -86,7 +86,7 @@ namespace SimpleLLMChatCLI.RAG
             {
                 current++;
                 seen.Add(file);
-                Report(new IndexProgress
+                _onProgress(new IndexProgress
                 {
                     Phase = "progress",
                     Current = current,
@@ -176,7 +176,7 @@ namespace SimpleLLMChatCLI.RAG
                 {
                     // Discard this pass: hashes were stamped before embed, so saving would
                     // skip those files forever on the next reconcile.
-                    Report(new IndexProgress
+                    _onProgress(new IndexProgress
                     {
                         Phase = "error",
                         Message = "Embeddings failed: " + ex.Message + " (index not saved)."
@@ -192,7 +192,7 @@ namespace SimpleLLMChatCLI.RAG
             index.Save();
             DocumentIndex.SetCurrent(index);
 
-            Report(new IndexProgress
+            _onProgress(new IndexProgress
             {
                 Phase = "done",
                 FileCount = index.Manifest.Files.Count
@@ -205,12 +205,7 @@ namespace SimpleLLMChatCLI.RAG
             DocumentIndex index = DocumentIndex.LoadFor(knowledgePath);
             index.Clear();
             DocumentIndex.SetCurrent(index);
-            Report(new IndexProgress { Phase = "cleared" });
-        }
-
-        private void Report(IndexProgress progress)
-        {
-            _onProgress(progress);
+            _onProgress(new IndexProgress { Phase = "cleared" });
         }
 
         private static bool TryReadContent(string file, out string content, out string hash)

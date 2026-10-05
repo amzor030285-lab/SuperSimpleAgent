@@ -39,11 +39,7 @@ public static class SecretProtector
                 Convert.FromBase64String(stored.Substring(Prefix.Length)), null, DataProtectionScope.CurrentUser);
             return Encoding.UTF8.GetString(plain);
         }
-        catch (CryptographicException)
-        {
-            return stored;
-        }
-        catch (FormatException)
+        catch (Exception)
         {
             return stored;
         }

@@ -31,7 +31,6 @@ public sealed class ScheduledTask
     public string LastStatus;
     public string LastError;
     public string LastOutputSnippet;
-    public int LastDurationMs;
     public int ConsecutiveErrors;
     public bool AutoDisabled;
     public List<RunRecord> RecentRuns;
@@ -56,7 +55,6 @@ public sealed class ScheduledTask
             LastStatus = LastStatus,
             LastError = LastError,
             LastOutputSnippet = LastOutputSnippet,
-            LastDurationMs = LastDurationMs,
             ConsecutiveErrors = ConsecutiveErrors,
             AutoDisabled = AutoDisabled,
             RecentRuns = RecentRuns != null ? new List<RunRecord>(RecentRuns) : null

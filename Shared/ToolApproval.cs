@@ -6,7 +6,6 @@ using System;
 public static class ToolApproval
 {
     public const string RunToolPrefix = "Run tool: ";
-    public const string ArgumentsPrefix = "With arguments:";
     public const string ApprovalPrompt = "Approve? (Y/N): ";
 
     public static string UnescapeArguments(string arguments)
@@ -56,18 +55,7 @@ public static class ToolApproval
 
         toolName = block.Substring(nameStart, nameEnd - nameStart).Trim();
 
-        string rest = block.Substring(nameEnd + 1);
-
-        // Older format inserted a "With arguments:" label before the payload.
-        if (rest.StartsWith(ArgumentsPrefix, StringComparison.Ordinal))
-        {
-            int argsLineEnd = rest.IndexOf('\n');
-            if (argsLineEnd < 0)
-                return false;
-            rest = rest.Substring(argsLineEnd + 1);
-        }
-
-        arguments = rest.TrimEnd('\r', '\n', ' ');
+        arguments = block.Substring(nameEnd + 1).TrimEnd('\r', '\n', ' ');
         return true;
     }
 

@@ -40,7 +40,9 @@ namespace SimpleLLMChatCLI.RAG
                 + "\n---End Retrieved Context---";
 
             result.MergedPrompt = MergeIntoPrompt(baseUserPrompt, block);
-            result.UserStatusLine = BuildReadingLine(hits.FilePaths);
+            result.UserStatusLine = hits.FilePaths.Count == 0
+                ? null
+                : "[reading " + string.Join(", ", hits.FilePaths) + "]";
             return result;
         }
 
@@ -56,13 +58,6 @@ namespace SimpleLLMChatCLI.RAG
                 return before + "\n\n" + retrievedBlock + after;
             }
             return retrievedBlock + separator + baseText;
-        }
-
-        private static string BuildReadingLine(List<string> files)
-        {
-            if (files.Count == 0)
-                return null;
-            return "[reading " + string.Join(", ", files) + "]";
         }
 
     }

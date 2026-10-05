@@ -58,16 +58,14 @@ public static class ConsoleOutputDecoder
         return Score(t1251) > Score(t866) ? t1251 : t866;
     }
 
+    // Utf8.GetString (throwOnInvalidBytes=false) никогда не бросает — невалидные
+    // байты становятся U+FFFD, что и ищет скан ниже.
     static bool IsStrictUtf8(byte[] bytes, int start)
     {
-        try
-        {
-            string s = Utf8.GetString(bytes, start, bytes.Length - start);
-            for (int i = 0; i < s.Length; i++)
-                if (s[i] == '\uFFFD') return false;
-            return true;
-        }
-        catch { return false; }
+        string s = Utf8.GetString(bytes, start, bytes.Length - start);
+        for (int i = 0; i < s.Length; i++)
+            if (s[i] == '\uFFFD') return false;
+        return true;
     }
 
     // Оценка правдоподобия декода:

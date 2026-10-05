@@ -133,17 +133,8 @@
     <Compile Include="..\Shared\StatusPipe\StatusPipe.cs">
       <Link>Shared\StatusPipe\StatusPipe.cs</Link>
     </Compile>
-    <Compile Include="..\Shared\StatusPipe\StatusPipe.Tokens.cs">
-      <Link>Shared\StatusPipe\StatusPipe.Tokens.cs</Link>
-    </Compile>
     <Compile Include="..\Shared\StatusPipe\StatusPipe.Indexing.cs">
       <Link>Shared\StatusPipe\StatusPipe.Indexing.cs</Link>
-    </Compile>
-    <Compile Include="..\Shared\StatusPipe\StatusPipe.RunningTool.cs">
-      <Link>Shared\StatusPipe\StatusPipe.RunningTool.cs</Link>
-    </Compile>
-    <Compile Include="..\Shared\StatusPipe\StatusPipe.Ready.cs">
-      <Link>Shared\StatusPipe\StatusPipe.Ready.cs</Link>
     </Compile>
     <Compile Include="..\Shared\ControlPipe\ControlPipe.cs">
       <Link>Shared\ControlPipe\ControlPipe.cs</Link>
@@ -186,7 +177,6 @@
     <Compile Include="ChatTurn.cs" />
     <Compile Include="ChatTurnView.cs" />
     <Compile Include="ChatListBox.cs" />
-    <Compile Include="ChatMessageDocumentBehavior.cs" />
     <Compile Include="NoScrollRichTextBox.cs" />
     <Compile Include="NoScrollTextBox.cs" />
     <Compile Include="MarkdownRenderer.cs" />

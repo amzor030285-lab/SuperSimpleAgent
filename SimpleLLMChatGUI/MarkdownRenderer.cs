@@ -329,7 +329,11 @@ namespace SimpleLLMChatGUI
             double total = 0;
             for (int c = 0; c < columnCount; c++)
             {
-                double w = MeasureTextWidth(CellText(rows[0], c), baseFontSize, FontWeights.Bold, ChatFontFamily());
+                ContainerInline headerInlines = CellInlines(rows[0], c);
+                var headerSb = new StringBuilder();
+                if (headerInlines != null)
+                    AppendPlainText(headerSb, headerInlines);
+                double w = MeasureTextWidth(headerSb.ToString(), baseFontSize, FontWeights.Bold, ChatFontFamily());
                 for (int r = 1; r < rowCount; r++)
                     w = Math.Max(w, MeasureCellInlines(CellInlines(rows[r], c), baseFontSize));
                 widths[c] = Math.Max(TableMinColumnWidth, w * 1.1 + TableCellPaddingWidth);
@@ -395,17 +399,6 @@ namespace SimpleLLMChatGUI
             return null;
         }
 
-        private static string CellText(MDTableRow row, int column)
-        {
-            ContainerInline inlines = CellInlines(row, column);
-            if (inlines == null)
-                return string.Empty;
-
-            var sb = new StringBuilder();
-            AppendPlainText(sb, inlines);
-            return sb.ToString();
-        }
-
         private static TextAlignment CellAlignment(MDTable table, int column)
         {
             TableColumnAlign? alignment = table.ColumnDefinitions[column].Alignment;
@@ -432,7 +425,11 @@ namespace SimpleLLMChatGUI
             if ((styled & 1) != 0)
                 w = Math.Max(w, MeasureTextWidth(text, baseFontSize, FontWeights.Bold, ChatFontFamily()));
             if ((styled & 2) != 0)
-                w = Math.Max(w, MeasureTextWidth(text, baseFontSize, FontWeights.Normal, CodeFontFamily()));
+            {
+                FontFamily codeFamily = FontHandler.TryGetFontFamily(App.Config.GetConfigValue("codeblockfontfamily"))
+                    ?? new FontFamily("Consolas");
+                w = Math.Max(w, MeasureTextWidth(text, baseFontSize, FontWeights.Normal, codeFamily));
+            }
             return w;
         }
 
@@ -1018,15 +1015,6 @@ namespace SimpleLLMChatGUI
         {
             return FontHandler.TryGetFontFamily(App.Config.GetConfigValue("customfontfamily"))
                 ?? SystemFonts.MessageFontFamily;
-        }
-
-        /// <summary>
-        /// Monospace code font family (user override or Consolas).
-        /// </summary>
-        private static FontFamily CodeFontFamily()
-        {
-            return FontHandler.TryGetFontFamily(App.Config.GetConfigValue("codeblockfontfamily"))
-                ?? new FontFamily("Consolas");
         }
 
         /// <summary>

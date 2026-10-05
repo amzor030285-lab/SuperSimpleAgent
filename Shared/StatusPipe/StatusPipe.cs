@@ -74,4 +74,40 @@ public static partial class StatusPipe
             end++;
         return args.Substring(start, end - start);
     }
+
+    public const string ReadyLine = "STATUS ready";
+
+    public static bool TryParseReadyLine(string line)
+    {
+        if (string.IsNullOrEmpty(line))
+            return false;
+        return string.Equals(line.Trim(), ReadyLine, StringComparison.Ordinal);
+    }
+
+    public const string TokensPrefix = "STATUS tokens=";
+
+    public static bool TryParseStatusLine(string line, out int tokens)
+    {
+        tokens = 0;
+        string value;
+        if (!TryStripPrefix(line, TokensPrefix, out value))
+            return false;
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out tokens);
+    }
+
+    public const string RunningToolPrefix = "STATUS running_tool=";
+
+    /// <summary>
+    /// Parses "STATUS running_tool=&lt;name&gt;". An empty name means no tool is
+    /// running; the tool name never contains spaces.
+    /// </summary>
+    public static bool TryParseRunningToolLine(string line, out string toolName)
+    {
+        toolName = null;
+        string rest;
+        if (!TryStripPrefix(line, RunningToolPrefix, out rest))
+            return false;
+        toolName = SanitizeToken(rest);
+        return true;
+    }
 }

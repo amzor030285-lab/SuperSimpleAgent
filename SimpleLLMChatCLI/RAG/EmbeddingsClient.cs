@@ -157,7 +157,7 @@ namespace SimpleLLMChatCLI.RAG
             }
             catch (Exception ex)
             {
-                if (CurlClient.CanFallback(url, ex))
+                if (TlsCurlFallback.CanAttempt(url, ex))
                 {
                     int exitCode;
                     // Same 120 s cap as the direct request above.
