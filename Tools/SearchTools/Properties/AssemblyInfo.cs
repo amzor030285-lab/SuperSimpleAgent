@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("SearchTools")]
-[assembly: AssemblyDescription("Everything-backed file search for SimpleLLMChat")]
+[assembly: AssemblyDescription("Everything-backed file search for SuperSimpleAgent")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("SearchTools")]

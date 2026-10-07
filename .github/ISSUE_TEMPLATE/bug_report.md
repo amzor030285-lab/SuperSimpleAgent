@@ -20,7 +20,7 @@ assignees: ''
 
 **Environment**
 
-- SimpleLLMChat version / release tag:
+- SuperSimpleAgent version / release tag:
 - Windows version (e.g. Windows XP SP3, Windows 10, Windows 11):
 - 32-bit or 64-bit:
 - CLI or GUI:

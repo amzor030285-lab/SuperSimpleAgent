@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 set ROOT=%~dp0
-set STAGE=%ROOT%SimpleLLMChat
+set STAGE=%ROOT%SuperSimpleAgent
 set OUTDIR=%ROOT%release
 
 :: Version = the release tag, e.g. v1.0.0. Required on purpose: a release ZIP
@@ -14,17 +14,17 @@ if not defined VER (
     exit /b 1
 )
 
-if not exist "%STAGE%\SimpleLLMChatCLI.exe" (
+if not exist "%STAGE%\SuperSimpleAgentCLI.exe" (
     echo ERROR: %STAGE% is empty or incomplete. Run build.bat first.
     exit /b 1
 )
 
 if not exist "%OUTDIR%" mkdir "%OUTDIR%"
-set ZIP=%OUTDIR%\SimpleLLMChat-%VER%.zip
+set ZIP=%OUTDIR%\SuperSimpleAgent-%VER%.zip
 if exist "%ZIP%" del /q "%ZIP%"
 
-:: -Path on the folder keeps SimpleLLMChat as the archive's top level, so
-:: extracting anywhere produces SimpleLLMChat\SimpleLLMChatGUI.exe.
+:: -Path on the folder keeps SuperSimpleAgent as the archive's top level, so
+:: extracting anywhere produces SuperSimpleAgent\SuperSimpleAgentGUI.exe.
 powershell -NoProfile -Command ^
     "Compress-Archive -Path '%STAGE%' -DestinationPath '%ZIP%' -CompressionLevel Optimal -Force" || exit /b 1
 

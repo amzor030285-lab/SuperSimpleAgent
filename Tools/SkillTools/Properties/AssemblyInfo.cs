@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("SkillTools")]
-[assembly: AssemblyDescription("Skill tools for SimpleLLMChat")]
+[assembly: AssemblyDescription("Skill tools for SuperSimpleAgent")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("SkillTools")]

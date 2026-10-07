@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("DesktopTools")]
-[assembly: AssemblyDescription("Desktop automation tools for SimpleLLMChat")]
+[assembly: AssemblyDescription("Desktop automation tools for SuperSimpleAgent")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("DesktopTools")]

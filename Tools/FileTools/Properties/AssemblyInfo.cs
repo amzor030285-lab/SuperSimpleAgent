@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("FileTools")]
-[assembly: AssemblyDescription("File tools for SimpleLLMChat")]
+[assembly: AssemblyDescription("File tools for SuperSimpleAgent")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("FileTools")]

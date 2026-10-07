@@ -8,7 +8,7 @@ using System.Text;
 using System.Threading;
 
 /// <summary>
-/// Shared test harness utilities for SimpleLLMChat suite EXEs (net40).
+/// Shared test harness utilities for SuperSimpleAgent suite EXEs (net40).
 /// </summary>
 public static class TestLog
 {
@@ -606,7 +606,7 @@ public sealed class TempWorkspace : IDisposable
     {
         Path = System.IO.Path.Combine(
             System.IO.Path.GetTempPath(),
-            (prefix ?? "sllmc-test") + "-" + Guid.NewGuid().ToString("N"));
+            (prefix ?? "ssa-test") + "-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(Path);
         TestLog.Detail("TempWorkspace: " + Path);
     }

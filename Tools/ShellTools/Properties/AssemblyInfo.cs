@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("ShellTools")]
-[assembly: AssemblyDescription("Shell tools for SimpleLLMChat")]
+[assembly: AssemblyDescription("Shell tools for SuperSimpleAgent")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("ShellTools")]

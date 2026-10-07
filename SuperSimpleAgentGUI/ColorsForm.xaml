@@ -1,0 +1,106 @@
+<Window x:Class="SuperSimpleAgentGUI.ColorsForm"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Colors"
+        Height="520"
+        Width="400"
+        MinHeight="360"
+        MinWidth="400"
+        MaxWidth="400"
+        MaxHeight="680"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        Loaded="Window_Loaded"
+        Background="{DynamicResource WindowBackgroundColorBrush}"
+        Foreground="{DynamicResource LabelTextColorBrush}">
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Rows are generated from ColorHelper.ColorConfigs, so a color can
+             never be configurable in the app but missing from this dialog. -->
+        <TextBlock Grid.Row="0"
+                   x:Name="HintText"
+                   Text="Custom colors override the selected theme. Clear one to follow the theme again."
+                   TextWrapping="Wrap"
+                   Margin="8,0,8,8"
+                   Foreground="{DynamicResource LabelTextColorBrush}"/>
+
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl x:Name="colorList" Margin="8,0,0,0">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130"/>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="70"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0"
+                                       Text="{Binding DisplayName}"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource LabelTextColorBrush}"/>
+
+                            <Button Grid.Column="1"
+                                    Content="Choose"
+                                    Height="23"
+                                    Margin="0,0,8,0"
+                                    Tag="{Binding Key}"
+                                    AutomationProperties.AutomationId="{Binding ChooseButtonId}"
+                                    Click="ChooseColorButton_Click"/>
+
+                            <Button Grid.Column="2"
+                                    Content="Clear"
+                                    Height="23"
+                                    Margin="0,0,8,0"
+                                    Tag="{Binding Key}"
+                                    AutomationProperties.AutomationId="{Binding ClearButtonId}"
+                                    Click="ClearColorButton_Click"/>
+
+                            <Border Grid.Column="3"
+                                    Width="50"
+                                    Height="23"
+                                    HorizontalAlignment="Left"
+                                    VerticalAlignment="Center"
+                                    BorderBrush="{DynamicResource TableBorderBrush}"
+                                    BorderThickness="1"
+                                    Background="{Binding PreviewBrush}"
+                                    ToolTip="{Binding PreviewTip}"
+                                    AutomationProperties.AutomationId="{Binding PreviewId}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Bottom Buttons -->
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right">
+            <Button x:Name="SaveButton"
+                    Content="OK"
+                    Width="75"
+                    Height="23"
+                    Margin="0,0,8,0"
+                    Click="SaveButton_Click"
+                    AutomationProperties.AutomationId="colorsOkButton"
+                    IsDefault="True"/>
+
+            <Button x:Name="CancelButton"
+                    Content="Cancel"
+                    Width="75"
+                    Height="23"
+                    Click="CancelButton_Click"
+                    AutomationProperties.AutomationId="colorsCancelButton"
+                    IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

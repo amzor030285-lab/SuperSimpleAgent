@@ -21,7 +21,7 @@ built or patched here, and each keeps its own license - see the README section
 | `7za.exe` | 7-Zip, from the same XP deployment |
 | `yt-dlp.exe` | YT-DLP builds for XP by [nicolaasjan](https://github.com/nicolaasjan), from the same XP deployment |
 | `grep.exe`, `libiconv2.dll`, `libintl3.dll`, `pcre3.dll`, `regex2.dll` | GNU grep 2.5.3 (GnuWin32 port), taken from the upstream author's v1.5 XP release archive |
-| `Markdig.dll` (0.18.3) | checked into this repository at `SimpleLLMChatGUI\lib\Markdig.dll` |
+| `Markdig.dll` (0.18.3) | checked into this repository at `SuperSimpleAgentGUI\lib\Markdig.dll` |
 | `Newtonsoft.Json.dll` (13.0.4) | restored by the build through NuGet, version pinned in `packages.config` |
 
 `deps\` keeps copies of the optional binaries so that builds and test runs are reproducible;
@@ -37,7 +37,7 @@ one, follow that upstream project's advisories.
 
 Please report suspected vulnerabilities privately rather than in a public issue:
 
-- Open a [GitHub Security Advisory](https://github.com/<owner>/SimpleLLMChat/security/advisories/new) for this repository, or
+- Open a [GitHub Security Advisory](https://github.com/<owner>/SuperSimpleAgent/security/advisories/new) for this repository, or
 - open an issue if the advisory flow is not available to you.
 
 Include: what happens, how to reproduce it, the affected version, and your OS version. Please do
@@ -46,7 +46,7 @@ enough to reproduce.
 
 ## What this application does by design
 
-SimpleLLMChat is an agent: the model can call tools, and some tools deliberately affect the
+SuperSimpleAgent is an agent: the model can call tools, and some tools deliberately affect the
 machine. The following are **not** vulnerabilities, they are the documented behavior:
 
 - `run_shell_command` executes shell commands, and `download_file` writes files, when the tool is

@@ -20,7 +20,7 @@ if not defined MSBUILD (echo ERROR: MSBuild not found. & exit /b 1)
 
 echo === Building product solution (Release) ===
 
-"%MSBUILD%" "%ROOT%SimpleLLMChat.sln" /p:Configuration=Release /m /nodeReuse:false /v:minimal || exit /b %ERRORLEVEL%
+"%MSBUILD%" "%ROOT%SuperSimpleAgent.sln" /p:Configuration=Release /m /nodeReuse:false /v:minimal || exit /b %ERRORLEVEL%
 
 echo.
 
@@ -50,9 +50,9 @@ call :BuildOne "%TESTS%\DesktopTools.Tests\DesktopTools.Fixture\DesktopTools.Fix
 
 call :BuildOne "%TESTS%\DesktopTools.Tests\DesktopTools.Tests.csproj" || set FAILED=1
 
-call :BuildOne "%TESTS%\SimpleLLMChatCLI.Tests\SimpleLLMChatCLI.Tests.csproj" || set FAILED=1
+call :BuildOne "%TESTS%\SuperSimpleAgentCLI.Tests\SuperSimpleAgentCLI.Tests.csproj" || set FAILED=1
 
-call :BuildOne "%TESTS%\SimpleLLMChatGUI.Tests\SimpleLLMChatGUI.Tests.csproj" || set FAILED=1
+call :BuildOne "%TESTS%\SuperSimpleAgentGUI.Tests\SuperSimpleAgentGUI.Tests.csproj" || set FAILED=1
 
 
 
@@ -113,25 +113,25 @@ copy /Y "%TESTBUILD%\DesktopTools.Fixture\DesktopTools.Fixture.exe" "%TESTBUILD%
 
 
 
-copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\SimpleLLMChatCLI.exe" "%TESTBUILD%\SimpleLLMChatCLI.Tests\" >nul
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\SuperSimpleAgentCLI.exe" "%TESTBUILD%\SuperSimpleAgentCLI.Tests\" >nul
 
-copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\SimpleLLMChatCLI.Tests\" >nul
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\SuperSimpleAgentCLI.Tests\" >nul
 
-call :CopyIfExists "%ROOT%deps\curl.exe" "%TESTBUILD%\SimpleLLMChatCLI.Tests\curl.exe"
+call :CopyIfExists "%ROOT%deps\curl.exe" "%TESTBUILD%\SuperSimpleAgentCLI.Tests\curl.exe"
 
-call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%TESTBUILD%\SimpleLLMChatCLI.Tests\curl-ca-bundle.crt"
+call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%TESTBUILD%\SuperSimpleAgentCLI.Tests\curl-ca-bundle.crt"
 
-call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%TESTBUILD%\SimpleLLMChatGUI.Tests\curl-ca-bundle.crt"
+call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%TESTBUILD%\SuperSimpleAgentGUI.Tests\curl-ca-bundle.crt"
 
 
 
-copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\SimpleLLMChatGUI.exe" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
+copy /Y "%ROOT%SuperSimpleAgentGUI\bin\Release\SuperSimpleAgentGUI.exe" "%TESTBUILD%\SuperSimpleAgentGUI.Tests\" >nul
 
-copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\Markdig.dll" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
+copy /Y "%ROOT%SuperSimpleAgentGUI\bin\Release\Markdig.dll" "%TESTBUILD%\SuperSimpleAgentGUI.Tests\" >nul
 
-copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\SimpleLLMChatCLI.exe" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\SuperSimpleAgentCLI.exe" "%TESTBUILD%\SuperSimpleAgentGUI.Tests\" >nul
 
-copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\SimpleLLMChatGUI.Tests\" >nul
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\SuperSimpleAgentGUI.Tests\" >nul
 
 :: Intermediate obj/ is only needed during compile
 if exist "%TESTBUILD%\obj" rmdir /s /q "%TESTBUILD%\obj"

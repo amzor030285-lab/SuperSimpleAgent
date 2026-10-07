@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("MemoryTools")]
-[assembly: AssemblyDescription("Memory tools for SimpleLLMChat")]
+[assembly: AssemblyDescription("Memory tools for SuperSimpleAgent")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("MemoryTools")]

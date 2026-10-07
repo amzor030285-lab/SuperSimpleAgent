@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableExtensions
 set ROOT=%~dp0
-set OUT=%ROOT%SimpleLLMChat
+set OUT=%ROOT%SuperSimpleAgent
 
 :: Find MSBuild
 for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -prerelease -products * -requires Microsoft.Component.MSBuild -find MSBuild\**\Bin\MSBuild.exe`) do set MSBUILD=%%i
@@ -9,18 +9,18 @@ if not defined MSBUILD (echo ERROR: MSBuild not found. & exit /b 1)
 
 :: Build solution
 echo Building solution ...
-"%MSBUILD%" "%ROOT%SimpleLLMChat.sln" /p:Configuration=Release /m /nodeReuse:false /v:minimal || exit /b %ERRORLEVEL%
+"%MSBUILD%" "%ROOT%SuperSimpleAgent.sln" /p:Configuration=Release /m /nodeReuse:false /v:minimal || exit /b %ERRORLEVEL%
 echo.
 
 :: Stage output
 if exist "%OUT%" rmdir /s /q "%OUT%"
 mkdir "%OUT%"
 
-copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\SimpleLLMChatCLI.exe" "%OUT%\" >nul
-copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\SimpleLLMChatCLI.exe.config" "%OUT%\" >nul
-copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\SimpleLLMChatGUI.exe" "%OUT%\" >nul
-copy /Y "%ROOT%SimpleLLMChatGUI\bin\Release\Markdig.dll" "%OUT%\" >nul
-copy /Y "%ROOT%SimpleLLMChatCLI\bin\Release\Newtonsoft.Json.dll"  "%OUT%\" >nul
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\SuperSimpleAgentCLI.exe" "%OUT%\" >nul
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\SuperSimpleAgentCLI.exe.config" "%OUT%\" >nul
+copy /Y "%ROOT%SuperSimpleAgentGUI\bin\Release\SuperSimpleAgentGUI.exe" "%OUT%\" >nul
+copy /Y "%ROOT%SuperSimpleAgentGUI\bin\Release\Markdig.dll" "%OUT%\" >nul
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\Newtonsoft.Json.dll"  "%OUT%\" >nul
 
 for %%T in (FileTools PythonTools ShellTools WebTools MemoryTools SkillTools DesktopTools SearchTools) do (
     mkdir "%OUT%\tools\%%T"

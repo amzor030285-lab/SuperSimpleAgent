@@ -1,12 +1,12 @@
-[![SLLMC Icon](SimpleLLMChatGUI/sllmc.ico)](SimpleLLMChatGUI/sllmc.ico)
+[![SSA Icon](SuperSimpleAgentGUI/ssa.ico)](SuperSimpleAgentGUI/ssa.ico)
 
-### SimpleLLMChat
+### SuperSimpleAgent
 
 *AI Chatbot/Agent for Windows XP+*
 
 ## About
 
-SimpleLLMChat is a lightweight C# CLI and GUI application that makes LLMs accessible on both legacy and modern Windows systems. The software is designed to work with OpenAI-compatible endpoints and can be extended via a tool system.
+SuperSimpleAgent is a lightweight C# CLI and GUI application that makes LLMs accessible on both legacy and modern Windows systems. The software is designed to work with OpenAI-compatible endpoints and can be extended via a tool system.
 
 This project is a continuation of the original [SimpleLLMChat](https://github.com/randomNinja64/SimpleLLMChat) by [randomNinja64](https://github.com/randomNinja64), extended with session management, context compaction, tool approval modes, and hardened tool execution. See [Credits](#credits).
 
@@ -37,17 +37,17 @@ This project is a continuation of the original [SimpleLLMChat](https://github.co
 
 ## Setup
 
-To use the application, download the latest release, extract it, and run the appropriate executable from the `SimpleLLMChat` folder.
+To use the application, download the latest release, extract it, and run the appropriate executable from the `SuperSimpleAgent` folder.
 
-On first launch of `SimpleLLMChatGUI.exe`, if `LLMSettings.ini` does not exist next to the executable, a setup wizard walks through System settings. Settings can also be changed later via Options.
+On first launch of `SuperSimpleAgentGUI.exe`, if `LLMSettings.ini` does not exist next to the executable, a setup wizard walks through System settings. Settings can also be changed later via Options.
 
-Once configured, the software can be used via the `SimpleLLMChatCLI.exe` or `SimpleLLMChatGUI.exe` executables.
+Once configured, the software can be used via the `SuperSimpleAgentCLI.exe` or `SuperSimpleAgentGUI.exe` executables.
 
 ## Building
 
 The project can be built via the included `build.bat` script (Visual Studio/Visual Studio Build Tools/MSBuild required).
 
-Alternatively, the project can be built using the `SimpleLLMChat.sln` file directly in Visual Studio.
+Alternatively, the project can be built using the `SuperSimpleAgent.sln` file directly in Visual Studio.
 
 Both methods require the .NET 4.0 Targeting Pack to be installed.
 
@@ -55,13 +55,13 @@ Both methods require the .NET 4.0 Targeting Pack to be installed.
 
 ## Tests
 
-Test projects live under `Tests\` and are not included in release builds. There are nine suites: FileTools, MemoryTools, SkillTools, ShellTools, PythonTools, WebTools, DesktopTools, SimpleLLMChatCLI, and SimpleLLMChatGUI. From the repo root, run:
+Test projects live under `Tests\` and are not included in release builds. There are ten suites: FileTools, MemoryTools, SkillTools, ShellTools, PythonTools, WebTools, DesktopTools, SearchTools, SuperSimpleAgentCLI, and SuperSimpleAgentGUI. From the repo root, run:
 
 ```
 build-and-test.bat
 ```
 
-which builds the product and test projects, stages the release, and runs every suite. To run a single suite, pass its name (`build-and-test.bat SimpleLLMChatCLI`). Alternatively, `build-tests.bat` rebuilds and stages the test binaries and `run-tests.bat [Suite]` runs the already-built suites; logs are written under `Tests\logs\`.
+which builds the product and test projects, stages the release, and runs every suite. To run a single suite, pass its name (`build-and-test.bat SuperSimpleAgentCLI`). Alternatively, `build-tests.bat` rebuilds and stages the test binaries and `run-tests.bat [Suite]` runs the already-built suites; logs are written under `Tests\logs\`.
 
 **Note**: For cases that need external executables (7za, grep, cURL, YT-DLP), either put them in `deps\` before `build-tests.bat`, or place them beside the matching tool executable before `run-tests.bat`.
 
@@ -117,7 +117,7 @@ Tool-specific configuration options for the included tools are available in the 
 
 ## Usage
 
-**GUI**: To launch the GUI interface, open `SimpleLLMChatGUI.exe`.
+**GUI**: To launch the GUI interface, open `SuperSimpleAgentGUI.exe`.
 
 -   To adjust application settings, select `Options`. The category list on the left switches between pages; the System page holds the model, its context size, saved presets for a provider plus model combination, and the per-model `Stop repetitive output automatically` guard.
 -   To attach an image, press the image attachment button (camera icon) and choose a file using the file picker.
@@ -126,7 +126,7 @@ Tool-specific configuration options for the included tools are available in the 
 -   The button in the bottom-left corner cycles the tool approval mode (`config` -> `ask` -> `auto`); the compaction button in the header runs a full compaction (equivalent to `/compactfull`).
 -   To manage scheduled tasks, press the clock icon (`⏰`) in the header. Add a task by choosing a name, a schedule and a prompt. The schedule is picked with a small builder rather than typed in: one-shot (`at`, either "after N" or an exact local date/time), recurring (`every N`), or cron (daily / weekdays / weekly / monthly presets, or a custom 5-field expression). It validates as you type and shows the exact expression plus the next run time before you can add. Then enable/disable, remove, or inspect a task's next run, last status and recent runs.
 
-**CLI**: To run the CLI in interactive/REPL mode, open `SimpleLLMChatCLI.exe` directly or from a terminal.
+**CLI**: To run the CLI in interactive/REPL mode, open `SuperSimpleAgentCLI.exe` directly or from a terminal.
 
 Interactive mode provides the following commands:
 
@@ -149,9 +149,9 @@ Interactive mode provides the following commands:
 
 The application can also be used in a non-interactive mode.
 
-For a single prompt, use `SimpleLLMChatCLI.exe <prompt>`.
+For a single prompt, use `SuperSimpleAgentCLI.exe <prompt>`.
 
-To pass in an image alongside a prompt, use `SimpleLLMChatCLI.exe --image <path> <prompt>`.
+To pass in an image alongside a prompt, use `SuperSimpleAgentCLI.exe --image <path> <prompt>`.
 
 CLI mode provides the following additional flags:
 
@@ -163,7 +163,7 @@ CLI mode provides the following additional flags:
 
 ## Tools
 
-SimpleLLMChat includes the following 7 tool packages:
+SuperSimpleAgent includes the following 7 tool packages:
 
 -   File Tools
     -   Tools
@@ -251,7 +251,7 @@ Third-party tools can be installed by extracting them into the `tools` folder. F
 
 ## License
 
-SimpleLLMChat itself is licensed under the [MIT License](LICENSE).
+SuperSimpleAgent itself is licensed under the [MIT License](LICENSE).
 
 ## Third-party components
 
@@ -268,7 +268,7 @@ The tools shell out to external programs that are **not** covered by the MIT lic
 | [YT-DLP](https://github.com/yt-dlp/yt-dlp) (XP builds by nicolaasjan) | `yt-dlp.exe` | The Unlicense (public domain) |
 | OpenSSL, libpsl, libidn2, zlib | linked into the bundled cURL build | Apache-2.0, MIT, LGPL-3.0-or-later, zlib |
 
-Every one of these stays a separate, unmodified executable: the tools start them as child processes and never link against their code, so the MIT terms above cover SimpleLLMChat only and no GPL obligation extends to it. Keep it that way - do not patch these binaries or build their code into the tools, since that would create a combined work with different licensing consequences. The `grep.txt` notice also carries the GPL-3 Section 6 source offer for GNU grep.
+Every one of these stays a separate, unmodified executable: the tools start them as child processes and never link against their code, so the MIT terms above cover SuperSimpleAgent only and no GPL obligation extends to it. Keep it that way - do not patch these binaries or build their code into the tools, since that would create a combined work with different licensing consequences. The `grep.txt` notice also carries the GPL-3 Section 6 source offer for GNU grep.
 
 When adding or removing a bundled binary, keep `deps\`, `build.bat` and `THIRD_PARTY_LICENSES` in sync.
 
@@ -278,5 +278,4 @@ Thank you to the following for all of their contributions:
 
 -   [randomNinja64](https://github.com/randomNinja64) for the original SimpleLLMChat project, which this repository continues
 -   [LoRd\_MuldeR](https://github.com/lordmulder/cURL-build-win32) for the cURL builds for XP
--   [myamano4](https://mininet.neocities.org) for the icon
 -   [nicolaasjan](https://github.com/nicolaasjan) for the YT-DLP builds for XP

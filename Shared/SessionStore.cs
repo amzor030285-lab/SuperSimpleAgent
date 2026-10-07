@@ -5,7 +5,7 @@ using System.IO;
 using System.Text;
 
 /// <summary>
-/// JSON session persistence for SimpleLLMChat. Stores a chat conversation as a
+/// JSON session persistence for SuperSimpleAgent. Stores a chat conversation as a
 /// versioned envelope so a future schema change can migrate old files.
 ///
 /// The GUI never serializes messages itself (the CLI owns the authoritative

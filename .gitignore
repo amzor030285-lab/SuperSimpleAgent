@@ -11,7 +11,7 @@ XpProbe/
 # Release archives produced by package.bat (uploaded to the GitHub release)
 release/
 
-# Runtime data written next to the executables (the staged SimpleLLMChat\
+# Runtime data written next to the executables (the staged SuperSimpleAgent\
 # folder is tracked, so these must never be swept in by "git add -A")
 LLMSettings.ini
 sessions/

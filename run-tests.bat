@@ -26,12 +26,12 @@ set ALLPERF=%LOGDIR%\all.perf.tsv
 
 set ISSUES=%LOGDIR%\failed-or-slow.log
 set ISSUESFOUND=0
-> "%ISSUES%" echo SimpleLLMChat failed or slow tests %RUNID%
+> "%ISSUES%" echo SuperSimpleAgent failed or slow tests %RUNID%
 >> "%ISSUES%" echo Slow threshold: 5000 ms
 >> "%ISSUES%" echo.
 
 set SUMMARY=%LOGDIR%\summary.txt
-> "%SUMMARY%" echo SimpleLLMChat test run %RUNID%
+> "%SUMMARY%" echo SuperSimpleAgent test run %RUNID%
 >> "%SUMMARY%" echo.
 
 call :RunSuite FileTools FileTools.Tests
@@ -42,8 +42,8 @@ call :RunSuite ShellTools ShellTools.Tests
 call :RunSuite PythonTools PythonTools.Tests
 call :RunSuite WebTools WebTools.Tests
 call :RunSuite DesktopTools DesktopTools.Tests
-call :RunSuite SimpleLLMChatCLI SimpleLLMChatCLI.Tests
-call :RunSuite SimpleLLMChatGUI SimpleLLMChatGUI.Tests
+call :RunSuite SuperSimpleAgentCLI SuperSimpleAgentCLI.Tests
+call :RunSuite SuperSimpleAgentGUI SuperSimpleAgentGUI.Tests
 
 >> "%SUMMARY%" echo.
 >> "%SUMMARY%" echo Hot spots (all suites) - slowest 20 by process_ms:

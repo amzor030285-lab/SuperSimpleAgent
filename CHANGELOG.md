@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Renamed the project to SuperSimpleAgent (SSA)** - Solution, projects, namespaces, executables and the release folder are now `SuperSimpleAgent` / `SuperSimpleAgentGUI` / `SuperSimpleAgentCLI`; the GUI window title is `Super Simple Agent` and the named pipes are `SuperSimpleAgent.Control.*` / `SuperSimpleAgent.Status.*`. The old SimpleLLMChat names are gone everywhere except historical notes and credits.
+- **New app icon** - `sllmc.ico` is replaced by `ssa.ico` (orange/bone orbital tile) in both executables.
+
 ## [1.1.0] - 2026-10-05
 
 ### Added

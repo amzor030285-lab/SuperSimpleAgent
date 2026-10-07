@@ -2,7 +2,7 @@ using System;
 using System.Globalization;
 
 /// <summary>
-/// Named-pipe status channel: CLI hosts SimpleLLMChat.Status.{pid}; GUI connects by child PID.
+/// Named-pipe status channel: CLI hosts SuperSimpleAgent.Status.{pid}; GUI connects by child PID.
 /// Wire format lines (UTF-8, one per message):
 ///   STATUS tokens=1234
 ///   STATUS ready
@@ -16,7 +16,7 @@ using System.Globalization;
 /// </summary>
 public static partial class StatusPipe
 {
-    public const string PipeNamePrefix = "SimpleLLMChat.Status.";
+    public const string PipeNamePrefix = "SuperSimpleAgent.Status.";
 
     public static string GetPipeName(int processId)
     {

@@ -2,7 +2,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("PythonTools")]
-[assembly: AssemblyDescription("Python tools for SimpleLLMChat")]
+[assembly: AssemblyDescription("Python tools for SuperSimpleAgent")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
 [assembly: AssemblyProduct("PythonTools")]
