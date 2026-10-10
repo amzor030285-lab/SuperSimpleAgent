@@ -10,6 +10,8 @@ SuperSimpleAgent is a lightweight C# CLI and GUI application that makes LLMs acc
 
 This project is a continuation of the original [SimpleLLMChat](https://github.com/randomNinja64/SimpleLLMChat) by [randomNinja64](https://github.com/randomNinja64), extended with session management, context compaction, tool approval modes, and hardened tool execution. The fork is maintained by [amzor030285-lab](https://github.com/amzor030285-lab). See [Credits](#credits).
 
+This fork maintains its own version series (starting at 2.0.0), independent of upstream SimpleLLMChat releases.
+
 ## Features
 
 -   **Customizable GUI** - The GUI's colors and fonts can be customized, with light/dark themes and several built-in palettes.
@@ -52,6 +54,8 @@ Alternatively, the project can be built using the `SuperSimpleAgent.sln` file di
 Both methods require the .NET 4.0 Targeting Pack to be installed.
 
 **Note**: Builds generated using these methods include only the core executables by default. Optional binaries (`7za.exe`, `grep.exe` and its DLLs, `curl.exe`, `curl-ca-bundle.crt`, `yt-dlp.exe`) are packaged when present under `deps\` or can be manually placed beside the matching tool's executable. Optional binaries are specified in [Tools](#tools).
+
+**Note**: There is no CI. The target is the .NET 4.0 Client Profile (Windows XP+), which GitHub-hosted runners cannot build; `build-and-test.bat` from the repo root is the canonical pipeline, and `AGENTS.md` documents the full build/test protocol and known harness quirks.
 
 ## Tests
 

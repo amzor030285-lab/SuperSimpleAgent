@@ -1,2 +1,15 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# This repo is CRLF-only (see AGENTS.md); enforce it on every platform
+*.cs text eol=crlf
+*.csproj text eol=crlf
+*.sln text eol=crlf
+*.xaml text eol=crlf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.md text eol=crlf
+*.json text eol=crlf
+*.config text eol=crlf
+*.crt text eol=crlf
+*.txt text eol=crlf
