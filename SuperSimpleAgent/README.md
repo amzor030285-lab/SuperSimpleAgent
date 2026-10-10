@@ -8,7 +8,7 @@
 
 SuperSimpleAgent is a lightweight C# CLI and GUI application that makes LLMs accessible on both legacy and modern Windows systems. The software is designed to work with OpenAI-compatible endpoints and can be extended via a tool system.
 
-This project is a continuation of the original [SimpleLLMChat](https://github.com/randomNinja64/SimpleLLMChat) by [randomNinja64](https://github.com/randomNinja64), extended with session management, context compaction, tool approval modes, and hardened tool execution. See [Credits](#credits).
+This project is a continuation of the original [SimpleLLMChat](https://github.com/randomNinja64/SimpleLLMChat) by [randomNinja64](https://github.com/randomNinja64), extended with session management, context compaction, tool approval modes, and hardened tool execution. The fork is maintained by [amzor030285-lab](https://github.com/amzor030285-lab). See [Credits](#credits).
 
 ## Features
 
@@ -277,5 +277,6 @@ When adding or removing a bundled binary, keep `deps\`, `build.bat` and `THIRD_P
 Thank you to the following for all of their contributions:
 
 -   [randomNinja64](https://github.com/randomNinja64) for the original SimpleLLMChat project, which this repository continues
+-   [amzor030285-lab](https://github.com/amzor030285-lab) for the SuperSimpleAgent fork: session management, context compaction, in-app scheduled tasks, and the Windows XP emoji font
 -   [LoRd\_MuldeR](https://github.com/lordmulder/cURL-build-win32) for the cURL builds for XP
 -   [nicolaasjan](https://github.com/nicolaasjan) for the YT-DLP builds for XP
