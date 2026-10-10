@@ -6,7 +6,7 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [1.2.0] - 2026-10-10
+## [2.0.0] - 2026-10-10
 
 ### Changed
 
