@@ -6,6 +6,12 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **RAG vector search** - `VectorStore.Search` retains only the top-K candidates while scanning (min-of-K eviction) instead of scoring every chunk and sorting the full result, so a K-neighborhood query no longer pays for sorting all chunks in the index.
+
 ## [2.0.0] - 2026-10-10
 
 ### Changed
