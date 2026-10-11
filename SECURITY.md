@@ -4,7 +4,7 @@
 
 | Version | Supported |
 | ------- | --------- |
-| 1.0.x   | Yes       |
+| 2.0.x   | Yes       |
 
 Only the latest tagged release receives fixes. This project targets Windows XP SP3 and later;
 XP has no supported security updates from Microsoft, so treat an XP host accordingly.
@@ -37,7 +37,7 @@ one, follow that upstream project's advisories.
 
 Please report suspected vulnerabilities privately rather than in a public issue:
 
-- Open a [GitHub Security Advisory](https://github.com/<owner>/SuperSimpleAgent/security/advisories/new) for this repository, or
+- Open a [GitHub Security Advisory](https://github.com/amzor030285-lab/SuperSimpleAgent/security/advisories/new) for this repository, or
 - open an issue if the advisory flow is not available to you.
 
 Include: what happens, how to reproduce it, the affected version, and your OS version. Please do

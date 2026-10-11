@@ -53,6 +53,8 @@ Alternatively, the project can be built using the `SuperSimpleAgent.sln` file di
 
 Both methods require the .NET 4.0 Targeting Pack to be installed.
 
+On a fresh clone run `nuget restore SuperSimpleAgent.sln` once: the projects reference Newtonsoft.Json 13.0.4 through `packages.config` into the gitignored `packages\` folder.
+
 **Note**: Builds generated using these methods include only the core executables by default. Optional binaries (`7za.exe`, `grep.exe` and its DLLs, `curl.exe`, `curl-ca-bundle.crt`, `yt-dlp.exe`) are packaged when present under `deps\` or can be manually placed beside the matching tool's executable. Optional binaries are specified in [Tools](#tools).
 
 **Note**: There is no CI. The target is the .NET 4.0 Client Profile (Windows XP+), which GitHub-hosted runners cannot build; `build-and-test.bat` from the repo root is the canonical pipeline, and `AGENTS.md` documents the full build/test protocol and known harness quirks.
