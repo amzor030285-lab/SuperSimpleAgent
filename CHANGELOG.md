@@ -6,23 +6,19 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
-
-### Changed
-
-- **RAG vector search** - `VectorStore.Search` retains only the top-K candidates while scanning (min-of-K eviction) instead of scoring every chunk and sorting the full result, so a K-neighborhood query no longer pays for sorting all chunks in the index.
-
-### Fixed
-
-- **Cyrillic in the standalone CLI on Windows XP** - the CLI no longer forces the console into UTF-8 when stdout is a live console on XP or earlier. XP has no UTF-8 console code page, so raw UTF-8 bytes were decoded as OEM (CP866) and Cyrillic rendered as garbage; the old UTF-8 switch also stayed on the console after the CLI exited. On such systems the CLI now explicitly resets both input and output to the system OEM code page (866 on Russian installs) instead of leaving the console in whatever state it was in; when stdout is a pipe (the GUI) or on any later OS, UTF-8 output is unchanged.
-
-## [2.0.0] - 2026-10-10
+## [2.0.0] - 2026-10-13
 
 ### Changed
 
 - **Renamed the project to SuperSimpleAgent (SSA)** - Solution, projects, namespaces, executables and the release folder are now `SuperSimpleAgent` / `SuperSimpleAgentGUI` / `SuperSimpleAgentCLI`; the GUI window title is `Super Simple Agent` and the named pipes are `SuperSimpleAgent.Control.*` / `SuperSimpleAgent.Status.*`. The old SimpleLLMChat names are gone everywhere except historical notes and credits.
 - **New app icon** - `sllmc.ico` is replaced by `ssa.ico` (orange/bone orbital tile) in both executables.
 - **Credits** - The README credits section and the MIT license now name the fork maintainer, [amzor030285-lab](https://github.com/amzor030285-lab).
+- **RAG vector search** - `VectorStore.Search` retains only the top-K candidates while scanning (min-of-K eviction) instead of scoring every chunk and sorting the full result, so a K-neighborhood query no longer pays for sorting all chunks in the index.
+
+### Fixed
+
+- **Cyrillic in the standalone CLI on Windows XP** - the CLI no longer forces the console into UTF-8 when stdout is a live console on XP or earlier. XP has no UTF-8 console code page, so raw UTF-8 bytes were decoded as OEM (CP866) and Cyrillic rendered as garbage; the old UTF-8 switch also stayed on the console after the CLI exited. On such systems the CLI now explicitly resets both input and output to the system OEM code page (866 on Russian installs) instead of leaving the console in whatever state it was in; when stdout is a pipe (the GUI) or on any later OS, UTF-8 output is unchanged.
+- **App icon on Windows XP** - `ssa.ico` is re-encoded with plain BMP frames instead of PNG-compressed ones: PNG-compressed .ico images do not render on Windows XP.
 
 ## [1.1.0] - 2026-10-05
 
