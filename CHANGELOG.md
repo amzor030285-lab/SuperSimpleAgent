@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **RAG vector search** - `VectorStore.Search` retains only the top-K candidates while scanning (min-of-K eviction) instead of scoring every chunk and sorting the full result, so a K-neighborhood query no longer pays for sorting all chunks in the index.
 
+### Fixed
+
+- **Cyrillic in the standalone CLI on Windows XP** - the CLI no longer forces the console into UTF-8 when stdout is a live console on XP or earlier. XP has no UTF-8 console code page, so raw UTF-8 bytes were decoded as OEM (CP866) and Cyrillic rendered as garbage; the old UTF-8 switch also stayed on the console after the CLI exited. On such systems the CLI now explicitly resets both input and output to the system OEM code page (866 on Russian installs) instead of leaving the console in whatever state it was in; when stdout is a pipe (the GUI) or on any later OS, UTF-8 output is unchanged.
+
 ## [2.0.0] - 2026-10-10
 
 ### Changed

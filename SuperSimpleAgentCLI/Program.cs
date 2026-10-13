@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Text;
 using SuperSimpleAgentCLI.RAG;
 
@@ -187,20 +188,68 @@ namespace SuperSimpleAgentCLI
             }
         }
 
+        // Windows XP (5.x) has no UTF-8 console code page; its console decodes
+        // byte streams with the OEM code page (CP866 on Russian systems).
+        private static bool IsWindowsXpOrEarlier()
+        {
+            return Environment.OSVersion.Platform == PlatformID.Win32NT
+                && Environment.OSVersion.Version.Major < 6;
+        }
+
+        // .NET 4.0 has no Console.IsOutputRedirected. GetStdHandle resolves the
+        // real stdout handle (the CRT descriptor number 1 is not a Windows
+        // handle and is invalid in a fresh process, so it must not be passed
+        // to kernel32 directly); GetFileType then says whether it is a live
+        // console (FILE_TYPE_CHAR) or a pipe/file.
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr GetStdHandle(int nStdHandle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.U4)]
+        private static extern uint GetFileType(IntPtr hFile);
+
+        // The system's OEM code page (e.g. 866 on Russian installs). On XP we
+        // reset the console to this instead of leaving it on UTF-8.
+        [DllImport("kernel32.dll")]
+        private static extern int GetOEMCP();
+
+        private static bool StdoutIsConsole()
+        {
+            const uint FileTypeChar = 2;
+            const int StdOutputHandle = -11;
+            return GetFileType(GetStdHandle(StdOutputHandle)) == FileTypeChar;
+        }
+
         static void Main(string[] args)
         {
-            Console.InputEncoding = Encoding.UTF8;
-            // Keep the console itself in UTF-8 mode so Cyrillic banners render when
-            // the CLI is run standalone (no-op when stdout is a pipe).
-            Console.OutputEncoding = Encoding.UTF8;
-            // Route stdout through a plain UTF-8 StreamWriter (no BOM). Relying on
-            // Console.OutputEncoding alone is unsafe on Windows XP: the console text
-            // stack mangles supplementary (surrogate-pair) characters into '?' even
-            // when the encoding is UTF-8, while BMP characters pass through. A plain
-            // StreamWriter encodes via UTF8Encoding (pure managed code), so the GUI's
-            // UTF-8 pipe reader always sees the true code points on every OS.
-            Console.SetOut(new StreamWriter(
-                Console.OpenStandardOutput(), new UTF8Encoding(false)));
+            // Windows XP's console does not support UTF-8 (65001) as a console
+            // code page: Cyrillic input and display diverge, and an earlier CLI
+            // build forced 65001 and left it set on the console even after exit.
+            // When stdout is a live console on XP-or-earlier, explicitly reset both
+            // input and output to the system OEM code page (866 on Russian installs)
+            // so Cyrillic round-trips no matter what state the console is in. The
+            // GUI always pipes stdout, and on every later OS the UTF-8 path below
+            // stays active.
+            if (StdoutIsConsole() && IsWindowsXpOrEarlier())
+            {
+                int oemCp = GetOEMCP();
+                Console.InputEncoding = Encoding.GetEncoding(oemCp);
+                Console.OutputEncoding = Encoding.GetEncoding(oemCp);
+            }
+            else
+            {
+                Console.InputEncoding = Encoding.UTF8;
+                // Keep the console itself in UTF-8 mode so Cyrillic banners render
+                // when the CLI is run standalone (no-op when stdout is a pipe).
+                Console.OutputEncoding = Encoding.UTF8;
+                // Route stdout through a plain UTF-8 StreamWriter (no BOM). Relying
+                // on Console.OutputEncoding alone is unsafe for surrogate-pair
+                // characters on older consoles. A plain StreamWriter encodes via
+                // UTF8Encoding (pure managed code), so the GUI's UTF-8 pipe reader
+                // always sees the true code points on every OS.
+                Console.SetOut(new StreamWriter(
+                    Console.OpenStandardOutput(), new UTF8Encoding(false)));
+            }
             TlsConfig.EnsureModernProtocols();
 
             // Load configuration
