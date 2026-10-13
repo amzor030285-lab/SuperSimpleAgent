@@ -381,6 +381,4 @@ FileTools suite 18 pass, CLI suite 42 pass, GUI suite 16 pass.
 - GUI streaming no longer garbles non-ASCII text (UTF-8 instead of the ANSI code page), ends a
   turn only on a line-anchored prompt, wraps long user messages inside the bubble, restores saved
   sessions with their tool-call blocks intact, and no longer crashes on Markdig edge cases
-  (ragged tables, links inside link labels).
-
-[1.0.0]: https://github.com/randomNinja64/SimpleLLMChat
+   (ragged tables, links inside link labels).

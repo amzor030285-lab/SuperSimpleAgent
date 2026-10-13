@@ -10,7 +10,7 @@ SuperSimpleAgent is a lightweight C# CLI and GUI application that makes LLMs acc
 
 This project is a continuation of the original [SimpleLLMChat](https://github.com/randomNinja64/SimpleLLMChat) by [randomNinja64](https://github.com/randomNinja64), extended with session management, context compaction, tool approval modes, and hardened tool execution. The fork is maintained by [amzor030285-lab](https://github.com/amzor030285-lab). See [Credits](#credits).
 
-This fork maintains its own version series (starting at 2.0.0), independent of upstream SimpleLLMChat releases.
+This fork maintains its own version series (starting at 1.0.0), independent of upstream SimpleLLMChat releases.
 
 ## Features
 
@@ -129,7 +129,7 @@ Tool-specific configuration options for the included tools are available in the 
 -   To attach an image, press the image attachment button (camera icon) and choose a file using the file picker.
 -   To clear the chat, press `Clear Chat`.
 -   To send a message, type it into the input box and press `Enter` or `Send`. To create multi-line messages, press `Shift+Enter`.
--   The button in the bottom-left corner cycles the tool approval mode (`config` -> `ask` -> `auto`); the compaction button in the header runs a full compaction (equivalent to `/compactfull`).
+-   The button in the bottom-left corner cycles the tool approval mode (`ask` -> `auto` -> `config` -> `plan`); the compaction button in the header runs a full compaction (equivalent to `/compactfull`).
 -   To manage scheduled tasks, press the clock icon (`⏰`) in the header. Add a task by choosing a name, a schedule and a prompt. The schedule is picked with a small builder rather than typed in: one-shot (`at`, either "after N" or an exact local date/time), recurring (`every N`), or cron (daily / weekdays / weekly / monthly presets, or a custom 5-field expression). It validates as you type and shows the exact expression plus the next run time before you can add. Then enable/disable, remove, or inspect a task's next run, last status and recent runs.
 
 **CLI**: To run the CLI in interactive/REPL mode, open `SuperSimpleAgentCLI.exe` directly or from a terminal.
@@ -165,7 +165,7 @@ CLI mode provides the following additional flags:
 -   `--session name`: For a one-shot prompt, loads `name` (instead of the default `lastsession`) and saves the conversation back to it when done, so a scheduled or scripted run does not disturb the interactive session
 -   `-o`, `--output-only`: Outputs only the model's response text (no thinking, tool-call, or tool-output UI). Tools that do not require approval still run silently. If the model calls a tool that requires approval, the session ends with `Error: Model called <tool> which requires approval`.
 -   `--reasoning-effort`: Sets initial reasoning effort for supported models (`none`, `minimal`, `low`, `medium`, `high`, `xhigh`)
--   `--approval ask|auto|config`: Sets the initial tool approval mode
+-   `--approval ask|auto|config|plan`: Sets the initial tool approval mode
 
 ## Tools
 
@@ -240,7 +240,7 @@ SuperSimpleAgent includes the following 7 tool packages:
         -   `run_web_search`: Searches the web using SearXNG, with Firecrawl, DDG, and Wiby as fallbacks
     -   Configuration Options
         -   `maxSearchResults`: Maximum number of search results to retrieve (default: `20`)
-        -   `maxWebContentLength`: Maximum number of characters to return when reading a webpage (default: `10000`; `0` = no limit)
+        -   `maxWebContentLength`: Maximum number of characters to return when reading a webpage (default: `20000`; `0` = no limit)
         -   `maxLinks`: Maximum number of unique links to include at the end of a webpage read (default: `40`)
         -   `FirecrawlEndpoint`: Firecrawl API base URL (e.g. `http://localhost:3002`). If set, `read_website` will attempt to use it to view page content. (default: none)
         -   `FirecrawlApiKey`: Firecrawl API key (optional) (default: none)
@@ -270,7 +270,7 @@ The tools shell out to external programs that are **not** covered by the MIT lic
 | [cURL](https://curl.se/) (XP builds by LoRd\_MuldeR) | `curl.exe` | curl license |
 | [cURL CA bundle](https://curl.se/docs/ca-bundle.html) | `curl-ca-bundle.crt` | MPL-2.0 |
 | [7-Zip](https://www.7-zip.org/) | `7za.exe` | 7-Zip license (LGPL-2.1-or-later plus the unRAR restriction) |
-| [GNU grep](https://www.gnu.org/software/grep/) 2.5.3, GnuWin32 port | `grep.exe`, `libiconv2.dll`, `libintl3.dll`, `pcre3.dll`, `regex2.dll` | GPL-3.0-or-later |
+| [GNU grep](https://www.gnu.org/software/grep/) 2.5.4, GnuWin32 port | `grep.exe`, `libiconv2.dll`, `libintl3.dll`, `pcre3.dll`, `regex2.dll` | GPL-3.0-or-later |
 | [YT-DLP](https://github.com/yt-dlp/yt-dlp) (XP builds by nicolaasjan) | `yt-dlp.exe` | The Unlicense (public domain) |
 | OpenSSL, libpsl, libidn2, zlib | linked into the bundled cURL build | Apache-2.0, MIT, LGPL-3.0-or-later, zlib |
 

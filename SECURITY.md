@@ -17,10 +17,10 @@ built or patched here, and each keeps its own license - see the README section
 
 | Binary | Where it comes from |
 | ------ | ------------------- |
-| `curl.exe`, `curl-ca-bundle.crt` | cURL builds for XP by [LoRd\_MuldeR](https://github.com/lordmulder/cURL-build-win32), taken from a maintained XP deployment of this project |
+| `curl.exe`, `curl-ca-bundle.crt` | cURL builds for XP by [LoRd\_MuldeR](https://github.com/lordmulder/cURL-build-win32), taken from the upstream project's maintained XP deployment |
 | `7za.exe` | 7-Zip, from the same XP deployment |
 | `yt-dlp.exe` | YT-DLP builds for XP by [nicolaasjan](https://github.com/nicolaasjan), from the same XP deployment |
-| `grep.exe`, `libiconv2.dll`, `libintl3.dll`, `pcre3.dll`, `regex2.dll` | GNU grep 2.5.3 (GnuWin32 port), taken from the upstream author's v1.5 XP release archive |
+| `grep.exe`, `libiconv2.dll`, `libintl3.dll`, `pcre3.dll`, `regex2.dll` | GNU grep 2.5.4 (GnuWin32 port), taken from the upstream author's v1.5 XP release archive |
 | `Markdig.dll` (0.18.3) | checked into this repository at `SuperSimpleAgentGUI\lib\Markdig.dll` |
 | `Newtonsoft.Json.dll` (13.0.4) | restored by the build through NuGet, version pinned in `packages.config` |
 
@@ -28,8 +28,8 @@ built or patched here, and each keeps its own license - see the README section
 `build.bat` copies whatever is present next to the tool that needs it. None of them is required
 to start the application - a missing one only limits the tool that calls it.
 
-The XP-compatible builds are frozen at the last version that runs on XP (GNU grep 2.5.3 dates
-from 2008) and nothing here rebuilds or updates them, so they do not pick up upstream security
+The XP-compatible builds are frozen at the last version that runs on XP (GNU grep 2.5.4 dates
+from 2009) and nothing here rebuilds or updates them, so they do not pick up upstream security
 fixes. On modern Windows prefer a maintained build of the same tool; if you rely on a bundled
 one, follow that upstream project's advisories.
 
