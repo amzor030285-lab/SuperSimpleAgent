@@ -283,6 +283,6 @@ When adding or removing a bundled binary, keep `deps\`, `build.bat` and `THIRD_P
 Thank you to the following for all of their contributions:
 
 -   [randomNinja64](https://github.com/randomNinja64) for the original SimpleLLMChat project, which this repository continues
--   [amzor030285-lab](https://github.com/amzor030285-lab) for the SuperSimpleAgent fork: session management, context compaction, in-app scheduled tasks, and the Windows XP emoji font
+-   [amzor030285-lab](https://github.com/amzor030285-lab) for the SuperSimpleAgent fork: session management, context compaction, in-app scheduled tasks
 -   [LoRd\_MuldeR](https://github.com/lordmulder/cURL-build-win32) for the cURL builds for XP
 -   [nicolaasjan](https://github.com/nicolaasjan) for the YT-DLP builds for XP
