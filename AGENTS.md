@@ -148,6 +148,9 @@ job-object teardown and the STOPTOOL abort).
 - One known transient failure: `gui.code_block_copy` can fail with `CLIPBRD_E_CANT_OPEN` if another process holds the clipboard; a re-run passes.
 
 ## Git
+- Never `git commit` or `git push` without the user's explicit permission or direct order.
+  A finished task, a green test run, or approval of a plan is NOT permission; changes stay in
+  the working tree until the user says to commit/push.
 - The `SuperSimpleAgent\` staging folder and `release\` archives are gitignored; the release ZIP
   is uploaded to GitHub Releases manually.
 - Working branch: `main`. No `origin` remote is configured yet — publishing is the user's manual step.
