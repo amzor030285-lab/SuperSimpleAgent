@@ -56,6 +56,32 @@ namespace WebTools.Tests
                 }
             });
 
+            TestRunner.Run("run_web_search.firecrawl_post_body", () =>
+            {
+                if (!ToolClient.ProductExists("curl.exe"))
+                    TestRunner.Skip("curl.exe not packaged beside test EXE");
+
+                // The query round-trips through the JSON POST body. Quotes, an
+                // ampersand, a backslash and a non-ASCII letter are all characters
+                // the old inline -d "escaped" form could mangle. (No newline: the
+                // search parser intentionally normalizes whitespace in titles.)
+                string nasty = "a\"quoted&arg\\back\\ё line2";
+                using (FirecrawlEchoServer server = new FirecrawlEchoServer())
+                {
+                    JObject config = new JObject
+                    {
+                        ["firecrawlendpoint"] = server.BaseUrl,
+                        ["firecrawlapikey"] = "test-key"
+                    };
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "run_web_search",
+                        new JObject { ["query"] = nasty },
+                        config,
+                        60000);
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    TestAssert.Contains(r.Text, nasty, "POST body query arrived intact");
+                }
+            });
+
             TestRunner.Run("run_web_search.live", () =>
             {
                 ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "run_web_search",
@@ -88,6 +114,77 @@ namespace WebTools.Tests
 
                 TestAssert.Equal(0, r.ExitCode, "exit");
             });
+        }
+
+        private sealed class FirecrawlEchoServer : IDisposable
+        {
+            private readonly HttpListener _listener;
+            private readonly Thread _thread;
+            private volatile bool _running;
+
+            public string BaseUrl { get; private set; }
+
+            public FirecrawlEchoServer()
+            {
+                string baseUrl;
+                _listener = TestHttpListener.StartLoopback(out baseUrl);
+                BaseUrl = baseUrl;
+                _running = true;
+                _thread = new Thread(Loop) { IsBackground = true };
+                _thread.Start();
+            }
+
+            private void Loop()
+            {
+                while (_running)
+                {
+                    try
+                    {
+                        HttpListenerContext ctx = _listener.GetContext();
+                        string raw;
+                        using (StreamReader reader = new StreamReader(ctx.Request.InputStream, Encoding.UTF8))
+                            raw = reader.ReadToEnd();
+
+                        string query = "";
+                        JObject payload = JObject.Parse(raw);
+                        JToken queryToken = payload["query"];
+                        if (queryToken != null && queryToken.Type != JTokenType.Null)
+                            query = queryToken.ToString();
+
+                        JObject result = new JObject
+                        {
+                            ["success"] = true,
+                            ["data"] = new JObject
+                            {
+                                ["web"] = new JArray(new JObject
+                                {
+                                    ["url"] = "http://127.0.0.1/echo",
+                                    ["title"] = query,
+                                    ["description"] = "d"
+                                })
+                            }
+                        };
+                        byte[] bytes = Encoding.UTF8.GetBytes(result.ToString());
+                        ctx.Response.StatusCode = 200;
+                        ctx.Response.ContentType = "application/json";
+                        ctx.Response.KeepAlive = false;
+                        ctx.Response.ContentLength64 = bytes.Length;
+                        ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+                        ctx.Response.Close();
+                    }
+                    catch
+                    {
+                        if (!_running) break;
+                    }
+                }
+            }
+
+            public void Dispose()
+            {
+                _running = false;
+                try { _listener.Stop(); } catch { }
+                try { _listener.Close(); } catch { }
+            }
         }
 
         private sealed class LocalHttpServer : IDisposable

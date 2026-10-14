@@ -135,6 +135,7 @@ namespace SuperSimpleAgentGUI
             {
                 "tools=",
                 "toolsrequiringapproval=" + AppConstants.DefaultToolsRequiringApproval,
+                "maxconsecutivefailedtoolcalls=10",
             };
         }
     }

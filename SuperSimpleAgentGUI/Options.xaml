@@ -255,6 +255,13 @@
 
                     <Label Content="Tools" FontWeight="Bold" FontSize="14" Margin="0,0,0,0"/>
 
+                    <Label Content="Max consecutive tool failures (0 = off):"/>
+                    <TextBox x:Name="MaxConsecutiveFailedToolCallsTextBox"
+                             Text="{Binding MaxConsecutiveFailedToolCalls, UpdateSourceTrigger=PropertyChanged}"
+                             Height="23"
+                             Margin="0,4,0,8"
+                             ToolTip="Stop the turn if this many tool calls in a row fail with a non-zero exit code. 0 disables the guard."/>
+
                     <!-- Tools -->
                     <Label Content="Tools:"/>
                     <ListBox x:Name="ToolsListBox"

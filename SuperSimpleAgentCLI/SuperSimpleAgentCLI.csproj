@@ -45,6 +45,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ChatOutput.cs" />
+    <Compile Include="ConsecutiveToolFailures.cs" />
     <Compile Include="ImageEncoder.cs" />
     <Compile Include="CurlClient.cs" />
     <Compile Include="LLMClient.cs" />

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Consecutive failed tool call limit** - New `maxconsecutivefailedtoolcalls` setting (default `10`, `0` = off): a turn is halted with `[Stopped: N consecutive tool calls failed]` when N tool calls in a row return a non-zero exit code; any success resets the streak, and calls that did not run (disabled or cancelled) do not count. Editable in `Options` -> `Tools`.
+- **cURL POST body via named pipe** - `PostJson` (the Firecrawl search and scrape paths) now writes the JSON body to a named pipe and tells curl to read it with `--data-binary "@\.\pipe\..."` instead of quoting it inline on the command line, so bodies with quotes, backslashes, ampersands or unusual length can no longer be mangled by the shell.
+
 ### Changed
 
 - **CLI errors in the GUI** - The GUI now redirects the CLI's stderr (UTF-8) and shows each line as its own turn in the chat transcript, so errors the CLI prints (e.g. `Error: Invalid approval mode...`) are visible instead of silently lost.

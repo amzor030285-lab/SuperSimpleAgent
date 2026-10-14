@@ -21,6 +21,7 @@ namespace SuperSimpleAgentGUI
         private bool _repetitionGuardEnabled;
         private int _streamStallTimeout;
         private int _responseTimeout;
+        private int _maxConsecutiveFailedToolCalls = 10;
         private string _assistantName;
         private string _thinkingDisplayModeText = "Collapsed";
         private string _toolCallDisplayModeText = "Collapsed";
@@ -130,6 +131,16 @@ namespace SuperSimpleAgentGUI
         {
             get { return _responseTimeout; }
             set { _responseTimeout = value; OnPropertyChanged(nameof(ResponseTimeout)); }
+        }
+
+        public int MaxConsecutiveFailedToolCalls
+        {
+            get { return _maxConsecutiveFailedToolCalls; }
+            set
+            {
+                _maxConsecutiveFailedToolCalls = value < 0 ? 0 : value;
+                OnPropertyChanged(nameof(MaxConsecutiveFailedToolCalls));
+            }
         }
 
         public string AssistantName
@@ -375,6 +386,16 @@ namespace SuperSimpleAgentGUI
             LoadToolSelections(config);
             BuildToolOptionsUI(config);
             BuildToolTimeoutsUI(config);
+            MaxConsecutiveFailedToolCallsTextBox.PreviewTextInput += (s, ev) => { ev.Handled = !ev.Text.All(char.IsDigit); };
+            DataObject.AddPastingHandler(MaxConsecutiveFailedToolCallsTextBox, (s, ev) =>
+            {
+                if (ev.DataObject.GetDataPresent(DataFormats.Text))
+                {
+                    string text = (string)ev.DataObject.GetData(DataFormats.Text);
+                    if (!text.All(char.IsDigit)) ev.CancelCommand();
+                }
+                else ev.CancelCommand();
+            });
             RefreshPresetCombo(null);
 
             IndexingStatusHub.Updated += RefreshIndexingStatusUi;
@@ -522,6 +543,7 @@ namespace SuperSimpleAgentGUI
             // cannot show one value while the tool runs with another.
             StreamStallTimeout = config.GetConfigInt("streamstalltimeout", 120);
             ResponseTimeout = config.GetConfigInt("requesttimeout", 300);
+            MaxConsecutiveFailedToolCalls = config.GetConfigInt("maxconsecutivefailedtoolcalls", 10);
             AssistantName = config.GetConfigValue("assistantname");
             if (string.IsNullOrWhiteSpace(AssistantName))
                 AssistantName = AppConstants.DefaultAssistantName;
@@ -704,6 +726,7 @@ namespace SuperSimpleAgentGUI
             {
                 "tools=" + string.Join(",", GetSelectedToolsFromListBox(ToolsListBox)),
                 "toolsrequiringapproval=" + string.Join(",", GetSelectedToolsFromListBox(ToolsRequiringApprovalListBox)),
+                "maxconsecutivefailedtoolcalls=" + MaxConsecutiveFailedToolCalls,
             };
 
             foreach (var kvp in _toolTimeoutControls)

@@ -117,6 +117,7 @@ On first use, if `LLMSettings.ini` does not exist, the GUI setup wizard creates 
 
 -   `tools`: Comma-separated list of tools the AI is allowed to use
 -   `toolsrequiringapproval`: Comma-separated list of tools that require manual approval for the AI to use (default: `run_shell_command`, `download_file`)
+-   `maxconsecutivefailedtoolcalls`: Maximum number of tool calls that can fail in a row before the turn is stopped (default `10`; `0` = off)
 -   `tooltimeout.<toolname>`: Timeout for a tool call in seconds
 
 Tool-specific configuration options for the included tools are available in the [Tools](#tools) section.

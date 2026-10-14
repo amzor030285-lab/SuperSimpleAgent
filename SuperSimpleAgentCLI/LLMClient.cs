@@ -122,6 +122,8 @@ public class LLMClient
     {
         ChatBlockDisplayMode toolCallDisplay = config.GetChatBlockDisplayMode("toolcalldisplay", ChatBlockDisplayMode.Collapsed);
         ChatBlockDisplayMode toolOutputDisplay = config.GetChatBlockDisplayMode("tooloutputdisplay", ChatBlockDisplayMode.Shown);
+        int maxConsecutiveFailedToolCalls = Math.Max(0, config.GetConfigInt("maxconsecutivefailedtoolcalls", 10));
+        int consecutiveFailedToolCalls = 0;
 
         HashSet<string> enabledSet = new HashSet<string>(enabledTools, StringComparer.OrdinalIgnoreCase);
         HashSet<string> approvalSet = new HashSet<string>(toolsRequiringApproval, StringComparer.OrdinalIgnoreCase);
@@ -368,6 +370,7 @@ public class LLMClient
                     int exitCode = 0;
                     string toolContent;
                     double toolSeconds = 0;
+                    bool toolRan = false;
 
                     string toolImage = null;
                     string toolImageMime = null;
@@ -385,6 +388,7 @@ public class LLMClient
                         if (CliRequestApproval(call.Name, call.Arguments))
                         {
                             ExecuteTool(call, out toolContent, out exitCode, out toolImage, out toolImageMime, out toolSeconds, outputOnly);
+                            toolRan = true;
                         }
                         else
                         {
@@ -399,7 +403,11 @@ public class LLMClient
                     else
                     {
                         ExecuteTool(call, out toolContent, out exitCode, out toolImage, out toolImageMime, out toolSeconds, outputOnly);
+                        toolRan = true;
                     }
+
+                    ConsecutiveToolFailures.Record(
+                        ref consecutiveFailedToolCalls, maxConsecutiveFailedToolCalls, toolRan, exitCode);
 
                     ChatMessage toolMsg = new ChatMessage
                     {
@@ -430,6 +438,15 @@ public class LLMClient
                         }
                     }
                 }
+                if (maxConsecutiveFailedToolCalls > 0
+                    && consecutiveFailedToolCalls >= maxConsecutiveFailedToolCalls)
+                {
+                    if (!outputOnly && startBlock != null)
+                        startBlock();
+                    ChatOutput.WriteLine("[Stopped: " + consecutiveFailedToolCalls + " consecutive tool calls failed]");
+                    break;
+                }
+
                 // Mid-turn (after tools): compact context silently, then continue the user request.
                 MaybeManageContext(
                     conversation,

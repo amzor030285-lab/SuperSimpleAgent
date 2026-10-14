@@ -93,6 +93,9 @@
     <Compile Include="..\..\Shared\RagExtensionList.cs">
       <Link>Shared\RagExtensionList.cs</Link>
     </Compile>
+    <Compile Include="..\..\SuperSimpleAgentCLI\ConsecutiveToolFailures.cs">
+      <Link>CLI\ConsecutiveToolFailures.cs</Link>
+    </Compile>
     <Compile Include="..\..\SuperSimpleAgentCLI\ToolResultParser.cs">
       <Link>CLI\ToolResultParser.cs</Link>
     </Compile>

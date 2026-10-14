@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.IO.Pipes;
+using System.Text;
+using System.Threading;
 
 namespace WebTools
 {
@@ -33,15 +36,43 @@ namespace WebTools
         }
 
         /// <summary>
-        /// POSTs a JSON body via curl (-d inline). Optional extra headers (e.g. Authorization).
+        /// POSTs a JSON body via curl. The body is written to a named pipe so it
+        /// is not quoted on the command line. Optional extra headers (e.g. Authorization).
         /// </summary>
         public static string PostJson(string url, string jsonBody, out int exitCode, params string[] extraHeaders)
         {
+            byte[] body = Encoding.UTF8.GetBytes(jsonBody ?? "");
+            string pipeName = "webcurl_" + Guid.NewGuid().ToString("N");
             string hdrs = " -H \"Content-Type: application/json\""
                 + string.Concat(System.Array.ConvertAll(extraHeaders, h => " -H \"" + h + "\""));
-            string escapedJson = (jsonBody ?? "").Replace("\"", "\\\"");
-            string arguments = "-s -L -X POST" + CacertFlag() + hdrs + " -d \"" + escapedJson + "\" \"" + url + "\"";
-            return ToolHelper.ExecuteProcess("curl.exe", arguments, out exitCode, false, null, false);
+            string arguments = "-s -L -X POST" + CacertFlag() + hdrs
+                + " --data-binary \"@\\\\.\\pipe\\" + pipeName + "\" \"" + url + "\"";
+
+            using (NamedPipeServerStream pipe = new NamedPipeServerStream(
+                pipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte))
+            {
+                Thread writer = new Thread(() =>
+                {
+                    try
+                    {
+                        pipe.WaitForConnection();
+                        if (body.Length > 0)
+                            pipe.Write(body, 0, body.Length);
+                        pipe.Flush();
+                        pipe.Close();
+                    }
+                    catch
+                    {
+                    }
+                });
+                writer.IsBackground = true;
+                writer.Start();
+
+                string output = ToolHelper.ExecuteProcess(
+                    "curl.exe", arguments, out exitCode, false, null, false);
+                writer.Join(5000);
+                return output;
+            }
         }
 
         public static string[] FirecrawlAuthHeaders(string apiKey)
