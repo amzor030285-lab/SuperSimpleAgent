@@ -56,8 +56,7 @@ namespace SuperSimpleAgentCLI
 
                 // A content delta whose text is "error" also contains that substring.
                 // Only a real error property is an API failure.
-                JToken errorToken = obj["error"];
-                if (errorToken != null && errorToken.Type != JTokenType.Null)
+                if (IsApiErrorToken(obj["error"]))
                 {
                     if (onContentChunk != null)
                     {
@@ -271,6 +270,20 @@ namespace SuperSimpleAgentCLI
             }
 
             inReasoning = false;
+        }
+
+        // The spec shape is an error object; some gateways report a plain string
+        // instead. Booleans, numbers and empty markers are not failures.
+        private static bool IsApiErrorToken(JToken errorToken)
+        {
+            if (errorToken == null || errorToken.Type == JTokenType.Null)
+                return false;
+
+            if (errorToken.Type == JTokenType.Object)
+                return true;
+
+            return errorToken.Type == JTokenType.String
+                && !string.IsNullOrEmpty(errorToken.Value<string>());
         }
     }
 }

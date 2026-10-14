@@ -81,7 +81,7 @@ namespace SuperSimpleAgentGUI
                 llmProcess.StartInfo.CreateNoWindow = true;
                 llmProcess.StartInfo.StandardOutputEncoding = Encoding.UTF8;
                 llmProcess.StartInfo.StandardErrorEncoding = Encoding.UTF8;
-                llmProcess.                StartInfo.Arguments = "--no-banners";
+                llmProcess.StartInfo.Arguments = "--no-banners";
                 textBuffer.Clear();
                 streamBuffer.Clear();
                 _streamAtStart = true;

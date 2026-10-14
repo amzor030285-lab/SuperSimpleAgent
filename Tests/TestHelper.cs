@@ -894,6 +894,7 @@ public sealed class FakeOpenAiServer : IDisposable
     /// partway through generation.
     /// </summary>
     public string MidStreamErrorAfterText { get; set; }
+    public string MidStreamErrorJson { get; set; }
 
     /// <summary>
     /// When true, SSE events are written as "data:..." without the space after the
@@ -1270,8 +1271,10 @@ public sealed class FakeOpenAiServer : IDisposable
                     Thread.Sleep(delayMs);
             }
 
-            string errEvt = DataPrefix +
-                "{\"error\":{\"code\":500,\"message\":\"injected mid-stream error\",\"type\":\"server_error\"}}\n\n";
+            string errJson = string.IsNullOrEmpty(MidStreamErrorJson)
+                ? "{\"error\":{\"code\":500,\"message\":\"injected mid-stream error\",\"type\":\"server_error\"}}"
+                : MidStreamErrorJson;
+            string errEvt = DataPrefix + errJson + "\n\n";
             byte[] errBytes = Encoding.UTF8.GetBytes(errEvt);
             output.Write(errBytes, 0, errBytes.Length);
             output.Flush();

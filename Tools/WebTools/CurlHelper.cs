@@ -48,30 +48,34 @@ namespace WebTools
             string arguments = "-s -L -X POST" + CacertFlag() + hdrs
                 + " --data-binary \"@\\\\.\\pipe\\" + pipeName + "\" \"" + url + "\"";
 
-            using (NamedPipeServerStream pipe = new NamedPipeServerStream(
-                pipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte))
+            NamedPipeServerStream pipe = new NamedPipeServerStream(
+                pipeName, PipeDirection.Out, 1, PipeTransmissionMode.Byte);
+            Thread writer = new Thread(() =>
             {
-                Thread writer = new Thread(() =>
+                try
                 {
-                    try
-                    {
-                        pipe.WaitForConnection();
-                        if (body.Length > 0)
-                            pipe.Write(body, 0, body.Length);
-                        pipe.Flush();
-                        pipe.Close();
-                    }
-                    catch
-                    {
-                    }
-                });
-                writer.IsBackground = true;
-                writer.Start();
+                    pipe.WaitForConnection();
+                    if (body.Length > 0)
+                        pipe.Write(body, 0, body.Length);
+                    pipe.Flush();
+                    pipe.Close();
+                }
+                catch
+                {
+                }
+            });
+            writer.IsBackground = true;
+            writer.Start();
 
-                string output = ToolHelper.ExecuteProcess(
+            try
+            {
+                return ToolHelper.ExecuteProcess(
                     "curl.exe", arguments, out exitCode, false, null, false);
+            }
+            finally
+            {
+                pipe.Dispose();
                 writer.Join(5000);
-                return output;
             }
         }
 

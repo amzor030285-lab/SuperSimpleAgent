@@ -1602,6 +1602,42 @@ namespace SuperSimpleAgentCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.sse_error_member_variants", () =>
+            {
+                // A string error is still an API failure (some gateways report it
+                // that way); false and empty markers are not.
+                string[] variants = {
+                    "{\"error\":\"quota exceeded\"}",
+                    "{\"error\":false}",
+                    "{\"error\":\"\"}"
+                };
+                bool[] expectApiError = { true, false, false };
+
+                for (int i = 0; i < variants.Length; i++)
+                {
+                    using (FakeOpenAiServer server = new FakeOpenAiServer())
+                    using (TempWorkspace ws = PackageCliWorkspace())
+                    {
+                        server.MidStreamErrorAfterText = "text before the marker";
+                        server.MidStreamErrorJson = variants[i];
+                        server.StreamDelayMs = 5;
+                        WriteCliIni(ws.Path, server.BaseUrl);
+
+                        string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                        using (CliRunner cli = new CliRunner(exe, ws.Path))
+                        {
+                            CliRunner.WaitForText(cli, "You:", 15000);
+                            cli.WriteLine("start a reply that hits the marker");
+                            // The marker event carries no choices, so the next
+                            // prompt is the proof that it was processed.
+                            CliRunner.WaitForTextAfter(cli, "text before the marker", "You: ", 15000);
+                            bool hasApiError = cli.Stdout.IndexOf("[API Error]", StringComparison.Ordinal) >= 0;
+                            TestAssert.True(expectApiError[i] == hasApiError, variants[i]);
+                        }
+                    }
+                }
+            });
+
             TestRunner.Run("cli.session_save_load", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
