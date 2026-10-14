@@ -1528,6 +1528,54 @@ namespace SuperSimpleAgentCLI.Tests
                 }
             });
 
+            TestRunner.Run("cli.sse_error_word_not_api_error", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The whole reply is one content delta whose text is exactly the
+                    // word "error". The old substring check matched "error" in the
+                    // SSE JSON and aborted the stream as an API failure.
+                    server.FixedReply = "error";
+                    server.StreamDelayMs = 5;
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("reply with one word");
+                        CliRunner.WaitForTextAfter(cli, "You: ", "error", 15000);
+                        TestAssert.True(
+                            cli.Stdout.IndexOf("[API Error]", StringComparison.Ordinal) < 0,
+                            "a content delta whose text is \"error\" is not an API failure");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.sse_midstream_error_event", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    server.MidStreamErrorAfterText = "partial text before the failure";
+                    server.StreamDelayMs = 5;
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 15000);
+                        cli.WriteLine("start a reply that fails mid-stream");
+                        CliRunner.WaitForText(cli, "partial text before the failure", 15000);
+                        CliRunner.WaitForText(cli, "[API Error]", 15000);
+                        TestAssert.Contains(
+                            cli.Stdout, "injected mid-stream error",
+                            "a real error property mid-stream is still an API failure");
+                    }
+                }
+            });
+
             TestRunner.Run("cli.session_save_load", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

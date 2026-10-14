@@ -236,6 +236,7 @@ namespace SuperSimpleAgentGUI
 
             processHandler.OutputReceived += OnOutputReceived;
             processHandler.ErrorOccurred += OnErrorOccurred;
+            processHandler.CliErrorReceived += OnCliErrorReceived;
             processHandler.GenerationComplete += OnGenerationComplete;
             processHandler.ApprovalRequested += OnApprovalRequested;
             processHandler.StatusReceived += OnStatusReceived;
@@ -245,7 +246,8 @@ namespace SuperSimpleAgentGUI
             tokenTracker.Reset();
 
             // Start the process
-            if (!processHandler.StartProcess("SuperSimpleAgentCLI.exe"))
+            string cliPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SuperSimpleAgentCLI.exe");
+            if (!processHandler.StartProcess(cliPath))
             {
                 MessageBox.Show("Failed to start LLM process. Please check if SuperSimpleAgentCLI.exe exists.");
                 return;
@@ -428,6 +430,17 @@ namespace SuperSimpleAgentGUI
         private void OnErrorOccurred(string errorMessage)
         {
             OnUi(() => MessageBox.Show(errorMessage, "Error", MessageBoxButton.OK, MessageBoxImage.Error));
+        }
+
+        private void OnCliErrorReceived(string line)
+        {
+            OnUi(() =>
+            {
+                ChatTurn errorTurn = AddTurn();
+                errorTurn.AppendText(line);
+                errorTurn.Complete();
+                ScrollChatToEnd();
+            });
         }
 
         private bool OnApprovalRequested(string toolName, string arguments)

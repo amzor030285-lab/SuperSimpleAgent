@@ -17,6 +17,7 @@ namespace SuperSimpleAgentGUI
 
         public event Action<string> OutputReceived;
         public event Action<string> ErrorOccurred;
+        public event Action<string> CliErrorReceived;
         public event Action GenerationComplete;
         public event Func<string, string, bool> ApprovalRequested;
         public event Action<int> StatusReceived;
@@ -70,16 +71,23 @@ namespace SuperSimpleAgentGUI
 
                 llmProcess = new Process();
                 llmProcess.StartInfo.FileName = executablePath;
+                string workingDirectory = Path.GetDirectoryName(executablePath);
+                if (!string.IsNullOrEmpty(workingDirectory))
+                    llmProcess.StartInfo.WorkingDirectory = workingDirectory;
                 llmProcess.StartInfo.UseShellExecute = false;
                 llmProcess.StartInfo.RedirectStandardOutput = true;
+                llmProcess.StartInfo.RedirectStandardError = true;
                 llmProcess.StartInfo.RedirectStandardInput = true;
                 llmProcess.StartInfo.CreateNoWindow = true;
                 llmProcess.StartInfo.StandardOutputEncoding = Encoding.UTF8;
+                llmProcess.StartInfo.StandardErrorEncoding = Encoding.UTF8;
                 llmProcess.                StartInfo.Arguments = "--no-banners";
                 textBuffer.Clear();
                 streamBuffer.Clear();
                 _streamAtStart = true;
+                llmProcess.ErrorDataReceived += OnErrorDataReceived;
                 llmProcess.Start();
+                llmProcess.BeginErrorReadLine();
                 inputWriter = new StreamWriter(llmProcess.StandardInput.BaseStream, new UTF8Encoding(false));
                 inputWriter.AutoFlush = true;
 
@@ -99,6 +107,16 @@ namespace SuperSimpleAgentGUI
                 ErrorOccurred?.Invoke("Failed to start process: " + ex.Message);
                 return false;
             }
+        }
+
+        private void OnErrorDataReceived(object sender, DataReceivedEventArgs e)
+        {
+            if (disposed || string.IsNullOrEmpty(e.Data))
+                return;
+
+            Action<string> handler = CliErrorReceived;
+            if (handler != null)
+                handler(e.Data);
         }
 
         private void OnStatusPipeReceived(int tokens)
@@ -498,6 +516,7 @@ namespace SuperSimpleAgentGUI
             }
             OutputReceived = null;
             ErrorOccurred = null;
+            CliErrorReceived = null;
             GenerationComplete = null;
             ApprovalRequested = null;
             StatusReceived = null;

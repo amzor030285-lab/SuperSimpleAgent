@@ -43,7 +43,21 @@ namespace SuperSimpleAgentCLI
                 string jsonPart = line.Substring(5).TrimStart(' ');
                 if (jsonPart == "[DONE]") break;
 
-                if (jsonPart.Contains("\"error\""))
+                JObject obj;
+                try
+                {
+                    obj = JObject.Parse(jsonPart);
+                }
+                catch
+                {
+                    // ignore malformed JSON fragments
+                    continue;
+                }
+
+                // A content delta whose text is "error" also contains that substring.
+                // Only a real error property is an API failure.
+                JToken errorToken = obj["error"];
+                if (errorToken != null && errorToken.Type != JTokenType.Null)
                 {
                     if (onContentChunk != null)
                     {
@@ -55,8 +69,6 @@ namespace SuperSimpleAgentCLI
 
                 try
                 {
-                    JObject obj = JObject.Parse(jsonPart);
-
                     // llama.cpp (and some proxies) send usage in a final chunk - either
                     // alongside the finish_reason or as a standalone {"choices":[],..."usage"...}
                     // event. Capture it before the choices-null check so both shapes work.

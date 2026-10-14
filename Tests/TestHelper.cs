@@ -889,6 +889,13 @@ public sealed class FakeOpenAiServer : IDisposable
     public double UsageTokenRatio { get; set; }
 
     /// <summary>
+    /// When set, the chat reply streams this text in chunks, then a real
+    /// {"error":...} SSE event, then [DONE] — simulating a server that fails
+    /// partway through generation.
+    /// </summary>
+    public string MidStreamErrorAfterText { get; set; }
+
+    /// <summary>
     /// When true, SSE events are written as "data:..." without the space after the
     /// colon — the space is optional per the SSE spec and some servers omit it.
     /// </summary>
@@ -1048,6 +1055,12 @@ public sealed class FakeOpenAiServer : IDisposable
         {
             ToolCallRoundsRemaining--;
             WriteToolCallStream(ctx);
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(MidStreamErrorAfterText))
+        {
+            WriteMidStreamError(ctx, MidStreamErrorAfterText);
             return;
         }
 
@@ -1229,6 +1242,42 @@ public sealed class FakeOpenAiServer : IDisposable
                 "data: [DONE]\n\n";
             byte[] tailBytes = Encoding.UTF8.GetBytes(tail);
             output.Write(tailBytes, 0, tailBytes.Length);
+            output.Flush();
+        }
+        ctx.Response.Close();
+    }
+
+    private void WriteMidStreamError(HttpListenerContext ctx, string content)
+    {
+        int delayMs = StreamDelayMs;
+        int chunkChars = StreamChunkChars > 0 ? StreamChunkChars : 16;
+
+        ctx.Response.StatusCode = 200;
+        ctx.Response.ContentType = "text/event-stream";
+        ctx.Response.SendChunked = true;
+
+        using (Stream output = ctx.Response.OutputStream)
+        {
+            for (int i = 0; i < content.Length && _running; i += chunkChars)
+            {
+                int len = Math.Min(chunkChars, content.Length - i);
+                string evt = DataPrefix + "{\"choices\":[{\"delta\":{\"content\":\"" +
+                    EscapeJson(content.Substring(i, len)) + "\"}}]}\n\n";
+                byte[] bytes = Encoding.UTF8.GetBytes(evt);
+                output.Write(bytes, 0, bytes.Length);
+                output.Flush();
+                if (delayMs > 0)
+                    Thread.Sleep(delayMs);
+            }
+
+            string errEvt = DataPrefix +
+                "{\"error\":{\"code\":500,\"message\":\"injected mid-stream error\",\"type\":\"server_error\"}}\n\n";
+            byte[] errBytes = Encoding.UTF8.GetBytes(errEvt);
+            output.Write(errBytes, 0, errBytes.Length);
+            output.Flush();
+
+            byte[] done = Encoding.UTF8.GetBytes(DataPrefix + "[DONE]\n\n");
+            output.Write(done, 0, done.Length);
             output.Flush();
         }
         ctx.Response.Close();

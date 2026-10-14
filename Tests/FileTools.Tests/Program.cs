@@ -40,6 +40,15 @@ namespace FileTools.Tests
                     TestAssert.Equal("abc", File.ReadAllText(path, Encoding.UTF8), "disk");
                 });
 
+                TestRunner.Run("write_file.preserves_surrounding_whitespace", () =>
+                {
+                    string path = ws.Combine("ws.txt");
+                    ToolInvokeResult r = ToolClient.InvokeProduct(Exe, "write_file",
+                        new JObject { ["filename"] = path, ["content"] = "\n  indented line\n\n" });
+                    TestAssert.Equal(0, r.ExitCode, "exit");
+                    TestAssert.Equal("\n  indented line\n\n", File.ReadAllText(path, Encoding.UTF8), "disk");
+                });
+
                 TestRunner.Run("edit_file.replace", () =>
                 {
                     string path = ws.Combine("edit.txt");

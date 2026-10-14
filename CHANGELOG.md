@@ -6,6 +6,18 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Changed
+
+- **CLI errors in the GUI** - The GUI now redirects the CLI's stderr (UTF-8) and shows each line as its own turn in the chat transcript, so errors the CLI prints (e.g. `Error: Invalid approval mode...`) are visible instead of silently lost.
+- **CLI launch from a foreign working directory** - The GUI starts the CLI by absolute path (next to the GUI executable) and sets that folder as its working directory, so the CLI is found even when the GUI is launched from a shortcut with a Start-in folder other than the install folder.
+
+### Fixed
+
+- **False API errors in streamed replies** - A streamed response whose text merely contained the word "error" (e.g. `{"choices":[...,"content":"error",...]}`) was misreported as `[API Error]`, because the parser looked for the raw substring `"error"` in the JSON. The parser now parses the event first and only a real `error` member counts as an API error.
+- **write_file stripped surrounding whitespace** - `write_file` trimmed leading and trailing whitespace from `content`, corrupting files that rely on leading blank lines or trailing newlines; the content is now written exactly as given.
+
 ## [2.0.0] - 2026-10-13
 
 ### Changed

@@ -539,6 +539,49 @@ namespace SuperSimpleAgentGUI.Tests
                 }
             });
 
+            TestRunner.Run("gui.cli_stderr_shown_as_turn", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    server.FixedReply = "ok";
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+
+                        // The CLI reports this on stderr: without the stderr pipe
+                        // the line never reached the transcript.
+                        gui.SendTurn("/approval bogus", 30000);
+                        TestAssert.Equal("Send", gui.SendButtonName(), "turn completed");
+                        TestAssert.Contains(gui.GetAllText(), "Error: Invalid approval mode",
+                            "CLI stderr line is shown in the transcript");
+                    }
+                }
+            });
+
+            TestRunner.Run("gui.cli_found_with_foreign_cwd", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                using (TempWorkspace foreign = new TempWorkspace("gui-foreign-cwd"))
+                {
+                    server.FixedReply = "ok";
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+
+                    // A shortcut with a Start-in folder other than the install
+                    // directory makes the GUI's working directory foreign; the
+                    // CLI must still be found next to the GUI EXE.
+                    using (GuiDriver gui = new GuiDriver(ws.Path, foreign.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.SendTurn("hi", 30000);
+                        TestAssert.Contains(gui.GetAllText(), "ok", "reply rendered");
+                    }
+                }
+            });
+
             TestRunner.Run("gui.reply_contains_you_prompt", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())

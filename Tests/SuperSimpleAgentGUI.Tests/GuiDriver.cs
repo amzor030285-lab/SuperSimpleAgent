@@ -30,6 +30,11 @@ namespace SuperSimpleAgentGUI.Tests
         public string WorkDir { get { return _workDir; } }
 
         public GuiDriver(string workDir)
+            : this(workDir, workDir)
+        {
+        }
+
+        public GuiDriver(string workDir, string workingDirectory)
         {
             _workDir = workDir;
             string exe = Path.Combine(workDir, "SuperSimpleAgentGUI.exe");
@@ -39,7 +44,7 @@ namespace SuperSimpleAgentGUI.Tests
             ProcessStartInfo psi = new ProcessStartInfo
             {
                 FileName = exe,
-                WorkingDirectory = workDir,
+                WorkingDirectory = workingDirectory,
                 UseShellExecute = false
             };
             _gui = Process.Start(psi);
