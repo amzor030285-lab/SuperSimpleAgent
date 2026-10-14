@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Bundled yt-dlp updated** - `deps\yt-dlp.exe` is now the nicolaasjan Windows-XP-compatible build `2026.10.11.155708` (replacing the August 2026 build), bringing the current YouTube extractor behavior (e.g. the `tv_samsung` client) to `download_video`.
 - **CLI errors in the GUI** - The GUI now redirects the CLI's stderr (UTF-8) and shows each line as its own turn in the chat transcript, so errors the CLI prints (e.g. `Error: Invalid approval mode...`) are visible instead of silently lost.
 - **CLI launch from a foreign working directory** - The GUI starts the CLI by absolute path (next to the GUI executable) and sets that folder as its working directory, so the CLI is found even when the GUI is launched from a shortcut with a Start-in folder other than the install folder.
 

@@ -1,5 +1,6 @@
 using Newtonsoft.Json.Linq;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -92,6 +93,48 @@ namespace WebTools.Tests
                 TestAssert.True(!string.IsNullOrWhiteSpace(r.Text), "non-empty results");
             });
 
+            TestRunner.Run("download_video.binary_version", () =>
+            {
+                string ytDlp = ToolClient.ProductExe("yt-dlp.exe");
+                if (!File.Exists(ytDlp))
+                    TestRunner.Skip("yt-dlp.exe not packaged beside test EXE");
+
+                Process p = new Process();
+                p.StartInfo.FileName = ytDlp;
+                p.StartInfo.Arguments = "--version";
+                p.StartInfo.UseShellExecute = false;
+                p.StartInfo.RedirectStandardOutput = true;
+                p.StartInfo.RedirectStandardError = true;
+                p.StartInfo.WorkingDirectory = Path.GetDirectoryName(ytDlp);
+                string outText = "";
+                string errText = "";
+                p.Start();
+                Thread errDrain = new Thread(() =>
+                {
+                    try { errText = p.StandardError.ReadToEnd(); }
+                    catch { }
+                });
+                errDrain.IsBackground = true;
+                errDrain.Start();
+                try { outText = p.StandardOutput.ReadToEnd(); }
+                catch { }
+                if (!p.WaitForExit(60000))
+                {
+                    try { p.Kill(); } catch { }
+                    TestAssert.True(false, "yt-dlp.exe --version timed out");
+                }
+                errDrain.Join(5000);
+
+                // Same launch limitation as the live test: where the packaged
+                // XP build cannot load python311.dll, the version is unanswerable.
+                string all = (outText ?? "") + (errText ?? "");
+                if (p.ExitCode != 0 && all.IndexOf("Python DLL", StringComparison.OrdinalIgnoreCase) >= 0)
+                    TestRunner.Skip("packaged yt-dlp.exe cannot start on this machine");
+
+                TestAssert.Equal(0, p.ExitCode, "exit");
+                TestAssert.Contains(outText, "2026.", "version string");
+            });
+
             TestRunner.Run("download_video.live", () =>
             {
                 if (!ToolClient.ProductExists("yt-dlp.exe"))
@@ -112,8 +155,37 @@ namespace WebTools.Tests
                     TestRunner.Skip("packaged yt-dlp.exe cannot start on this machine: " +
                         (r.Text ?? "").Replace("\r", " ").Replace("\n", " "));
 
+                // YouTube may be unreachable from this machine (regional block or no
+                // network). A yt-dlp that starts and then cannot connect is an
+                // environment problem, not a WebTools defect.
+                if (r.TimedOut)
+                    TestRunner.Skip("download hung waiting on the network");
+                if (r.ExitCode != 0 && LooksLikeNetworkBlock(r.Text))
+                    TestRunner.Skip("YouTube unreachable from this machine: " +
+                        (r.Text ?? "").Replace("\r", " ").Replace("\n", " "));
+
                 TestAssert.Equal(0, r.ExitCode, "exit");
             });
+        }
+
+        private static bool LooksLikeNetworkBlock(string text)
+        {
+            string t = text ?? "";
+            string[] signatures =
+            {
+                "URLError",
+                "Could not resolve host",
+                "Connection refused",
+                "timed out",
+                "Max retries exceeded",
+                "HTTPSConnectionPool"
+            };
+            for (int i = 0; i < signatures.Length; i++)
+            {
+                if (t.IndexOf(signatures[i], StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
         }
 
         private sealed class FirecrawlEchoServer : IDisposable
