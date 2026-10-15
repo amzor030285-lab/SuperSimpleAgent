@@ -117,6 +117,8 @@ copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\SuperSimpleAgentCLI.exe" "%TESTBU
 
 copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\SuperSimpleAgentCLI.Tests\" >nul
 
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\guardrules.json" "%TESTBUILD%\SuperSimpleAgentCLI.Tests\" >nul
+
 call :CopyIfExists "%ROOT%deps\curl.exe" "%TESTBUILD%\SuperSimpleAgentCLI.Tests\curl.exe"
 
 call :CopyIfExists "%ROOT%deps\curl-ca-bundle.crt" "%TESTBUILD%\SuperSimpleAgentCLI.Tests\curl-ca-bundle.crt"
@@ -132,6 +134,8 @@ copy /Y "%ROOT%SuperSimpleAgentGUI\bin\Release\Markdig.dll" "%TESTBUILD%\SuperSi
 copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\SuperSimpleAgentCLI.exe" "%TESTBUILD%\SuperSimpleAgentGUI.Tests\" >nul
 
 copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\Newtonsoft.Json.dll" "%TESTBUILD%\SuperSimpleAgentGUI.Tests\" >nul
+
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\guardrules.json" "%TESTBUILD%\SuperSimpleAgentGUI.Tests\" >nul
 
 :: Intermediate obj/ is only needed during compile
 if exist "%TESTBUILD%\obj" rmdir /s /q "%TESTBUILD%\obj"

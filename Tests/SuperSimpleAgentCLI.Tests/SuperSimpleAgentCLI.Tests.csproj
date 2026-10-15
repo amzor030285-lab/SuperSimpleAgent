@@ -69,6 +69,9 @@
     <Compile Include="..\..\Shared\ToolApproval.cs">
       <Link>Shared\ToolApproval.cs</Link>
     </Compile>
+    <Compile Include="..\..\Shared\CommandGuard.cs">
+      <Link>Shared\CommandGuard.cs</Link>
+    </Compile>
     <Compile Include="..\..\Shared\PlanMode.cs">
       <Link>Shared\PlanMode.cs</Link>
     </Compile>
@@ -124,6 +127,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="..\..\SuperSimpleAgentCLI\guardrules.json">
+      <Link>guardrules.json</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <Import Project="..\TestBuildOutput.props" />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

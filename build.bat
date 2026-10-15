@@ -21,6 +21,7 @@ copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\SuperSimpleAgentCLI.exe.config" "
 copy /Y "%ROOT%SuperSimpleAgentGUI\bin\Release\SuperSimpleAgentGUI.exe" "%OUT%\" >nul
 copy /Y "%ROOT%SuperSimpleAgentGUI\bin\Release\Markdig.dll" "%OUT%\" >nul
 copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\Newtonsoft.Json.dll"  "%OUT%\" >nul
+copy /Y "%ROOT%SuperSimpleAgentCLI\bin\Release\guardrules.json" "%OUT%\" >nul
 
 for %%T in (FileTools PythonTools ShellTools WebTools MemoryTools SkillTools DesktopTools SearchTools) do (
     mkdir "%OUT%\tools\%%T"

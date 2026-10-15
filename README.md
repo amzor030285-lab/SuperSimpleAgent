@@ -118,6 +118,7 @@ On first use, if `LLMSettings.ini` does not exist, the GUI setup wizard creates 
 -   `tools`: Comma-separated list of tools the AI is allowed to use
 -   `toolsrequiringapproval`: Comma-separated list of tools that require manual approval for the AI to use (default: `run_shell_command`, `download_file`)
 -   `maxconsecutivefailedtoolcalls`: Maximum number of tool calls that can fail in a row before the turn is stopped (default `10`; `0` = off)
+-   `autoguardenabled`: Safety guard for unattended tool execution in `auto`/`config` modes: a deterministic rule set in `guardrules.json` blocks dangerous shell commands (disk formatting, shutdown, remote-code runners, registry/service/user changes, pipe-to-shell and exfiltration patterns) and file operations on protected system paths. A blocked call is not executed - the model gets an error with the rule id and a reason and continues. Three blocks of the same reversible rule stop the turn; an irreversible/remote-execution block taints the turn, and the next block of any kind stops it (default `1`, on; `0` = off). Never active in `ask` mode (the human is the gate) or `plan` mode
 -   `tooltimeout.<toolname>`: Timeout for a tool call in seconds
 
 Tool-specific configuration options for the included tools are available in the [Tools](#tools) section.
@@ -285,5 +286,6 @@ Thank you to the following for all of their contributions:
 
 -   [randomNinja64](https://github.com/randomNinja64) for the original SimpleLLMChat project, which this repository continues
 -   [amzor030285-lab](https://github.com/amzor030285-lab) for the SuperSimpleAgent fork: session management, context compaction, in-app scheduled tasks
+-   [michaeldhopkins/safe-chains](https://github.com/michaeldhopkins/safe-chains), [agentkit's shellguard](https://pkg.go.dev/github.com/vinayprograms/agentkit/shellguard) and [All-Hands-AI/OpenHands](https://github.com/All-Hands-AI/OpenHands) for the command-safety rule patterns adapted into the safety guard (ideas and rule structure only - no code or data copied; see `SECURITY.md`)
 -   [LoRd\_MuldeR](https://github.com/lordmulder/cURL-build-win32) for the cURL builds for XP
 -   [nicolaasjan](https://github.com/nicolaasjan) for the YT-DLP builds for XP

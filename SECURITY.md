@@ -64,3 +64,59 @@ machine. The following are **not** vulnerabilities, they are the documented beha
 - A prompt-injected web page or file can make the model attempt tool calls. That is why
   `run_shell_command` and `download_file` require approval by default; keep them that way unless
   you fully trust the content being processed.
+
+## Safety guard (`auto`/`config` modes)
+
+Unattended execution (approval mode `auto`, or a `config`-mode tool that is not listed in
+`toolsrequiringapproval`) passes through a deterministic safety guard before any tool runs.
+The rules live in `guardrules.json` (shipped next to `SuperSimpleAgentCLI.exe`) and are
+evaluated by `Shared\CommandGuard.cs`. The guard never executes anything and does not read
+semantics: it checks a finite set of signals.
+
+- **Banned commands** - a rule table of dangerous binaries and subcommands: disk
+  formatting, shutdown/reboot, remote-code runners (`mshta`, `regsvr32`, `bitsadmin`,
+  `certutil -urlcache`), obfuscated PowerShell (`-enc` / `-encodedcommand`), machine-wide
+  registry writes (`HKLM`), service and local-account changes, `git push --force`, global
+  package installs, and similar.
+- **Patterns** - regexes over the whole command line: piping downloaded or decoded data
+  into a shell (`curl ... | cmd`), uploading local file contents (`curl -d @file`,
+  `curl -T file`), base64-decoding into a shell.
+- **Protected paths** - state-changing shell verbs (`del`, `rd`, `move`, `copy`, `ren`,
+  `xcopy`, `robocopy`, output redirection) and the file tools (`write_file`, `edit_file`,
+  `delete_file`, `move_file`, `copy_file`, `extract_file`) are checked against a static
+  denylist of system locations (`C:\Windows`, `Program Files`, `ProgramData`, other
+  users' profiles, `C:\Boot`, `C:\$RECYCLE.BIN`, ...). URL tools accept only `http://`
+  and `https://`.
+
+Rules carry two tiers. **T1** (locally reversible): the block is reported to the model as
+a tool error and the turn stops if the same rule id is blocked three times. **T2**
+(irreversible, remote code execution, exfiltration): the first block taints the turn and
+the next block of any kind stops it. A stopped turn prints
+`[Stopped: safety guard blocked tool calls (...)]`.
+
+What the guard does **not** do:
+
+- It does not block unknown commands (blacklist philosophy): a new LOLBin or a freshly
+  installed CLI passes if no rule matches it.
+- It does not read script contents: `powershell -File x.ps1` is blocked by the binary
+  rule, but `python x.py` runs - script tools carry the same trust as the shell.
+- The protected-path list is static and there is no workspace concept: anything outside
+  the denylist (other programs' files, the agent's own history, data files) can still be
+  modified.
+- A missing or malformed `guardrules.json` disables the guard (fail-open) with a one-line
+  notice in the transcript.
+- It is bypassed by `ask` mode (the human approval is the gate) and `plan` mode
+  (read-only allowlist).
+
+`autoguardenabled` in `LLMSettings.ini` (default `1`) turns the guard off for a session.
+Disabling it does not change what the tools do - model commands run exactly as in plain
+`auto` mode.
+
+Rule patterns were adapted from open-source projects: the command/subcommand/flag rule
+schema from [safe-chains](https://github.com/michaeldhopkins/safe-chains) (MIT OR
+Apache-2.0), the banned-subcommand triples and pipe-pattern denylist from
+[agentkit's shellguard](https://pkg.go.dev/github.com/vinayprograms/agentkit/shellguard)
+(Apache-2.0), and the blacklist/whitelist hooks and deny-with-reason result format from
+[OpenHands](https://github.com/All-Hands-AI/OpenHands) (MIT). None of their code or data
+is vendored; the tier/taint escalation design is original to this project, informed by
+sh-guard and the LOLBAS/GTFOBins command lists (GPL - referenced only, not copied).

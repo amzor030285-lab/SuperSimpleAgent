@@ -99,6 +99,9 @@
     <Compile Include="..\Shared\RepetitionGuard.cs">
       <Link>Shared\RepetitionGuard.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\CommandGuard.cs">
+      <Link>Shared\CommandGuard.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\SessionStore.cs">
       <Link>Shared\SessionStore.cs</Link>
     </Compile>
@@ -124,6 +127,9 @@
   <ItemGroup>
     <None Include="app.config" />
     <None Include="packages.config" />
+    <None Include="guardrules.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Content Include="ssa.ico" />

@@ -125,6 +125,27 @@ public class LLMClient
         int maxConsecutiveFailedToolCalls = Math.Max(0, config.GetConfigInt("maxconsecutivefailedtoolcalls", 10));
         int consecutiveFailedToolCalls = 0;
 
+        // Safety guard for unattended execution (auto/config modes). In plan mode
+        // the tool allowlist is already restrictive, and in ask mode the human is the
+        // gate, so the guard stays out of the way there.
+        CommandGuard guard = null;
+        if (config.GetConfigInt("autoguardenabled", 1) != 0)
+        {
+            CommandGuard loadedGuard = CommandGuard.Load();
+            if (loadedGuard.Loaded)
+            {
+                guard = loadedGuard;
+            }
+            else if (!outputOnly)
+            {
+                ChatOutput.WriteLine("[safety guard: guardrules.json not found, guard disabled]");
+            }
+        }
+        bool guardTainted = false;
+        bool guardStopRequested = false;
+        Dictionary<string, int> guardBlockCounts = new Dictionary<string, int>();
+        List<string> guardBlockedRules = new List<string>();
+
         HashSet<string> enabledSet = new HashSet<string>(enabledTools, StringComparer.OrdinalIgnoreCase);
         HashSet<string> approvalSet = new HashSet<string>(toolsRequiringApproval, StringComparer.OrdinalIgnoreCase);
 
@@ -367,6 +388,14 @@ public class LLMClient
                     if (!outputOnly && needsApproval)
                         startBlock();
 
+                    // The guard only sees tools that are actually enabled: a
+                    // disabled tool gets the "disabled" answer without
+                    // consuming the per-turn guard block budget.
+                    GuardResult guardResult = null;
+                    if (guard != null && !ToolApproval.IsPlanMode(approvalMode) && !needsApproval
+                        && enabledSet.Contains(call.Name))
+                        guardResult = guard.Evaluate(call.Name, call.Arguments);
+
                     int exitCode = 0;
                     string toolContent;
                     double toolSeconds = 0;
@@ -374,7 +403,34 @@ public class LLMClient
 
                     string toolImage = null;
                     string toolImageMime = null;
-                    if (!enabledSet.Contains(call.Name))
+                    if (guardResult != null && guardResult.IsBlock)
+                    {
+                        string ruleId = string.IsNullOrEmpty(guardResult.RuleId) ? "unknown" : guardResult.RuleId;
+                        int count = guardBlockCounts.ContainsKey(ruleId) ? guardBlockCounts[ruleId] + 1 : 1;
+                        guardBlockCounts[ruleId] = count;
+                        if (!guardBlockedRules.Contains(ruleId))
+                            guardBlockedRules.Add(ruleId);
+                        if (guardTainted)
+                        {
+                            guardStopRequested = true;
+                        }
+                        else if (guardResult.Tier == GuardTier.T2)
+                        {
+                            guardTainted = true;
+                        }
+                        else if (count >= 3)
+                        {
+                            guardStopRequested = true;
+                        }
+                        exitCode = -1;
+                        toolContent = ToolRegistry.FormatCommandResult(
+                            call.Name,
+                            "error: blocked by the safety guard (" + ruleId + "). " + guardResult.Reason
+                                + ". Do not retry the same operation; choose a safer alternative or ask the user.",
+                            exitCode
+                        );
+                    }
+                    else if (!enabledSet.Contains(call.Name))
                     {
                         exitCode = -1;
                         toolContent = ToolRegistry.FormatCommandResult(
@@ -438,6 +494,15 @@ public class LLMClient
                         }
                     }
                 }
+                if (guardStopRequested)
+                {
+                    if (!outputOnly && startBlock != null)
+                        startBlock();
+                    ChatOutput.WriteLine("[Stopped: safety guard blocked tool calls ("
+                        + string.Join(", ", guardBlockedRules.ToArray()) + ")]");
+                    break;
+                }
+
                 if (maxConsecutiveFailedToolCalls > 0
                     && consecutiveFailedToolCalls >= maxConsecutiveFailedToolCalls)
                 {

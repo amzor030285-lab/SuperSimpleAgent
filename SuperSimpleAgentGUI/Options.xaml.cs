@@ -722,11 +722,14 @@ namespace SuperSimpleAgentGUI
 
         private List<string> GetToolSettings()
         {
+            // autoguardenabled has no UI control yet; carry the current INI
+            // value through so saving Options does not silently reset it.
             var toolLines = new List<string>
             {
                 "tools=" + string.Join(",", GetSelectedToolsFromListBox(ToolsListBox)),
                 "toolsrequiringapproval=" + string.Join(",", GetSelectedToolsFromListBox(ToolsRequiringApprovalListBox)),
                 "maxconsecutivefailedtoolcalls=" + MaxConsecutiveFailedToolCalls,
+                "autoguardenabled=" + App.Config.GetConfigInt("autoguardenabled", 1),
             };
 
             foreach (var kvp in _toolTimeoutControls)

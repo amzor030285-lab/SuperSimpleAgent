@@ -1,0 +1,131 @@
+{
+  "version": 1,
+  "banned": [
+    { "id": "format", "command": "format", "tier": "t2", "reason": "disk formatting" },
+    { "id": "shutdown", "command": "shutdown", "tier": "t2", "reason": "shuts down or reboots the machine" },
+    { "id": "mshta", "command": "mshta", "tier": "t2", "reason": "executes scripts, including from the network" },
+    { "id": "regsvr32", "command": "regsvr32", "tier": "t2", "reason": "registers and runs arbitrary COM code" },
+    { "id": "bitsadmin", "command": "bitsadmin", "tier": "t2", "reason": "downloads and runs remote content" },
+    { "id": "certutil-remote", "command": "certutil", "flag": "-urlcache", "tier": "t2", "reason": "downloads remote content" },
+    { "id": "certutil", "command": "certutil", "tier": "t1", "reason": "can download or decode executables" },
+    { "id": "powershell-enc", "command": "powershell", "flag": "-enc", "tier": "t2", "reason": "obfuscated script execution" },
+    { "id": "powershell-enc2", "command": "powershell", "flag": "-encodedcommand", "tier": "t2", "reason": "obfuscated script execution" },
+    { "id": "powershell", "command": "powershell", "tier": "t2", "reason": "arbitrary script execution" },
+    { "id": "powershell-ise", "command": "powershell_ise", "tier": "t2", "reason": "arbitrary script execution" },
+    { "id": "pwsh-enc", "command": "pwsh", "flag": "-enc", "tier": "t2", "reason": "obfuscated script execution" },
+    { "id": "pwsh", "command": "pwsh", "tier": "t2", "reason": "arbitrary script execution" },
+    { "id": "cscript", "command": "cscript", "tier": "t2", "reason": "executes script files" },
+    { "id": "wscript", "command": "wscript", "tier": "t2", "reason": "executes script files" },
+    { "id": "rundll32", "command": "rundll32", "tier": "t2", "reason": "executes exports of arbitrary DLLs" },
+    { "id": "wmic", "command": "wmic", "tier": "t2", "reason": "can spawn processes and modify the system" },
+    { "id": "diskpart", "command": "diskpart", "tier": "t2", "reason": "modifies disk partitions" },
+    { "id": "bcdedit", "command": "bcdedit", "tier": "t2", "reason": "modifies boot configuration" },
+    { "id": "netsh", "command": "netsh", "tier": "t2", "reason": "can disable the firewall and change network configuration" },
+    { "id": "vssadmin-delete", "command": "vssadmin", "sub": "delete", "tier": "t2", "reason": "destroys shadow copies (backups)" },
+    { "id": "wevtutil-cl", "command": "wevtutil", "sub": "cl", "tier": "t2", "reason": "clears event logs" },
+    { "id": "schtasks-create", "command": "schtasks", "flag": "/create", "tier": "t2", "reason": "creates a scheduled task (persistence vector)" },
+    { "id": "schtasks-delete", "command": "schtasks", "flag": "/delete", "tier": "t1", "reason": "deletes a scheduled task" },
+    { "id": "net-stop", "command": "net", "sub": "stop", "tier": "t1", "reason": "stops a Windows service" },
+    { "id": "sc-stop", "command": "sc", "sub": "stop", "tier": "t1", "reason": "stops a Windows service" },
+    { "id": "sc-config", "command": "sc", "sub": "config", "tier": "t2", "reason": "changes a service binary or startup" },
+    { "id": "msiexec", "command": "msiexec", "tier": "t1", "reason": "installs software" },
+    { "id": "regedit", "command": "regedit", "tier": "t1", "reason": "can apply .reg files silently" },
+    { "id": "taskkill", "command": "taskkill", "tier": "t1", "reason": "kills arbitrary processes" },
+    { "id": "reg-delete-hklm", "command": "reg", "sub": "delete", "subPrefix": "HKLM", "tier": "t2", "reason": "removes machine-wide registry keys" },
+    { "id": "reg-add-hklm", "command": "reg", "sub": "add", "subPrefix": "HKLM", "tier": "t2", "reason": "adds machine-wide registry keys" },
+    { "id": "reg-delete", "command": "reg", "sub": "delete", "tier": "t1", "reason": "removes registry keys" },
+    { "id": "reg-add", "command": "reg", "sub": "add", "tier": "t1", "reason": "adds registry keys" },
+    { "id": "reg-import", "command": "reg", "sub": "import", "tier": "t1", "reason": "imports registry data" },
+    { "id": "sc-delete", "command": "sc", "sub": "delete", "tier": "t2", "reason": "deletes a Windows service" },
+    { "id": "sc-create", "command": "sc", "sub": "create", "tier": "t2", "reason": "creates a Windows service" },
+    { "id": "net-user-delete", "command": "net", "sub": "user", "flag": "/delete", "tier": "t2", "reason": "deletes a local user account" },
+    { "id": "net-user-add", "command": "net", "sub": "user", "flag": "/add", "tier": "t2", "reason": "creates a local user account" },
+    { "id": "net-group-add", "command": "net", "sub": "group", "flag": "/add", "tier": "t2", "reason": "adds users to a local group" },
+    { "id": "net-localgroup-add", "command": "net", "sub": "localgroup", "flag": "/add", "tier": "t2", "reason": "adds users to a local group" },
+    { "id": "git-push-force", "command": "git", "sub": "push", "flag": "--force", "tier": "t1", "reason": "force-push rewrites remote history" },
+    { "id": "git-push-f", "command": "git", "sub": "push", "flag": "-f", "tier": "t1", "reason": "force-push rewrites remote history" },
+    { "id": "git-push-fwl", "command": "git", "sub": "push", "flag": "--force-with-lease", "tier": "t1", "reason": "force-push rewrites remote history" },
+    { "id": "git-reset-hard", "command": "git", "sub": "reset", "flag": "--hard", "tier": "t1", "reason": "discards local changes" },
+    { "id": "npm-install-global", "command": "npm", "sub": "install", "flag": "--global", "tier": "t1", "reason": "installs global packages" },
+    { "id": "npm-install-g", "command": "npm", "sub": "install", "flag": "-g", "tier": "t1", "reason": "installs global packages" },
+    { "id": "pip-install", "command": "pip", "sub": "install", "tier": "t1", "reason": "installs Python packages" },
+    { "id": "pip3-install", "command": "pip3", "sub": "install", "tier": "t1", "reason": "installs Python packages" }
+  ],
+  "denyPatterns": [
+    {
+      "id": "pipe-to-shell",
+      "pattern": "\\b(curl|wget|bitsadmin|certutil)\\b.*\\|[^|]*(?<![a-z0-9_])(cmd|powershell|pwsh|python|python3|bash|sh)\\b",
+      "tier": "t2",
+      "reason": "pipes downloaded or decoded data into a shell"
+    },
+    {
+      "id": "exfil-data",
+      "pattern": "\\b(curl|wget)\\b[^|]*\\s(-d|--data|--data-raw|--data-binary|--form)\\s*@",
+      "tier": "t2",
+      "reason": "uploads local file contents to a remote host"
+    },
+    {
+      "id": "exfil-upload",
+      "pattern": "\\b(curl|wget)\\b[^|]*\\s(-T|--upload-file)\\s+\\S",
+      "tier": "t1",
+      "reason": "uploads a local file to a remote host"
+    },
+    {
+      "id": "base64-pipe-shell",
+      "pattern": "\\bbase64\\b.*\\s(-d|--decode)\\b.*\\|[^|]*(?<![a-z0-9_])(cmd|powershell|pwsh|bash|sh)\\b",
+      "tier": "t2",
+      "reason": "decodes base64 and pipes it into a shell"
+    }
+  ],
+  "verbs": {
+    "del": "t1",
+    "rd": "t1",
+    "rmdir": "t1",
+    "move": "t1",
+    "copy": "t1",
+    "ren": "t1",
+    "rename": "t1",
+    "xcopy": "t1",
+    "robocopy": "t1",
+    "format": "t2"
+  },
+  "protectedPaths": [
+    "C:\\Windows",
+    "C:\\Program Files",
+    "C:\\Program Files (x86)",
+    "C:\\ProgramData",
+    "C:\\$WINDOWS.~TEMP",
+    "C:\\Config.Msi",
+    "C:\\PerfLogs",
+    "C:\\Recovery",
+    "C:\\System Volume Information",
+    "C:\\Windows.old",
+    "C:\\Winnt",
+    "C:\\pagefile.sys",
+    "C:\\hiberfil.sys",
+    "C:\\swapfile.sys",
+    "C:\\bootmgr",
+    "C:\\bootsect.bak",
+    "C:\\NTDETECT.com",
+    "C:\\boot.ini"
+  ],
+  "protectedPathsHigh": [
+    "C:\\Boot",
+    "C:\\$RECYCLE.BIN"
+  ],
+  "profileRoots": [
+    "C:\\Users",
+    "C:\\Documents and Settings"
+  ],
+  "tools": {
+    "write_file": { "pathArgs": ["filename"] },
+    "edit_file": { "pathArgs": ["filename"] },
+    "delete_file": { "pathArgs": ["file_path"] },
+    "move_file": { "pathArgs": ["source_path", "destination_path"] },
+    "copy_file": { "pathArgs": ["source_path", "destination_path"] },
+    "extract_file": { "pathArgs": ["destination_path"] },
+    "download_file": { "urlArg": "URL", "pathArgs": ["filename"] },
+    "download_video": { "urlArg": "URL" },
+    "read_website": { "urlArg": "URL" }
+  }
+}

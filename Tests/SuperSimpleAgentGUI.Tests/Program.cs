@@ -1341,7 +1341,7 @@ namespace SuperSimpleAgentGUI.Tests
         static TempWorkspace PackageGuiWorkspace()
         {
             TempWorkspace ws = new TempWorkspace("gui-run");
-                string[] files = { "SuperSimpleAgentGUI.exe", "SuperSimpleAgentCLI.exe", "Newtonsoft.Json.dll", "Markdig.dll" };
+                string[] files = { "SuperSimpleAgentGUI.exe", "SuperSimpleAgentCLI.exe", "Newtonsoft.Json.dll", "Markdig.dll", "guardrules.json" };
             foreach (string f in files)
             {
                 string src = ToolClient.ProductExe(f);
