@@ -75,9 +75,11 @@ semantics: it checks a finite set of signals.
 
 - **Banned commands** - a rule table of dangerous binaries and subcommands: disk
   formatting, shutdown/reboot, remote-code runners (`mshta`, `regsvr32`, `bitsadmin`,
-  `certutil -urlcache`), obfuscated PowerShell (`-enc` / `-encodedcommand`), machine-wide
-  registry writes (`HKLM`), service and local-account changes, `git push --force`, global
-  package installs, and similar.
+  `certutil -urlcache`, `msiexec` - t2, since `/i` can install from a remote URI),
+  obfuscated PowerShell (`-enc` / `-encodedcommand`), machine-wide registry writes
+  (`HKLM`), service and local-account changes, `git push --force`, global package
+  installs, and a curated set of LOLBins (`.NET` assembly runners, driver installers,
+  DLL-injection and proxy-execution tools, legacy scheduled tasks, ...).
 - **Patterns** - regexes over the whole command line: piping downloaded or decoded data
   into a shell (`curl ... | cmd`), uploading local file contents (`curl -d @file`,
   `curl -T file`), base64-decoding into a shell.
