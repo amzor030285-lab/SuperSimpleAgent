@@ -21,25 +21,13 @@ namespace SuperSimpleAgentCLI
 
         static void PrintCliInstructions()
         {
-            ChatOutput.WriteLine("================== SuperSimpleAgent ==================");
-            ChatOutput.WriteLine("| Commands:                                       |");
-            ChatOutput.WriteLine("| /approval <mode>: ask auto config plan          |");
-            ChatOutput.WriteLine("| /buildindex: Reconcile knowledge index          |");
-            ChatOutput.WriteLine("| /clear: Clear chat context                      |");
-            ChatOutput.WriteLine("| /clearindex: Clear knowledge index              |");
-            ChatOutput.WriteLine("| /compact: Drop old tool messages                |");
-            ChatOutput.WriteLine("| /compactfull: Full compaction (micro+summarize) |");
-            ChatOutput.WriteLine("| /delete name: Delete a saved session            |");
-            ChatOutput.WriteLine("| /exit: Exit the application                     |");
-            ChatOutput.WriteLine("| /image \"path\" prompt: Send an image           |");
-            ChatOutput.WriteLine("| /load keyword: Load a saved session             |");
-            ChatOutput.WriteLine("| /plan [on|off]: Read-only plan mode             |");
-            ChatOutput.WriteLine("| /reasoning [effort]: Set reasoning effort       |");
-            ChatOutput.WriteLine("| /reload: Reload configuration                   |");
-            ChatOutput.WriteLine("| /rename old new: Rename a saved session         |");
-            ChatOutput.WriteLine("| /save [name]: Save current session              |");
-            ChatOutput.WriteLine("| /sessions: List saved sessions                  |");
-            ChatOutput.WriteLine("===================================================");
+            ChatOutput.WriteLine("Commands (/help repeats this, Tab completes):");
+            ChatOutput.WriteLine("  context    /clear  /compact  /compactfull");
+            ChatOutput.WriteLine("  knowledge  /buildindex  /clearindex");
+            ChatOutput.WriteLine("  modes      /approval <ask|auto|config|plan>  /plan [on|off]  /reasoning [effort]");
+            ChatOutput.WriteLine("  sessions   /save [name]  /load keyword  /sessions  /delete name  /rename old new");
+            ChatOutput.WriteLine("  media      /image \"path\" prompt");
+            ChatOutput.WriteLine("  app        /reload  /exit");
         }
 
         static bool TryParseImageCommand(string input, out string imagePath, out string textPrompt)
@@ -514,7 +502,7 @@ namespace SuperSimpleAgentCLI
                 ChatOutput.Write("You: ");
                 if (StatusPipe != null)
                     StatusPipe.PublishReady();
-                string userInput = Console.ReadLine();
+                string userInput = ConsoleInput.Read();
                 ChatOutput.EndInputLine();
 
                 if (userInput == null)
@@ -531,6 +519,13 @@ namespace SuperSimpleAgentCLI
 
                 if (userInput == "/exit")
                     break;
+
+                if (userInput == "/help")
+                {
+                    PrintCliInstructions();
+                    ChatOutput.MarkSeparated();
+                    continue;
+                }
 
                 if (userInput == "/clear")
                 {
@@ -789,6 +784,16 @@ namespace SuperSimpleAgentCLI
                         Console.Error.WriteLine("Error processing image: " + e.Message);
                         continue;
                     }
+                }
+                else if (userInput.StartsWith("/"))
+                {
+                    // A leading "/" that no handler above consumed: show the
+                    // help instead of silently sending the text to the model.
+                    ChatOutput.WriteLine(
+                        "Unknown command \"" + userInput.Split(' ')[0]
+                        + "\". /help shows the command list.");
+                    ChatOutput.MarkSeparated();
+                    continue;
                 }
                 else
                 {
