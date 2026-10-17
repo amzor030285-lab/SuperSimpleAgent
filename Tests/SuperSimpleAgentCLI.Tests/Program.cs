@@ -2122,121 +2122,58 @@ namespace SuperSimpleAgentCLI.Tests
                 TestAssert.Equal("read_file", name, "plain name");
                 TestAssert.Equal("a.txt", args, "plain arguments");
             });
-
             TestRunner.Run("cli.jev_allow_skips_prompt", () =>
             {
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (FakeJevServer jev = new FakeJevServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // ask mode would prompt for every tool call; the gate's
+                // "allow" must replace the prompt and run the command.
+                using (JevCase jc = new JevCase(approvalArg: "--approval ask", sideEffectName: "jev-allow-must-exist.txt"))
                 {
-                    // ask mode would prompt for every tool call; the gate's
-                    // "allow" must replace the prompt and run the command.
-                    string sideEffect = Path.Combine(ws.Path, "jev-allow-must-exist.txt");
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    JObject args = new JObject();
-                    args["command"] = "echo hi > \"" + sideEffect + "\"";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-                    CopyCurlToWorkspace(ws);
+                    CliRunner.WaitForText(jc.Cli, "run_shell_command auto allowed", 60000);
+                    CliRunner.WaitForText(jc.Cli, jc.Server.FixedReply, 30000);
 
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
-                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
-                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
-                        "jevmodel=test-jev\r\n", Encoding.UTF8);
-
-                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
-                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval ask"))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run it");
-                        CliRunner.WaitForText(cli, "run_shell_command auto allowed", 60000);
-                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
-
-                        TestAssert.True(!cli.Stdout.Contains("Approve? (Y/N): "),
-                            "Jev allow must not prompt the human");
-                        TestAssert.True(File.Exists(sideEffect),
-                            "Jev-allowed call ran the command");
-                        TestAssert.True(jev.LastBody != null
-                            && jev.LastBody.IndexOf("run_shell_command", StringComparison.Ordinal) >= 0,
-                            "the gate received the tool name");
-                        TestAssert.True(jev.LastBody.IndexOf("recent_messages", StringComparison.Ordinal) >= 0,
-                            "the gate received the recent messages");
-                    }
+                    TestAssert.True(!jc.Cli.Stdout.Contains("Approve? (Y/N): "),
+                        "Jev allow must not prompt the human");
+                    TestAssert.True(File.Exists(jc.SideEffect),
+                        "Jev-allowed call ran the command");
+                    TestAssert.True(jc.Jev.LastBody != null
+                        && jc.Jev.LastBody.IndexOf("run_shell_command", StringComparison.Ordinal) >= 0,
+                        "the gate received the tool name");
+                    TestAssert.True(jc.Jev.LastBody.IndexOf("recent_messages", StringComparison.Ordinal) >= 0,
+                        "the gate received the recent messages");
                 }
             });
 
             TestRunner.Run("cli.jev_confirm_falls_back_to_prompt", () =>
             {
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (FakeJevServer jev = new FakeJevServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // Jev "confirm" keeps the human in the loop and shows the
+                // gate's confidence in the prompt.
+                using (JevCase jc = new JevCase(
+                    approvalArg: "--approval ask",
+                    sideEffectName: "jev-confirm-must-exist.txt",
+                    responseBody: "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"confirm\",\"confidence\":0.3}}}"))
                 {
-                    // Jev "confirm" keeps the human in the loop and shows the
-                    // gate's confidence in the prompt.
-                    jev.ResponseBody = "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"confirm\",\"confidence\":0.3}}}";
-                    string sideEffect = Path.Combine(ws.Path, "jev-confirm-must-exist.txt");
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    JObject args = new JObject();
-                    args["command"] = "echo hi > \"" + sideEffect + "\"";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-                    CopyCurlToWorkspace(ws);
+                    CliRunner.WaitForText(jc.Cli, "Jev confidence: 0.30", 60000);
+                    CliRunner.WaitForText(jc.Cli, ToolApproval.ApprovalPrompt, 30000);
+                    jc.Cli.WriteLine("Y");
+                    CliRunner.WaitForText(jc.Cli, jc.Server.FixedReply, 30000);
 
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
-                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
-                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
-                        "jevmodel=test-jev\r\n", Encoding.UTF8);
-
-                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
-                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval ask"))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run it");
-                        CliRunner.WaitForText(cli, "Jev confidence: 0.30", 60000);
-                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 30000);
-                        cli.WriteLine("Y");
-                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
-
-                        TestAssert.True(File.Exists(sideEffect),
-                            "human-approved call ran the command");
-                    }
+                    TestAssert.True(File.Exists(jc.SideEffect),
+                        "human-approved call ran the command");
                 }
             });
 
             TestRunner.Run("cli.jev_server_down_falls_back_to_prompt", () =>
             {
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // Nothing listens on port 1: the POST fails and the gate must
+                // fall back to the human, with no confidence shown.
+                using (JevCase jc = new JevCase(approvalArg: "--approval ask", deadGate: true, command: "echo jev-down"))
                 {
-                    // Nothing listens on port 1: the POST fails and the gate must
-                    // fall back to the human, with no confidence shown.
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    JObject args = new JObject();
-                    args["command"] = "echo jev-down";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-                    CopyCurlToWorkspace(ws);
+                    CliRunner.WaitForText(jc.Cli, ToolApproval.ApprovalPrompt, 60000);
+                    jc.Cli.WriteLine("N");
+                    CliRunner.WaitForText(jc.Cli, "cancelled by the user", 30000);
 
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
-                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
-                        "jevbaseurl=http://127.0.0.1:1/v1/systemone\r\n" +
-                        "jevmodel=test-jev\r\n", Encoding.UTF8);
-
-                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
-                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval ask"))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run it");
-                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 60000);
-                        cli.WriteLine("N");
-                        CliRunner.WaitForText(cli, "cancelled by the user", 30000);
-
-                        TestAssert.True(cli.Stdout.IndexOf("Jev confidence", StringComparison.Ordinal) < 0,
-                            "no confidence when the gate never answered");
-                    }
+                    TestAssert.True(jc.Cli.Stdout.IndexOf("Jev confidence", StringComparison.Ordinal) < 0,
+                        "no confidence when the gate never answered");
                 }
             });
 
@@ -2251,242 +2188,117 @@ namespace SuperSimpleAgentCLI.Tests
 
             TestRunner.Run("cli.jev_auto_screen_allow_runs", () =>
             {
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (FakeJevServer jev = new FakeJevServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // With the screen switch defaulting on, auto mode now consults
+                // the gate: an allow runs the call unattended, exactly like a
+                // prompt-approved call used to.
+                using (JevCase jc = new JevCase(approvalArg: "--approval auto", guardEnabled: false, sideEffectName: "jev-auto-allow-must-exist.txt"))
                 {
-                    // With the screen switch defaulting on, auto mode now consults
-                    // the gate: an allow runs the call unattended, exactly like a
-                    // prompt-approved call used to.
-                    string sideEffect = Path.Combine(ws.Path, "jev-auto-allow-must-exist.txt");
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    JObject args = new JObject();
-                    args["command"] = "echo hi > \"" + sideEffect + "\"";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-                    CopyCurlToWorkspace(ws);
+                    CliRunner.WaitForText(jc.Cli, "run_shell_command auto allowed", 60000);
+                    CliRunner.WaitForText(jc.Cli, jc.Server.FixedReply, 30000);
 
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
-                        guardEnabled: false);
-                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
-                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
-                        "jevmodel=test-jev\r\n", Encoding.UTF8);
-
-                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
-                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run it");
-                        CliRunner.WaitForText(cli, "run_shell_command auto allowed", 60000);
-                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
-
-                        TestAssert.True(!cli.Stdout.Contains("Approve? (Y/N): "),
-                            "the gate's allow must not surface the human prompt");
-                        TestAssert.True(File.Exists(sideEffect),
-                            "the allowed call ran without a prompt");
-                        TestAssert.True(jev.LastBody != null
-                            && jev.LastBody.IndexOf("run_shell_command", StringComparison.Ordinal) >= 0,
-                            "auto mode consulted the gate");
-                    }
+                    TestAssert.True(!jc.Cli.Stdout.Contains("Approve? (Y/N): "),
+                        "the gate's allow must not surface the human prompt");
+                    TestAssert.True(File.Exists(jc.SideEffect),
+                        "the allowed call ran without a prompt");
+                    TestAssert.True(jc.Jev.LastBody != null
+                        && jc.Jev.LastBody.IndexOf("run_shell_command", StringComparison.Ordinal) >= 0,
+                        "auto mode consulted the gate");
                 }
             });
 
             TestRunner.Run("cli.jev_auto_screen_confirm_prompts", () =>
             {
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (FakeJevServer jev = new FakeJevServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // The reason the screen-in-auto feature exists: a confirm in
+                // auto mode must reach the human instead of running.
+                using (JevCase jc = new JevCase(
+                    approvalArg: "--approval auto",
+                    guardEnabled: false,
+                    sideEffectName: "jev-auto-confirm-must-exist.txt",
+                    responseBody: "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"confirm\",\"confidence\":0.3}}}"))
                 {
-                    // The reason the screen-in-auto feature exists: a confirm in
-                    // auto mode must reach the human instead of running.
-                    jev.ResponseBody = "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"confirm\",\"confidence\":0.3}}}";
-                    string sideEffect = Path.Combine(ws.Path, "jev-auto-confirm-must-exist.txt");
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    JObject args = new JObject();
-                    args["command"] = "echo hi > \"" + sideEffect + "\"";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-                    CopyCurlToWorkspace(ws);
+                    CliRunner.WaitForText(jc.Cli, "Jev confidence: 0.30", 60000);
+                    CliRunner.WaitForText(jc.Cli, ToolApproval.ApprovalPrompt, 30000);
+                    jc.Cli.WriteLine("Y");
+                    CliRunner.WaitForText(jc.Cli, jc.Server.FixedReply, 30000);
 
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
-                        guardEnabled: false);
-                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
-                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
-                        "jevmodel=test-jev\r\n", Encoding.UTF8);
-
-                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
-                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run it");
-                        CliRunner.WaitForText(cli, "Jev confidence: 0.30", 60000);
-                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 30000);
-                        cli.WriteLine("Y");
-                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
-
-                        TestAssert.True(File.Exists(sideEffect),
-                            "the human-approved call ran");
-                    }
+                    TestAssert.True(File.Exists(jc.SideEffect),
+                        "the human-approved call ran");
                 }
             });
 
             TestRunner.Run("cli.jev_auto_screen_off_no_gate", () =>
             {
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (FakeJevServer jev = new FakeJevServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // jevscreenauto=0 restores the pre-screening auto behaviour:
+                // no gate post, no prompt, no auto-allowed marker.
+                using (JevCase jc = new JevCase(
+                    approvalArg: "--approval auto",
+                    guardEnabled: false,
+                    sideEffectName: "jev-auto-off-must-exist.txt",
+                    extraIni: "jevscreenauto=0\r\n"))
                 {
-                    // jevscreenauto=0 restores the pre-screening auto behaviour:
-                    // no gate post, no prompt, no auto-allowed marker.
-                    string sideEffect = Path.Combine(ws.Path, "jev-auto-off-must-exist.txt");
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    JObject args = new JObject();
-                    args["command"] = "echo hi > \"" + sideEffect + "\"";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-                    CopyCurlToWorkspace(ws);
+                    CliRunner.WaitForText(jc.Cli, "tool output", 60000);
+                    CliRunner.WaitForText(jc.Cli, jc.Server.FixedReply, 30000);
 
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
-                        guardEnabled: false);
-                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
-                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
-                        "jevmodel=test-jev\r\n" +
-                        "jevscreenauto=0\r\n", Encoding.UTF8);
-
-                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
-                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run it");
-                        CliRunner.WaitForText(cli, "tool output", 60000);
-                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
-
-                        TestAssert.True(jev.LastBody == null,
-                            "the switch off must not post to the gate");
-                        TestAssert.True(File.Exists(sideEffect),
-                            "auto mode keeps running the call unattended");
-                        TestAssert.True(cli.Stdout.IndexOf("auto allowed", StringComparison.Ordinal) < 0,
-                            "no gate marker when the switch is off");
-                        TestAssert.True(!cli.Stdout.Contains("Approve? (Y/N): "),
-                            "no prompt when the switch is off");
-                    }
+                    TestAssert.True(jc.Jev.LastBody == null,
+                        "the switch off must not post to the gate");
+                    TestAssert.True(File.Exists(jc.SideEffect),
+                        "auto mode keeps running the call unattended");
+                    TestAssert.True(jc.Cli.Stdout.IndexOf("auto allowed", StringComparison.Ordinal) < 0,
+                        "no gate marker when the switch is off");
+                    TestAssert.True(!jc.Cli.Stdout.Contains("Approve? (Y/N): "),
+                        "no prompt when the switch is off");
                 }
             });
 
             TestRunner.Run("cli.jev_auto_screen_down_prompts", () =>
             {
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // A dead gate in a screened mode fails closed: auto prompts
+                // the human instead of running the call unattended.
+                using (JevCase jc = new JevCase(approvalArg: "--approval auto", guardEnabled: false, deadGate: true, command: "echo jev-auto-down"))
                 {
-                    // A dead gate in a screened mode fails closed: auto prompts
-                    // the human instead of running the call unattended.
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    JObject args = new JObject();
-                    args["command"] = "echo jev-auto-down";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-                    CopyCurlToWorkspace(ws);
+                    CliRunner.WaitForText(jc.Cli, ToolApproval.ApprovalPrompt, 60000);
+                    jc.Cli.WriteLine("N");
+                    CliRunner.WaitForText(jc.Cli, "cancelled by the user", 30000);
 
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
-                        guardEnabled: false);
-                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
-                        "jevbaseurl=http://127.0.0.1:1/v1/systemone\r\n" +
-                        "jevmodel=test-jev\r\n", Encoding.UTF8);
-
-                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
-                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run it");
-                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 60000);
-                        cli.WriteLine("N");
-                        CliRunner.WaitForText(cli, "cancelled by the user", 30000);
-
-                        TestAssert.True(cli.Stdout.IndexOf("Jev confidence", StringComparison.Ordinal) < 0,
-                            "no confidence when the gate never answered");
-                    }
+                    TestAssert.True(jc.Cli.Stdout.IndexOf("Jev confidence", StringComparison.Ordinal) < 0,
+                        "no confidence when the gate never answered");
                 }
             });
 
             TestRunner.Run("cli.jev_config_screen_unlisted_call", () =>
             {
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (FakeJevServer jev = new FakeJevServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // Config mode with an empty approval list used to run this
+                // call silently; the default config screen switch now sends
+                // it to the gate, and a confirm asks the human.
+                using (JevCase jc = new JevCase(
+                    approvalArg: null,
+                    guardEnabled: false,
+                    sideEffectName: "jev-config-confirm-must-exist.txt",
+                    responseBody: "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"confirm\",\"confidence\":0.4}}}"))
                 {
-                    // Config mode with an empty approval list used to run this
-                    // call silently; the default config screen switch now sends
-                    // it to the gate, and a confirm asks the human.
-                    jev.ResponseBody = "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"confirm\",\"confidence\":0.4}}}";
-                    string sideEffect = Path.Combine(ws.Path, "jev-config-confirm-must-exist.txt");
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    JObject args = new JObject();
-                    args["command"] = "echo hi > \"" + sideEffect + "\"";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-                    CopyCurlToWorkspace(ws);
+                    CliRunner.WaitForText(jc.Cli, "Jev confidence: 0.40", 60000);
+                    CliRunner.WaitForText(jc.Cli, ToolApproval.ApprovalPrompt, 30000);
+                    jc.Cli.WriteLine("N");
+                    CliRunner.WaitForText(jc.Cli, "cancelled by the user", 30000);
 
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
-                        guardEnabled: false);
-                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
-                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
-                        "jevmodel=test-jev\r\n", Encoding.UTF8);
-
-                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
-                    using (CliRunner cli = new CliRunner(exe, ws.Path))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run it");
-                        CliRunner.WaitForText(cli, "Jev confidence: 0.40", 60000);
-                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 30000);
-                        cli.WriteLine("N");
-                        CliRunner.WaitForText(cli, "cancelled by the user", 30000);
-
-                        TestAssert.True(!File.Exists(sideEffect),
-                            "a declined screened call never ran");
-                    }
+                    TestAssert.True(!File.Exists(jc.SideEffect),
+                        "a declined screened call never ran");
                 }
             });
 
             TestRunner.Run("cli.jev_disabled_tool_skips_gate", () =>
             {
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (FakeJevServer jev = new FakeJevServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // A disabled tool call gets its error without a gate post
+                // and without a prompt, in every mode.
+                using (JevCase jc = new JevCase(approvalArg: "--approval auto", guardEnabled: false, tools: "", command: "echo never-runs"))
                 {
-                    // A disabled tool call gets its error without a gate post
-                    // and without a prompt, in every mode.
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    JObject args = new JObject();
-                    args["command"] = "echo never-runs";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-                    CopyCurlToWorkspace(ws);
+                    CliRunner.WaitForText(jc.Cli, "disabled by configuration", 60000);
+                    CliRunner.WaitForText(jc.Cli, jc.Server.FixedReply, 30000);
 
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "");
-                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
-                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
-                        "jevmodel=test-jev\r\n", Encoding.UTF8);
-
-                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
-                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run it");
-                        CliRunner.WaitForText(cli, "disabled by configuration", 60000);
-                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
-
-                        TestAssert.True(jev.LastBody == null,
-                            "a disabled tool never reaches the gate");
-                        TestAssert.True(!cli.Stdout.Contains("Approve? (Y/N): "),
-                            "no prompt for a call that cannot run");
-                    }
+                    TestAssert.True(jc.Jev.LastBody == null,
+                        "a disabled tool never reaches the gate");
+                    TestAssert.True(!jc.Cli.Stdout.Contains("Approve? (Y/N): "),
+                        "no prompt for a call that cannot run");
                 }
             });
 
@@ -4091,122 +3903,46 @@ namespace SuperSimpleAgentCLI.Tests
 
             TestRunner.Run("guard.e2e_shell_blocked_and_model_recovers", () =>
             {
-                RequireGuardE2e();
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                RunGuardE2e(1, @"del /f /s /q C:\Windows\__guard_test_nonexistent__", true, cli =>
                 {
-                    server.FixedReply = "guard-e2e-recovered";
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    var args = new JObject();
-                    args["command"] = @"del /f /s /q C:\Windows\__guard_test_nonexistent__";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0,
-                        tools: "run_shell_command", guardEnabled: true);
-
-                    using (CliRunner cli = new CliRunner(
-                        Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe"), ws.Path))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run the probe command");
-                        CliRunner.WaitForText(cli, "blocked by the safety guard (path:del)", 60000);
-                        CliRunner.WaitForTextAfter(
-                            cli, "blocked by the safety guard (path:del)", "guard-e2e-recovered", 60000);
-                    }
-                }
+                    CliRunner.WaitForText(cli, "blocked by the safety guard (path:del)", 60000);
+                    CliRunner.WaitForTextAfter(
+                        cli, "blocked by the safety guard (path:del)", "guard-e2e-recovered", 60000);
+                });
             });
 
             TestRunner.Run("guard.e2e_t1_three_blocks_stop_turn", () =>
             {
-                RequireGuardE2e();
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                RunGuardE2e(3, @"del /f /s /q C:\Windows\__guard_test_nonexistent__", true, cli =>
                 {
-                    server.FixedReply = "guard-e2e-recovered";
-                    server.ToolCallRoundsRemaining = 3;
-                    server.ToolCallName = "run_shell_command";
-                    var args = new JObject();
-                    args["command"] = @"del /f /s /q C:\Windows\__guard_test_nonexistent__";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0,
-                        tools: "run_shell_command", guardEnabled: true);
-
-                    using (CliRunner cli = new CliRunner(
-                        Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe"), ws.Path))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run the probe command");
-                        CliRunner.WaitForText(
-                            cli, "[Stopped: safety guard blocked tool calls (path:del)]", 90000);
-                    }
-                }
+                    CliRunner.WaitForText(
+                        cli, "[Stopped: safety guard blocked tool calls (path:del)]", 90000);
+                });
             });
 
             TestRunner.Run("guard.e2e_t2_taint_escalates", () =>
             {
-                RequireGuardE2e();
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                RunGuardE2e(3, @"reg delete ""HKLM\Software\__guard_test_nonexistent__"" /f", true, cli =>
                 {
-                    server.FixedReply = "guard-e2e-recovered";
-                    server.ToolCallRoundsRemaining = 3;
-                    server.ToolCallName = "run_shell_command";
-                    var args = new JObject();
-                    args["command"] = @"reg delete ""HKLM\Software\__guard_test_nonexistent__"" /f";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0,
-                        tools: "run_shell_command", guardEnabled: true);
-
-                    using (CliRunner cli = new CliRunner(
-                        Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe"), ws.Path))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run the probe command");
-                        // T2 taints the turn on the first block; the second block
-                        // (any rule) stops the turn immediately - not at three.
-                        CliRunner.WaitForText(
-                            cli, "[Stopped: safety guard blocked tool calls (reg-delete-hklm)]", 90000);
-                    }
-                }
+                    // T2 taints the turn on the first block; the second block
+                    // (any rule) stops the turn immediately - not at three.
+                    CliRunner.WaitForText(
+                        cli, "[Stopped: safety guard blocked tool calls (reg-delete-hklm)]", 90000);
+                });
             });
 
             TestRunner.Run("guard.e2e_guard_disabled_runs_command", () =>
             {
-                RequireGuardE2e();
-                using (FakeOpenAiServer server = new FakeOpenAiServer())
-                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                // The command matches a deny pattern but targets a nonexistent
+                // leaf, so actually running it is harmless.
+                RunGuardE2e(1, @"del /f /s /q C:\Windows\__guard_test_nonexistent__", false, cli =>
                 {
-                    server.FixedReply = "guard-e2e-recovered";
-                    server.ToolCallRoundsRemaining = 1;
-                    server.ToolCallName = "run_shell_command";
-                    var args = new JObject();
-                    // The command matches a deny pattern but targets a nonexistent
-                    // leaf, so actually running it is harmless.
-                    args["command"] = @"del /f /s /q C:\Windows\__guard_test_nonexistent__";
-                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
-                    server.StreamDelayMs = 5;
-
-                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0,
-                        tools: "run_shell_command", guardEnabled: false);
-
-                    using (CliRunner cli = new CliRunner(
-                        Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe"), ws.Path))
-                    {
-                        CliRunner.WaitForText(cli, "You:", 20000);
-                        cli.WriteLine("run the probe command");
-                        CliRunner.WaitForText(cli, "[tool output]", 60000);
-                        CliRunner.WaitForTextAfter(cli, "[tool output]", "guard-e2e-recovered", 60000);
-                        TestAssert.True(
-                            !cli.Stdout.Contains("blocked by the safety guard"),
-                            "the guard must not block when disabled");
-                    }
-                }
+                    CliRunner.WaitForText(cli, "[tool output]", 60000);
+                    CliRunner.WaitForTextAfter(cli, "[tool output]", "guard-e2e-recovered", 60000);
+                    TestAssert.True(
+                        !cli.Stdout.Contains("blocked by the safety guard"),
+                        "the guard must not block when disabled");
+                });
             });
         }
 
@@ -4225,16 +3961,13 @@ namespace SuperSimpleAgentCLI.Tests
             /// <summary>System One answer body sent back (default: allow @ 0.97).</summary>
             public string ResponseBody { get; set; }
 
-            /// <summary>HTTP status sent back (default 200).</summary>
-            public int Status { get; set; }
+            public const string AllowBody = "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"allow\",\"confidence\":0.97}}}";
 
-            public string LastPath { get; private set; }
             public string LastBody { get; private set; }
 
             public FakeJevServer()
             {
-                Status = 200;
-                ResponseBody = "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"allow\",\"confidence\":0.97}}}";
+                ResponseBody = AllowBody;
                 string baseUrl;
                 _listener = TestHttpListener.StartLoopback(out baseUrl);
                 BaseUrl = baseUrl;
@@ -4260,11 +3993,10 @@ namespace SuperSimpleAgentCLI.Tests
 
                     try
                     {
-                        LastPath = ctx.Request.Url.AbsolutePath ?? "";
                         using (StreamReader reader = new StreamReader(ctx.Request.InputStream))
                             LastBody = reader.ReadToEnd();
                         byte[] bytes = Encoding.UTF8.GetBytes(ResponseBody ?? "");
-                        ctx.Response.StatusCode = Status;
+                        ctx.Response.StatusCode = 200;
                         ctx.Response.ContentType = "application/json";
                         ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
                         ctx.Response.Close();
@@ -4280,6 +4012,62 @@ namespace SuperSimpleAgentCLI.Tests
                 _running = false;
                 try { _listener.Stop(); } catch { }
                 try { _listener.Close(); } catch { }
+            }
+        }
+
+        /// <summary>
+        /// Full workspace for one Jev-screening case: fake LLM server, optional
+        /// fake System One gate, workspace with curl fixture and INI, and a CLI
+        /// runner already sitting at the "You:" prompt after "run it" was sent.
+        /// deadGate = the gate is a dead endpoint (port 1) and the fixture
+        /// never builds FakeJevServer; otherwise responseBody null is the
+        /// default allow answer.
+        /// </summary>
+        sealed class JevCase : IDisposable
+        {
+            public readonly FakeOpenAiServer Server;
+            public readonly FakeJevServer Jev;
+            public readonly TempWorkspace Ws;
+            public readonly string SideEffect;
+            public readonly CliRunner Cli;
+
+            public JevCase(string approvalArg, bool guardEnabled = true, bool deadGate = false,
+                string responseBody = null, string extraIni = null, string tools = "run_shell_command",
+                string sideEffectName = null, string command = null)
+            {
+                Server = new FakeOpenAiServer();
+                if (!deadGate)
+                    Jev = new FakeJevServer { ResponseBody = responseBody ?? FakeJevServer.AllowBody };
+                Ws = PackageGuardCliWorkspace();
+                SideEffect = sideEffectName == null ? null : Path.Combine(Ws.Path, sideEffectName);
+                Server.ToolCallRoundsRemaining = 1;
+                Server.ToolCallName = "run_shell_command";
+                JObject args = new JObject();
+                args["command"] = SideEffect != null ? "echo hi > \"" + SideEffect + "\"" : command;
+                Server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                Server.StreamDelayMs = 5;
+                CopyCurlToWorkspace(Ws);
+
+                WriteCliIni(Ws.Path, Server.BaseUrl, contextWindowSize: 0, tools: tools,
+                    guardEnabled: guardEnabled);
+                string baseUrl = Jev != null ? Jev.BaseUrl + "/v1/systemone" : "http://127.0.0.1:1/v1/systemone";
+                File.AppendAllText(Path.Combine(Ws.Path, "LLMSettings.ini"),
+                    "jevbaseurl=" + baseUrl + "\r\n" +
+                    "jevmodel=test-jev\r\n" +
+                    (extraIni ?? ""), Encoding.UTF8);
+
+                Cli = new CliRunner(
+                    Path.Combine(Ws.Path, "SuperSimpleAgentCLI.exe"), Ws.Path, approvalArg);
+                CliRunner.WaitForText(Cli, "You:", 20000);
+                Cli.WriteLine("run it");
+            }
+
+            public void Dispose()
+            {
+                if (Cli != null) Cli.Dispose();
+                if (Ws != null) Ws.Dispose();
+                if (Jev != null) Jev.Dispose();
+                Server.Dispose();
             }
         }
 
@@ -4520,6 +4308,39 @@ namespace SuperSimpleAgentCLI.Tests
             if (Environment.GetEnvironmentVariable("GUARD_E2E") != "1")
                 TestRunner.Skip(
                     "guard e2e tests run on the remote test machine; set GUARD_E2E=1 to run them here");
+        }
+
+        /// <summary>
+        /// Shared body of the guard e2e cases: a fake server tool-calls
+        /// run_shell_command with the given command through a CLI whose guard
+        /// is on or off; assert runs after the prompt is written.
+        /// </summary>
+        static void RunGuardE2e(int toolCallRoundsRemaining, string command, bool guardEnabled,
+            Action<CliRunner> assert)
+        {
+            RequireGuardE2e();
+            using (FakeOpenAiServer server = new FakeOpenAiServer())
+            using (TempWorkspace ws = PackageGuardCliWorkspace())
+            {
+                server.FixedReply = "guard-e2e-recovered";
+                server.ToolCallRoundsRemaining = toolCallRoundsRemaining;
+                server.ToolCallName = "run_shell_command";
+                var args = new JObject();
+                args["command"] = command;
+                server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                server.StreamDelayMs = 5;
+
+                WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0,
+                    tools: "run_shell_command", guardEnabled: guardEnabled);
+
+                using (CliRunner cli = new CliRunner(
+                    Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe"), ws.Path))
+                {
+                    CliRunner.WaitForText(cli, "You:", 20000);
+                    cli.WriteLine("run the probe command");
+                    assert(cli);
+                }
+            }
         }
 
         static CommandGuard NewGuard()

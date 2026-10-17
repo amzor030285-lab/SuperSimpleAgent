@@ -149,36 +149,14 @@ namespace SuperSimpleAgentGUI
         }
 
         /// <summary>
-        /// Index of the preset with this name, or -1. Matching is by name on purpose:
-        /// a list re-read from disk holds different instances than the one it came from,
-        /// so List.IndexOf cannot be used to locate it again.
-        /// </summary>
-        public static int FindIndex(IEnumerable<LlmPreset> presets, string name)
-        {
-            int index = 0;
-            foreach (LlmPreset preset in presets)
-            {
-                if (string.Equals(preset.Name, name, StringComparison.OrdinalIgnoreCase))
-                    return index;
-                index++;
-            }
-            return -1;
-        }
-
-        /// <summary>
         /// A name becomes an INI section header, so brackets and line breaks are
         /// rejected. An empty name is rejected too. Comparison is case-insensitive,
         /// matching IniFileHandler's keys.
         /// </summary>
         private static bool IsValidName(string name)
         {
-            if (string.IsNullOrEmpty(name))
-                return false;
-
-            return name.IndexOf('[') < 0
-                && name.IndexOf(']') < 0
-                && name.IndexOf('\r') < 0
-                && name.IndexOf('\n') < 0;
+            return !string.IsNullOrEmpty(name)
+                && name.IndexOfAny(new[] { '[', ']', '\r', '\n' }) < 0;
         }
 
         private static void ApplyKey(LlmPreset preset, string key, string value)

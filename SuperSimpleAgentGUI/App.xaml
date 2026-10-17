@@ -113,7 +113,9 @@
             </ControlTemplate.Triggers>
         </ControlTemplate>
 
-        <!-- Flat template for ToggleButtons (adds checked state) -->
+        <!-- Flat template for ToggleButtons. Two templates because WPF property
+             triggers can only reference DPs declared on the template's
+             TargetType - IsChecked lives on ToggleButton, not ButtonBase. -->
         <ControlTemplate x:Key="FlatToggleButtonTemplate" TargetType="ToggleButton">
             <Border x:Name="Border"
                     Background="{TemplateBinding Background}"

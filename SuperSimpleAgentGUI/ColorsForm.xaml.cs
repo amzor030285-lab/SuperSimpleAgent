@@ -3,10 +3,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Forms;
-using System.Drawing;
 
 namespace SuperSimpleAgentGUI
 {
@@ -81,23 +79,18 @@ namespace SuperSimpleAgentGUI
                 get
                 {
                     if (_value.HasValue)
-                        return "Custom " + Hex(_value.Value) + " - overrides the theme";
+                        return "Custom " + _value.Value.ToString() + " - overrides the theme";
 
                     string source = _theme == ColorHelper.ThemeSystem
                         ? "System default"
                         : ColorHelper.GetThemeDisplayName(_theme) + " theme";
-                    return source + " " + Hex(ThemeColor);
+                    return source + " " + ThemeColor.ToString();
                 }
             }
 
             private System.Windows.Media.Color ThemeColor
             {
                 get { return ColorHelper.ResolveColor(_config.ResourceKey, _theme, null); }
-            }
-
-            private static string Hex(System.Windows.Media.Color color)
-            {
-                return string.Format("#{0:X2}{1:X2}{2:X2}{3:X2}", color.A, color.R, color.G, color.B);
             }
 
             public event PropertyChangedEventHandler PropertyChanged;
@@ -197,7 +190,8 @@ namespace SuperSimpleAgentGUI
                 // Re-derive every brush from the saved file: the palette applies
                 // again for colors that were cleared instead of being pinned to
                 // system colors.
-                ColorHelper.ReloadFrom(App.ColorsFileName);
+                Dictionary<string, string> reloadedSettings = IniFileHandler.LoadIni(App.ColorsFileName);
+                ColorHelper.ApplyTheme(ColorHelper.GetThemeName(reloadedSettings), reloadedSettings);
                 DialogResult = true;
             }
             catch (Exception ex)
@@ -232,12 +226,7 @@ namespace SuperSimpleAgentGUI
             {
                 var settings = IniFileHandler.LoadIni(path);
 
-                string themeValue;
-                if (settings.TryGetValue(ColorHelper.ThemeKey, out themeValue) && !string.IsNullOrWhiteSpace(themeValue))
-                {
-                    _theme = themeValue.Trim().ToLowerInvariant();
-                }
-
+                _theme = ColorHelper.GetThemeName(settings);
                 foreach (var setting in _colorSettings)
                     setting.Theme = _theme;
 
@@ -275,9 +264,7 @@ namespace SuperSimpleAgentGUI
             {
                 if (setting.Value.HasValue)
                 {
-                    System.Windows.Media.Color color = setting.Value.Value;
-                    settings[setting.Key] = string.Format(
-                        "#{0:X2}{1:X2}{2:X2}{3:X2}", color.A, color.R, color.G, color.B);
+                    settings[setting.Key] = setting.Value.Value.ToString();
                 }
                 else
                 {

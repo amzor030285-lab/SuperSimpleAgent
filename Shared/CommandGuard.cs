@@ -139,22 +139,9 @@ public class CommandGuard
         }
     }
 
-    public static void ResetForTests()
-    {
-        lock (CacheLock)
-        {
-            _cached = null;
-        }
-    }
-
     private static GuardTier TierFromJson(string s)
     {
         return string.Equals(s, "t2", StringComparison.OrdinalIgnoreCase) ? GuardTier.T2 : GuardTier.T1;
-    }
-
-    private static int TierRank(GuardTier tier)
-    {
-        return tier == GuardTier.T2 ? 2 : 1;
     }
 
     private static List<string> ReadStringArray(JToken owner, string name)
@@ -294,7 +281,9 @@ public class CommandGuard
         if (!string.IsNullOrEmpty(rule.UrlArg))
         {
             string url = (string)args[rule.UrlArg];
-            if (!string.IsNullOrEmpty(url) && !IsAllowedUrl(url))
+            if (!string.IsNullOrEmpty(url)
+                && !url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+                && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                 return GuardResult.Block(
                     "tool-" + toolName, GuardTier.T1,
                     toolName + ": only http:// and https:// URLs are allowed");
@@ -310,12 +299,6 @@ public class CommandGuard
                     toolName + " touches a protected path");
         }
         return GuardResult.Allow();
-    }
-
-    private static bool IsAllowedUrl(string url)
-    {
-        return url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
     }
 
     private static JObject TryParseArgs(string argumentsJson)
@@ -354,7 +337,7 @@ public class CommandGuard
             GuardResult r = EvaluateSegment(segment, 0);
             if (r != null && r.IsBlock)
             {
-                if (worst == null || TierRank(r.Tier) > TierRank(worst.Tier))
+                if (worst == null || r.Tier > worst.Tier)
                     worst = r;
             }
         }
@@ -445,7 +428,7 @@ public class CommandGuard
         {
             if (baseCmd != b.Command)
                 continue;
-            if (!string.IsNullOrEmpty(b.Sub) && FirstPositional(rest) != b.Sub)
+            if (!string.IsNullOrEmpty(b.Sub) && FirstPositionalAfter(rest, null) != b.Sub)
                 continue;
             if (!string.IsNullOrEmpty(b.SubPrefix))
             {
@@ -455,7 +438,8 @@ public class CommandGuard
                 if (prefixArg == null || !prefixArg.StartsWith(b.SubPrefix, StringComparison.OrdinalIgnoreCase))
                     continue;
             }
-            if (!string.IsNullOrEmpty(b.Flag) && !RestHasFlag(rest, b.Flag))
+            if (!string.IsNullOrEmpty(b.Flag)
+                && !rest.Exists(t => string.Equals(t, b.Flag, StringComparison.OrdinalIgnoreCase)))
                 continue;
             return GuardResult.Block(b.Id, b.Tier, b.Reason);
         }
@@ -494,7 +478,7 @@ public class CommandGuard
                 if (IsProtectedPath(p, out hitTier))
                 {
                     hit = true;
-                    if (TierRank(hitTier) > TierRank(tier))
+                    if (hitTier > tier)
                         tier = hitTier;
                 }
             }
@@ -598,16 +582,6 @@ public class CommandGuard
         return name.IndexOf('\\') < 0 && name.IndexOf('/') < 0 && name.IndexOf(':') < 0;
     }
 
-    private static string FirstPositional(List<string> tokens)
-    {
-        foreach (string t in tokens)
-        {
-            if (t.Length > 0 && t[0] != '/' && t[0] != '-')
-                return t.ToLowerInvariant();
-        }
-        return null;
-    }
-
     private static string FirstPositionalAfter(List<string> tokens, string sub)
     {
         foreach (string t in tokens)
@@ -619,17 +593,6 @@ public class CommandGuard
             return t.ToLowerInvariant();
         }
         return null;
-    }
-
-    private static bool RestHasFlag(List<string> tokens, string flag)
-    {
-        string f = flag.ToLowerInvariant();
-        foreach (string t in tokens)
-        {
-            if (t.ToLowerInvariant() == f)
-                return true;
-        }
-        return false;
     }
 
     private static int IndexOfToken(List<string> tokens, string token)

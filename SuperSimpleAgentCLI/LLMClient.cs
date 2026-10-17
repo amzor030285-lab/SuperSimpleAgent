@@ -144,7 +144,6 @@ public class LLMClient
         bool guardTainted = false;
         bool guardStopRequested = false;
         Dictionary<string, int> guardBlockCounts = new Dictionary<string, int>();
-        List<string> guardBlockedRules = new List<string>();
 
         HashSet<string> enabledSet = new HashSet<string>(enabledTools, StringComparer.OrdinalIgnoreCase);
         HashSet<string> approvalSet = new HashSet<string>(toolsRequiringApproval, StringComparer.OrdinalIgnoreCase);
@@ -402,9 +401,9 @@ public class LLMClient
                     bool screened = false;
                     if (screenSwitch && enabledSet.Contains(call.Name))
                     {
-                        string jevUrl = null;
-                        string jevApiKey = null;
-                        string jevModel = null;
+                        string jevUrl;
+                        string jevApiKey;
+                        string jevModel;
                         if (JevDecisionClient.TryGetEndpoint(config, out jevUrl, out jevApiKey, out jevModel))
                         {
                             screened = true;
@@ -433,7 +432,7 @@ public class LLMClient
                             ? !jevAllowed
                             : (askMode || (!autoMode && approvalSet.Contains(call.Name)));
 
-                    if (needsApproval && !jevAllowed && outputOnly)
+                    if (needsApproval && outputOnly)
                     {
                         ChatOutput.WriteLine("Error: Model called " + call.Name + " which requires approval");
                         return;
@@ -441,7 +440,7 @@ public class LLMClient
 
                     // The tool call block itself was already streamed above (if not suppressed
                     // for approval); only pad a blank line before the approval prompt here.
-                    if (!outputOnly && needsApproval && !jevAllowed)
+                    if (!outputOnly && needsApproval)
                         startBlock();
 
                     // The guard only sees tools that are actually enabled: a
@@ -471,8 +470,6 @@ public class LLMClient
                         string ruleId = string.IsNullOrEmpty(guardResult.RuleId) ? "unknown" : guardResult.RuleId;
                         int count = guardBlockCounts.ContainsKey(ruleId) ? guardBlockCounts[ruleId] + 1 : 1;
                         guardBlockCounts[ruleId] = count;
-                        if (!guardBlockedRules.Contains(ruleId))
-                            guardBlockedRules.Add(ruleId);
                         if (guardTainted)
                         {
                             guardStopRequested = true;
@@ -502,7 +499,7 @@ public class LLMClient
                             exitCode
                         );
                     }
-                    else if (screened && jevAllowed)
+                    else if (jevAllowed)
                     {
                         // The gate said allow: run without bothering the human.
                         if (!outputOnly && config.GetConfigBool("showjevconfidence", true))
@@ -520,8 +517,9 @@ public class LLMClient
                     else if (needsApproval)
                     {
                         double? jevConfidence = null;
-                        if (jevDecision != null)
-                            jevConfidence = ConfidenceForDisplay(jevDecision.Confidence);
+                        if (jevDecision != null && jevDecision.Confidence.HasValue
+                            && config.GetConfigBool("showjevconfidence", true))
+                            jevConfidence = jevDecision.Confidence;
                         if (CliRequestApproval(call.Name, call.Arguments, jevConfidence))
                         {
                             ExecuteTool(call, out toolContent, out exitCode, out toolImage, out toolImageMime, out toolSeconds, outputOnly);
@@ -580,7 +578,7 @@ public class LLMClient
                     if (!outputOnly && startBlock != null)
                         startBlock();
                     ChatOutput.WriteLine("[Stopped: safety guard blocked tool calls ("
-                        + string.Join(", ", guardBlockedRules.ToArray()) + ")]");
+                        + string.Join(", ", guardBlockCounts.Keys) + ")]");
                     break;
                 }
 
@@ -1864,17 +1862,6 @@ public class LLMClient
         {
             Interlocked.Exchange(ref finished, 1);
         }
-    }
-
-    /// <summary>
-    /// Jev confidence for the approval prompt: null when the gate did not run,
-    /// returned no confidence, or showjevconfidence is off.
-    /// </summary>
-    private double? ConfidenceForDisplay(double? confidence)
-    {
-        if (!confidence.HasValue || !config.GetConfigBool("showjevconfidence", true))
-            return null;
-        return confidence;
     }
 
     /// <summary>

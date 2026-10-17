@@ -479,7 +479,7 @@ namespace SuperSimpleAgentGUI
             }
 
             List<LlmPreset> presets = PresetStore.Load(PresetStore.DefaultPath);
-            int index = PresetStore.FindIndex(presets, selected);
+            int index = presets.FindIndex(p => string.Equals(p.Name, selected, StringComparison.OrdinalIgnoreCase));
             if (index < 0)
             {
                 MessageBox.Show(this, "That preset no longer exists.", "Presets", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -526,7 +526,7 @@ namespace SuperSimpleAgentGUI
             }
 
             List<LlmPreset> presets = PresetStore.Load(PresetStore.DefaultPath);
-            int existingIndex = PresetStore.FindIndex(presets, name);
+            int existingIndex = presets.FindIndex(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase));
             if (existingIndex >= 0)
             {
                 MessageBoxResult confirm = MessageBox.Show(

@@ -263,7 +263,7 @@ namespace SuperSimpleAgentGUI.Tests
                     // Re-saving the same name overwrites in place instead of duplicating.
                     // Located by name, because the list is re-read and holds new instances.
                     List<LlmPreset> current = PresetStore.Load(path);
-                    int index = PresetStore.FindIndex(current, "a");
+                    int index = current.FindIndex(p => string.Equals(p.Name, "a", StringComparison.OrdinalIgnoreCase));
                     TestAssert.Equal(0, index, "FindIndex locates the preset by name");
 
                     LlmPreset updated = current[index];
@@ -281,7 +281,7 @@ namespace SuperSimpleAgentGUI.Tests
                     TestAssert.Equal("b", PresetStore.Load(path)[0].Name, "the right one is left");
                     TestAssert.Equal("second", PresetStore.Load(path)[0].Model, "with its fields intact");
                     TestAssert.True(!PresetStore.Delete(path, "a"), "deleting a missing preset reports failure");
-                    TestAssert.True(PresetStore.FindIndex(PresetStore.Load(path), "a") < 0, "FindIndex reports a missing preset as -1");
+                    TestAssert.True(PresetStore.Load(path).FindIndex(p => string.Equals(p.Name, "a", StringComparison.OrdinalIgnoreCase)) < 0, "FindIndex reports a missing preset as -1");
                 }
             });
 

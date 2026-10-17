@@ -11,14 +11,24 @@ namespace SuperSimpleAgentGUI
     /// </summary>
     public class ColorConfig
     {
-        public string Key { get; set; }
-        public string ResourceKey { get; set; }
+        public ColorConfig(string key, string resourceKey, string displayName,
+            Color defaultSystemColor, Brush defaultSystemBrush)
+        {
+            Key = key;
+            ResourceKey = resourceKey;
+            DisplayName = displayName;
+            DefaultSystemColor = defaultSystemColor;
+            DefaultSystemBrush = defaultSystemBrush;
+        }
+
+        public string Key { get; private set; }
+        public string ResourceKey { get; private set; }
 
         /// <summary>Label shown in the Colors dialog.</summary>
-        public string DisplayName { get; set; }
+        public string DisplayName { get; private set; }
 
-        public Color DefaultSystemColor { get; set; }
-        public Brush DefaultSystemBrush { get; set; }
+        public Color DefaultSystemColor { get; private set; }
+        public Brush DefaultSystemBrush { get; private set; }
     }
 
     /// <summary>
@@ -34,175 +44,84 @@ namespace SuperSimpleAgentGUI
         {
             {
                 "buttontextcolor",
-                new ColorConfig
-                {
-                    Key = "buttontextcolor",
-                    ResourceKey = "ButtonTextColorBrush",
-                    DisplayName = "Button Text",
-                    DefaultSystemColor = SystemColors.ControlTextColor,
-                    DefaultSystemBrush = SystemColors.ControlTextBrush
-                }
+                new ColorConfig("buttontextcolor", "ButtonTextColorBrush", "Button Text",
+                    SystemColors.ControlTextColor, SystemColors.ControlTextBrush)
             },
             {
                 "buttonbackgroundcolor",
-                new ColorConfig
-                {
-                    Key = "buttonbackgroundcolor",
-                    ResourceKey = "ButtonBackgroundBrush",
-                    DisplayName = "Button BG",
-                    DefaultSystemColor = SystemColors.ControlColor,
-                    DefaultSystemBrush = SystemColors.ControlBrush
-                }
+                new ColorConfig("buttonbackgroundcolor", "ButtonBackgroundBrush", "Button BG",
+                    SystemColors.ControlColor, SystemColors.ControlBrush)
             },
             {
                 "buttonbordercolor",
-                new ColorConfig
-                {
-                    Key = "buttonbordercolor",
-                    ResourceKey = "ButtonBorderBrush",
-                    DisplayName = "Button Border",
-                    DefaultSystemColor = SystemColors.ControlDarkColor,
-                    DefaultSystemBrush = SystemColors.ControlDarkBrush
-                }
+                new ColorConfig("buttonbordercolor", "ButtonBorderBrush", "Button Border",
+                    SystemColors.ControlDarkColor, SystemColors.ControlDarkBrush)
             },
             {
                 "chatbackgroundcolor",
-                new ColorConfig
-                {
-                    Key = "chatbackgroundcolor",
-                    ResourceKey = "ChatBackgroundColorBrush",
-                    DisplayName = "Chat BG",
-                    DefaultSystemColor = SystemColors.WindowColor,
-                    DefaultSystemBrush = SystemColors.WindowBrush
-                }
+                new ColorConfig("chatbackgroundcolor", "ChatBackgroundColorBrush", "Chat BG",
+                    SystemColors.WindowColor, SystemColors.WindowBrush)
             },
             {
                 "chattextcolor",
-                new ColorConfig
-                {
-                    Key = "chattextcolor",
-                    ResourceKey = "ChatTextColorBrush",
-                    DisplayName = "Chat Text",
-                    DefaultSystemColor = SystemColors.WindowTextColor,
-                    DefaultSystemBrush = SystemColors.WindowTextBrush
-                }
+                new ColorConfig("chattextcolor", "ChatTextColorBrush", "Chat Text",
+                    SystemColors.WindowTextColor, SystemColors.WindowTextBrush)
             },
             {
                 "codeblockbackgroundcolor",
-                new ColorConfig
-                {
-                    Key = "codeblockbackgroundcolor",
-                    ResourceKey = "CodeBlockBackgroundColorBrush",
-                    DisplayName = "Code Block BG",
-                    DefaultSystemColor = SystemColors.ControlColor,
-                    DefaultSystemBrush = SystemColors.ControlBrush
-                }
+                new ColorConfig("codeblockbackgroundcolor", "CodeBlockBackgroundColorBrush", "Code Block BG",
+                    SystemColors.ControlColor, SystemColors.ControlBrush)
             },
             {
                 "codeblockheadercolor",
-                new ColorConfig
-                {
-                    Key = "codeblockheadercolor",
-                    ResourceKey = "CodeBlockHeaderBrush",
-                    DisplayName = "Code Block Header",
-                    DefaultSystemColor = SystemColors.ControlColor,
-                    DefaultSystemBrush = SystemColors.ControlBrush
-                }
+                new ColorConfig("codeblockheadercolor", "CodeBlockHeaderBrush", "Code Block Header",
+                    SystemColors.ControlColor, SystemColors.ControlBrush)
             },
             {
                 "labeltextcolor",
-                new ColorConfig
-                {
-                    Key = "labeltextcolor",
-                    ResourceKey = "LabelTextColorBrush",
-                    DisplayName = "Label Text",
-                    DefaultSystemColor = SystemColors.ControlTextColor,
-                    DefaultSystemBrush = SystemColors.ControlTextBrush
-                }
+                new ColorConfig("labeltextcolor", "LabelTextColorBrush", "Label Text",
+                    SystemColors.ControlTextColor, SystemColors.ControlTextBrush)
             },
             {
                 "linkcolor",
-                new ColorConfig
-                {
-                    Key = "linkcolor",
-                    ResourceKey = "LinkBrush",
-                    DisplayName = "Link",
-                    DefaultSystemColor = SystemColors.HotTrackColor,
-                    DefaultSystemBrush = SystemColors.HotTrackBrush
-                }
+                new ColorConfig("linkcolor", "LinkBrush", "Link",
+                    SystemColors.HotTrackColor, SystemColors.HotTrackBrush)
             },
             {
                 "rolelabelcolor",
-                new ColorConfig
-                {
-                    Key = "rolelabelcolor",
-                    ResourceKey = "RoleLabelBrush",
-                    DisplayName = "Role Label",
-                    DefaultSystemColor = SystemColors.ControlTextColor,
-                    DefaultSystemBrush = SystemColors.ControlTextBrush
-                }
+                new ColorConfig("rolelabelcolor", "RoleLabelBrush", "Role Label",
+                    SystemColors.ControlTextColor, SystemColors.ControlTextBrush)
             },
             {
                 "tablebordercolor",
-                new ColorConfig
-                {
-                    Key = "tablebordercolor",
-                    ResourceKey = "TableBorderBrush",
-                    DisplayName = "Table Border",
-                    DefaultSystemColor = SystemColors.ControlDarkColor,
-                    DefaultSystemBrush = SystemColors.ControlDarkBrush
-                }
+                new ColorConfig("tablebordercolor", "TableBorderBrush", "Table Border",
+                    SystemColors.ControlDarkColor, SystemColors.ControlDarkBrush)
             },
             {
                 "tableheaderbackgroundcolor",
-                new ColorConfig
-                {
-                    Key = "tableheaderbackgroundcolor",
-                    ResourceKey = "TableHeaderBackgroundBrush",
-                    DisplayName = "Table Header BG",
-                    DefaultSystemColor = SystemColors.ControlColor,
-                    DefaultSystemBrush = SystemColors.ControlBrush
-                }
+                new ColorConfig("tableheaderbackgroundcolor", "TableHeaderBackgroundBrush", "Table Header BG",
+                    SystemColors.ControlColor, SystemColors.ControlBrush)
             },
             {
                 "userbubblebackgroundcolor",
-                new ColorConfig
-                {
-                    Key = "userbubblebackgroundcolor",
-                    ResourceKey = "UserBubbleBackgroundBrush",
-                    DisplayName = "User Bubble BG",
-                    DefaultSystemColor = SystemColors.ControlColor,
-                    DefaultSystemBrush = SystemColors.ControlBrush
-                }
+                new ColorConfig("userbubblebackgroundcolor", "UserBubbleBackgroundBrush", "User Bubble BG",
+                    SystemColors.ControlColor, SystemColors.ControlBrush)
             },
             {
                 "windowbackgroundcolor",
-                new ColorConfig
-                {
-                    Key = "windowbackgroundcolor",
-                    ResourceKey = "WindowBackgroundColorBrush",
-                    DisplayName = "Window BG",
-                    DefaultSystemColor = SystemColors.ControlColor,
-                    DefaultSystemBrush = SystemColors.ControlBrush
-                }
+                new ColorConfig("windowbackgroundcolor", "WindowBackgroundColorBrush", "Window BG",
+                    SystemColors.ControlColor, SystemColors.ControlBrush)
             }
         };
 
-        /// <summary>
-        /// Lookup by brush resource key. Kept in a nested holder so it is built
-        /// after ColorConfigs regardless of field declaration order.
-        /// </summary>
-        private static class ConfigLookup
-        {
-            public static readonly Dictionary<string, ColorConfig> ByResourceKey = Build();
+        private static readonly Dictionary<string, ColorConfig> ByResourceKey = BuildByResourceKey();
 
-            private static Dictionary<string, ColorConfig> Build()
-            {
-                var map = new Dictionary<string, ColorConfig>(StringComparer.Ordinal);
-                foreach (var config in ColorConfigs.Values)
-                    map[config.ResourceKey] = config;
-                return map;
-            }
+        private static Dictionary<string, ColorConfig> BuildByResourceKey()
+        {
+            var map = new Dictionary<string, ColorConfig>(StringComparer.Ordinal);
+            foreach (var config in ColorConfigs.Values)
+                map[config.ResourceKey] = config;
+            return map;
         }
 
         /// <summary>
@@ -211,7 +130,7 @@ namespace SuperSimpleAgentGUI
         public static ColorConfig GetConfig(string resourceKey)
         {
             ColorConfig config;
-            return ConfigLookup.ByResourceKey.TryGetValue(resourceKey, out config) ? config : null;
+            return ByResourceKey.TryGetValue(resourceKey, out config) ? config : null;
         }
 
         /// <summary>
@@ -241,19 +160,6 @@ namespace SuperSimpleAgentGUI
             catch
             {
                 return false;
-            }
-        }
-
-        /// <summary>
-        /// Updates a global color brush resource by key.
-        /// </summary>
-        /// <param name="resourceKey">The resource key (e.g., "ButtonTextColorBrush")</param>
-        /// <param name="brush">The brush to apply</param>
-        public static void UpdateColorBrush(string resourceKey, Brush brush)
-        {
-            if (Application.Current != null)
-            {
-                Application.Current.Resources[resourceKey] = brush;
             }
         }
 
@@ -514,20 +420,9 @@ namespace SuperSimpleAgentGUI
         /// </summary>
         public static bool IsDarkTheme(string theme)
         {
-            switch (theme)
-            {
-                case ThemeDark:
-                case ThemeClaudeCode:
-                case ThemeGithubDark:
-                case ThemeGithubDarkDimmed:
-                case ThemeDracula:
-                case ThemeCatppuccinMocha:
-                case ThemeOneDark:
-                case ThemeSolarizedDark:
-                    return true;
-                default:
-                    return false;
-            }
+            return GetPalette(theme) != null
+                && theme != ThemeLight
+                && theme != ThemeGithubLight;
         }
 
         /// <summary>
@@ -560,14 +455,13 @@ namespace SuperSimpleAgentGUI
         }
 
         /// <summary>
-        /// Brush a resource key resolves to: custom color first, then the theme
-        /// palette, then the system default. This is the single source of truth
-        /// used both when applying a theme and when previewing colors.
+        /// The color a resource key actually shows for a theme plus custom colors:
+        /// custom color first, then the theme palette, then the system default.
         /// </summary>
-        public static Brush ResolveBrush(string resourceKey, Dictionary<string, Color> palette, Dictionary<string, string> customColors)
+        public static Color ResolveColor(string resourceKey, string themeName, Dictionary<string, string> customColors)
         {
             ColorConfig config;
-            bool known = ConfigLookup.ByResourceKey.TryGetValue(resourceKey, out config);
+            bool known = ByResourceKey.TryGetValue(resourceKey, out config);
 
             if (known && customColors != null)
             {
@@ -576,32 +470,19 @@ namespace SuperSimpleAgentGUI
                 {
                     Color customColor;
                     if (TryParseColor(customValue, out customColor))
-                        return new SolidColorBrush(customColor);
+                        return customColor;
                 }
             }
 
+            Dictionary<string, Color> palette = GetPalette(themeName);
             if (palette != null)
             {
                 Color paletteColor;
                 if (palette.TryGetValue(resourceKey, out paletteColor))
-                    return new SolidColorBrush(paletteColor);
+                    return paletteColor;
             }
 
-            return known ? config.DefaultSystemBrush : SystemColors.ControlBrush;
-        }
-
-        /// <summary>
-        /// The color a resource key actually shows for a theme plus custom colors.
-        /// </summary>
-        public static Color ResolveColor(string resourceKey, string themeName, Dictionary<string, string> customColors)
-        {
-            var brush = ResolveBrush(resourceKey, GetPalette(themeName), customColors);
-            var solid = brush as SolidColorBrush;
-            if (solid != null)
-                return solid.Color;
-
-            ColorConfig config = GetConfig(resourceKey);
-            return config != null ? config.DefaultSystemColor : SystemColors.ControlColor;
+            return known ? config.DefaultSystemColor : SystemColors.ControlColor;
         }
 
         /// <summary>
@@ -642,19 +523,14 @@ namespace SuperSimpleAgentGUI
         {
             Dictionary<string, Color> palette = GetPalette(themeName);
 
+            if (Application.Current == null)
+                return;
+
             foreach (string resourceKey in GetThemedResourceKeys(themeName))
             {
-                UpdateColorBrush(resourceKey, ResolveBrush(resourceKey, palette, customColors));
+                Application.Current.Resources[resourceKey] =
+                    new SolidColorBrush(ResolveColor(resourceKey, themeName, customColors));
             }
-        }
-
-        /// <summary>
-        /// Re-reads the colors INI and (re)applies its theme.
-        /// </summary>
-        public static void ReloadFrom(string colorsPath)
-        {
-            Dictionary<string, string> settings = IniFileHandler.LoadIni(colorsPath);
-            ApplyTheme(GetThemeName(settings), settings);
         }
 
         /// <summary>

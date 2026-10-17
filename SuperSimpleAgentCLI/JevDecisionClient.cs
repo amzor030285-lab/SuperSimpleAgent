@@ -21,11 +21,6 @@ namespace SuperSimpleAgentCLI
     {
         public JevGateChoice Choice;
         public double? Confidence;
-
-        public static JevGateDecision AskUser()
-        {
-            return new JevGateDecision { Choice = JevGateChoice.Confirm, Confidence = null };
-        }
     }
 
     /// <summary>
@@ -137,7 +132,7 @@ namespace SuperSimpleAgentCLI
         /// </summary>
         public static JevGateDecision ParseResponse(string body)
         {
-            JevGateDecision decision = JevGateDecision.AskUser();
+            JevGateDecision decision = new JevGateDecision();
             if (string.IsNullOrWhiteSpace(body))
                 return decision;
 

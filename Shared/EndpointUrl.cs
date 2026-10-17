@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 
 /// <summary>
 /// Builds the request URLs for an OpenAI-compatible server out of the base URL the
@@ -34,14 +35,20 @@ public static class EndpointUrl
     {
         // The scheme test comes first: normalizing would prepend a slash to a full URL.
         string explicitPath = (chatPath ?? string.Empty).Trim();
-        if (IsFullUrl(explicitPath))
+        if (explicitPath.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || explicitPath.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             return explicitPath;
 
-        explicitPath = NormalizePath(explicitPath);
+        // Path form: trailing slash and surrounding whitespace go away, a missing
+        // leading slash is added; empty stays empty so the caller can fall back to
+        // auto-detection instead of appending nothing.
+        string trimmedPath = TrimTrailingSlash(explicitPath);
+        explicitPath = trimmedPath.Length == 0 ? string.Empty
+            : trimmedPath[0] == '/' ? trimmedPath : "/" + trimmedPath;
         if (explicitPath.Length == 0)
         {
             string baseTrimmed = TrimTrailingSlash(baseUrl);
-            if (EndsWithPath(baseTrimmed, "/chat/completions"))
+            if (baseTrimmed.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
                 return baseTrimmed;
             return baseTrimmed + Leaf(baseUrl, "/chat/completions");
         }
@@ -71,39 +78,13 @@ public static class EndpointUrl
     }
 
     /// <summary>
-    /// True when the last path segment is a version number: "v" followed by at least
-    /// one digit. "v1beta" and a host that merely starts with v ("v1.example.com") do
-    /// not count, so those bases keep the historical "/v1" behaviour.
+    /// True when the last path segment is a version number: "v" followed by digits.
+    /// "v1beta" or a host like "v1.example.com" do not count, so those bases keep the
+    /// historical "/v1" behaviour.
     /// </summary>
     private static bool HasVersionSegment(string baseUrl)
     {
-        string trimmed = TrimTrailingSlash(baseUrl);
-        int slash = trimmed.LastIndexOf('/');
-        if (slash < 0)
-            return false;
-
-        string segment = trimmed.Substring(slash + 1);
-        if (segment.Length < 2 || (segment[0] != 'v' && segment[0] != 'V'))
-            return false;
-
-        for (int i = 1; i < segment.Length; i++)
-        {
-            if (segment[i] < '0' || segment[i] > '9')
-                return false;
-        }
-        return true;
-    }
-
-    private static bool EndsWithPath(string url, string suffix)
-    {
-        return url.Length >= suffix.Length
-            && url.EndsWith(suffix, StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsFullUrl(string value)
-    {
-        return value.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
-            || value.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        return Regex.IsMatch(TrimTrailingSlash(baseUrl), @"/v[0-9]+$", RegexOptions.IgnoreCase);
     }
 
     /// <summary>Trims whitespace and every trailing slash; null becomes empty.</summary>
@@ -113,18 +94,5 @@ public static class EndpointUrl
         while (trimmed.Length > 0 && trimmed[trimmed.Length - 1] == '/')
             trimmed = trimmed.Substring(0, trimmed.Length - 1);
         return trimmed;
-    }
-
-    /// <summary>
-    /// Turns a configured path into something appendable: surrounding whitespace and a
-    /// trailing slash go away, a missing leading slash is added. Empty stays empty so
-    /// the caller can fall back to auto-detection.
-    /// </summary>
-    private static string NormalizePath(string path)
-    {
-        string trimmed = TrimTrailingSlash(path);
-        if (trimmed.Length == 0)
-            return string.Empty;
-        return trimmed[0] == '/' ? trimmed : "/" + trimmed;
     }
 }
