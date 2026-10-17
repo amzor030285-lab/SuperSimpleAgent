@@ -116,10 +116,17 @@ On first use, if `LLMSettings.ini` does not exist, the GUI setup wizard creates 
 **Tools**
 
 -   `tools`: Comma-separated list of tools the AI is allowed to use
--   `toolsrequiringapproval`: Comma-separated list of tools that require manual approval for the AI to use (default: `run_shell_command`, `download_file`)
+-   `toolsrequiringapproval`: Comma-separated list of tools that require manual approval for the AI to use in `config` mode (default: `run_shell_command`, `download_file`, `run_python_script` - the tools that execute arbitrary code or fetch external content)
 -   `maxconsecutivefailedtoolcalls`: Maximum number of tool calls that can fail in a row before the turn is stopped (default `10`; `0` = off)
 -   `autoguardenabled`: Safety guard for unattended tool execution in `auto`/`config` modes: a deterministic rule set in `guardrules.json` blocks dangerous shell commands (disk formatting, shutdown, remote-code runners, registry/service/user changes, pipe-to-shell and exfiltration patterns) and file operations on protected system paths. A blocked call is not executed - the model gets an error with the rule id and a reason and continues. Three blocks of the same reversible rule stop the turn; an irreversible/remote-execution block taints the turn, and the next block of any kind stops it (default `1`, on; `0` = off). Never active in `ask` mode (the human is the gate) or `plan` mode
 -   `tooltimeout.<toolname>`: Timeout for a tool call in seconds
+-   `jevbaseurl`: Full URL of a System One decision endpoint (`/v1/systemone`), e.g. `http://127.0.0.1:11434/v1/systemone` for an Ollama decision model (`ollama pull nimble`) or `http://127.0.0.1:8080/v1/systemone` for a llama.cpp decision model. When set, a small decision model answers the tool-approval question before the human does: an explicit `allow` runs the call without prompting (shown as `[tool auto allowed, confidence 0.97]`), anything else - a `confirm`, a produced error, or a failed request - falls back to the normal approval prompt. In every mode a disabled tool call skips the gate, `plan` mode keeps refusing calls at the registry level, and the safety guard still screens the calls it screened before, so the gate never bypasses it (default empty, off)
+-   `jevmodel`: Model name sent to the decision endpoint (e.g. the decision model's name in llama.cpp router mode; default empty, the endpoint's default)
+-   `jevapikey`: API key for the decision endpoint, stored DPAPI-protected like `apikey` (default empty)
+-   `showjevconfidence`: Show the gate's confidence on the `auto allowed` line and in the approval prompt (`Jev confidence: 0.30`); display only, it never gates the decision (default `1`, on)
+-   `jevscreenask`: Consult the gate for every tool call in `ask` mode (default `1`, on)
+-   `jevscreenconfig`: Consult the gate for every tool call in `config` mode, including the tools outside `toolsrequiringapproval` (default `1`, on)
+-   `jevscreenauto`: Consult the gate for every tool call in `auto` mode; a `confirm` is then handed to the human, so an attended call never runs without either an `allow` or an explicit `Y` (default `1`, on). Set `0` to restore the old behaviour: `auto` runs unattended and never consults the gate
 
 Tool-specific configuration options for the included tools are available in the [Tools](#tools) section.
 

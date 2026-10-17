@@ -246,6 +246,41 @@
                               ToolTip="Cuts the answer off when the model repeats the same block back to back. Off by default: some models loop, some never do, so it is your call."
                               Margin="0,10,0,0"/>
 
+                    <!-- Jev decision gate (System One /v1/systemone) -->
+                    <Label Content="Jev Gate Endpoint (optional, /v1/systemone):" Margin="0,10,0,0"/>
+                    <TextBox x:Name="JevBaseURLTextBox"
+                             Text="{Binding JevBaseURL, UpdateSourceTrigger=PropertyChanged}"
+                             Height="23"
+                             ToolTip="Empty = the gate stays off and every call keeps the normal approval prompt."/>
+                    <Label Content="Jev Model (optional):"/>
+                    <TextBox x:Name="JevModelTextBox"
+                             Text="{Binding JevModel, UpdateSourceTrigger=PropertyChanged}"
+                             Height="23"/>
+                    <Label Content="Jev API Key (optional):"/>
+                    <PasswordBox x:Name="JevApiKeyPasswordBox" Height="23"/>
+                    <CheckBox x:Name="ShowJevConfidenceCheckBox"
+                              AutomationProperties.AutomationId="ShowJevConfidenceCheckBox"
+                              Content="Show the gate's confidence in prompts"
+                              IsChecked="{Binding JevConfidenceVisible, UpdateSourceTrigger=PropertyChanged}"
+                              Margin="0,10,0,0"/>
+
+                    <Label Content="Screen tool calls with Jev in mode:"/>
+                    <CheckBox x:Name="JevScreenAskCheckBox"
+                              AutomationProperties.AutomationId="JevScreenAskCheckBox"
+                              Content="Ask (every call prompts when the gate is not on)"
+                              IsChecked="{Binding JevScreenAsk, UpdateSourceTrigger=PropertyChanged}"
+                              ToolTip="When off, ask mode prompts for every call without consulting the gate."/>
+                    <CheckBox x:Name="JevScreenConfigCheckBox"
+                              AutomationProperties.AutomationId="JevScreenConfigCheckBox"
+                              Content="Config (default; also screens calls outside the approval list)"
+                              IsChecked="{Binding JevScreenConfig, UpdateSourceTrigger=PropertyChanged}"
+                              ToolTip="When off, config mode behaves as before: only the approval-listed tools are checked."/>
+                    <CheckBox x:Name="JevScreenAutoCheckBox"
+                              AutomationProperties.AutomationId="JevScreenAutoCheckBox"
+                              Content="Auto"
+                              IsChecked="{Binding JevScreenAuto, UpdateSourceTrigger=PropertyChanged}"
+                              ToolTip="When on, every auto-mode call goes through the gate; a confirm asks the human. When off, auto keeps running everything unattended."/>
+
                 </StackPanel>
             </ScrollViewer>
 

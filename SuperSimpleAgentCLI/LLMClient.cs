@@ -370,14 +370,70 @@ public class LLMClient
                     // the read tool silently or refuses the write in
                     // ToolRegistry. Asking here would put a dialog in front of a
                     // tool whose only legal action is reading.
-                    bool needsApproval = ToolApproval.IsPlanMode(approvalMode)
-                        ? false
-                        : string.Equals(approvalMode, ToolApproval.ModeAuto, StringComparison.OrdinalIgnoreCase)
-                            ? false
-                            : string.Equals(approvalMode, ToolApproval.ModeAsk, StringComparison.OrdinalIgnoreCase)
-                                || approvalSet.Contains(call.Name);
+                    bool planMode = ToolApproval.IsPlanMode(approvalMode);
+                    bool askMode = !planMode
+                        && string.Equals(approvalMode, ToolApproval.ModeAsk, StringComparison.OrdinalIgnoreCase);
+                    bool autoMode = !planMode
+                        && string.Equals(approvalMode, ToolApproval.ModeAuto, StringComparison.OrdinalIgnoreCase);
 
-                    if (needsApproval && outputOnly)
+                    // The mode's screen switch (jevscreenask / jevscreenconfig /
+                    // jevscreenauto, all default on): with jevbaseurl set, the
+                    // gate is consulted in that mode.
+                    bool screenSwitch = planMode
+                        ? false
+                        : askMode
+                            ? config.GetConfigBool("jevscreenask", true)
+                            : autoMode
+                                ? config.GetConfigBool("jevscreenauto", true)
+                                : config.GetConfigBool("jevscreenconfig", true);
+
+                    // Jev decision gate (System One /v1/systemone protocol): when
+                    // jevbaseurl is set, a small decision model answers the
+                    // approval question for the tool call. An explicit "allow"
+                    // runs the call where the human would have been asked;
+                    // anything short of "allow" - confirm, garbage, or a dead
+                    // endpoint - hands the call back to the human, so a broken
+                    // or missing gate never runs anything on its own. The
+                    // question itself is unchanged: the gate only answers where
+                    // a human prompt would appear, and with the screen switches
+                    // on that is every call in ask, config and auto. A tool that
+                    // is disabled never reaches the gate.
+                    JevGateDecision jevDecision = null;
+                    bool screened = false;
+                    if (screenSwitch && enabledSet.Contains(call.Name))
+                    {
+                        string jevUrl = null;
+                        string jevApiKey = null;
+                        string jevModel = null;
+                        if (JevDecisionClient.TryGetEndpoint(config, out jevUrl, out jevApiKey, out jevModel))
+                        {
+                            screened = true;
+                            JObject jevPayload = JevDecisionClient.BuildRequestPayload(
+                                jevModel,
+                                call.Name,
+                                call.Arguments,
+                                registry.GetToolDescription(call.Name),
+                                RecentMessagesForDecision(conversation));
+                            int jevExitCode = 0;
+                            string jevResponse = CurlClient.PostJson(
+                                jevUrl, jevApiKey, jevPayload, JevDecisionClient.TimeoutSeconds, out jevExitCode);
+                            jevDecision = JevDecisionClient.ParseResponse(jevResponse);
+                        }
+                    }
+                    bool jevAllowed = jevDecision != null && jevDecision.Choice == JevGateChoice.Allow;
+
+                    // Who answers the call: a screened call is either allowed by
+                    // the gate (it takes the prompt-approved path) or handed
+                    // back to the human; everything else answers exactly as
+                    // before - ask prompts every call, auto prompts none and
+                    // config prompts the approved list.
+                    bool needsApproval = planMode
+                        ? false
+                        : screened
+                            ? !jevAllowed
+                            : (askMode || (!autoMode && approvalSet.Contains(call.Name)));
+
+                    if (needsApproval && !jevAllowed && outputOnly)
                     {
                         ChatOutput.WriteLine("Error: Model called " + call.Name + " which requires approval");
                         return;
@@ -385,15 +441,22 @@ public class LLMClient
 
                     // The tool call block itself was already streamed above (if not suppressed
                     // for approval); only pad a blank line before the approval prompt here.
-                    if (!outputOnly && needsApproval)
+                    if (!outputOnly && needsApproval && !jevAllowed)
                         startBlock();
 
                     // The guard only sees tools that are actually enabled: a
                     // disabled tool gets the "disabled" answer without
                     // consuming the per-turn guard block budget.
+                    // The rule guard screens the calls no human answers, which
+                    // was and stays everything in auto mode plus the tools
+                    // outside the approval list in config mode. Where a prompt
+                    // replaced that screen (ask, the listed config tools, and
+                    // now the screened calls whose gate allowed them), the
+                    // guard keeps out of the way, as it did for a human y/n.
                     GuardResult guardResult = null;
-                    if (guard != null && !ToolApproval.IsPlanMode(approvalMode) && !needsApproval
-                        && enabledSet.Contains(call.Name))
+                    bool guardClass = !planMode && enabledSet.Contains(call.Name)
+                        && (autoMode || (!askMode && !approvalSet.Contains(call.Name)));
+                    if (guard != null && guardClass)
                         guardResult = guard.Evaluate(call.Name, call.Arguments);
 
                     int exitCode = 0;
@@ -439,9 +502,27 @@ public class LLMClient
                             exitCode
                         );
                     }
+                    else if (screened && jevAllowed)
+                    {
+                        // The gate said allow: run without bothering the human.
+                        if (!outputOnly && config.GetConfigBool("showjevconfidence", true))
+                        {
+                            if (startBlock != null)
+                                startBlock();
+                            ChatOutput.WriteLine(jevDecision.Confidence.HasValue
+                                ? "[" + call.Name + " auto allowed, confidence "
+                                    + jevDecision.Confidence.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + "]"
+                                : "[" + call.Name + " auto allowed]");
+                        }
+                        ExecuteTool(call, out toolContent, out exitCode, out toolImage, out toolImageMime, out toolSeconds, outputOnly);
+                        toolRan = true;
+                    }
                     else if (needsApproval)
                     {
-                        if (CliRequestApproval(call.Name, call.Arguments))
+                        double? jevConfidence = null;
+                        if (jevDecision != null)
+                            jevConfidence = ConfidenceForDisplay(jevDecision.Confidence);
+                        if (CliRequestApproval(call.Name, call.Arguments, jevConfidence))
                         {
                             ExecuteTool(call, out toolContent, out exitCode, out toolImage, out toolImageMime, out toolSeconds, outputOnly);
                             toolRan = true;
@@ -1786,13 +1867,71 @@ public class LLMClient
     }
 
     /// <summary>
+    /// Jev confidence for the approval prompt: null when the gate did not run,
+    /// returned no confidence, or showjevconfidence is off.
+    /// </summary>
+    private double? ConfidenceForDisplay(double? confidence)
+    {
+        if (!confidence.HasValue || !config.GetConfigBool("showjevconfidence", true))
+            return null;
+        return confidence;
+    }
+
+    /// <summary>
+    /// The last few conversation messages (tool calls flattened into text) -
+    /// the user's goal context the Jev gate decides against.
+    /// </summary>
+    private static List<JevContextMessage> RecentMessagesForDecision(List<ChatMessage> conversation)
+    {
+        List<JevContextMessage> selected = new List<JevContextMessage>();
+        if (conversation == null || conversation.Count == 0)
+            return selected;
+
+        int start = conversation.Count - JevDecisionClient.RecentMessageCount;
+        if (start < 0)
+            start = 0;
+        for (int i = start; i < conversation.Count; i++)
+            selected.Add(ToJevContextMessage(conversation[i]));
+        return selected;
+    }
+
+    private static JevContextMessage ToJevContextMessage(ChatMessage message)
+    {
+        StringBuilder text = new StringBuilder();
+        if (!string.IsNullOrEmpty(message.Content))
+            text.Append(message.Content);
+        if (message.ToolCalls != null)
+        {
+            for (int i = 0; i < message.ToolCalls.Count; i++)
+            {
+                if (text.Length > 0)
+                    text.Append('\n');
+                text.Append(message.ToolCalls[i].Name ?? string.Empty);
+                text.Append(' ');
+                text.Append(message.ToolCalls[i].Arguments ?? string.Empty);
+            }
+        }
+
+        return new JevContextMessage
+        {
+            Role = message.Role ?? string.Empty,
+            Text = text.ToString()
+        };
+    }
+
+    /// <summary>
     /// Console approval prompt routed through ChatOutput so block spacing stays
     /// accurate. Wire format is FormatApprovalMessage + ApprovalPrompt (the GUI
-    /// parses the "Run tool:" ... "Approve? (Y/N): " block from stdout).
+    /// parses the "Run tool:" ... "Approve? (Y/N): " block from stdout). When
+    /// the Jev gate declined to allow the call, its confidence is shown in the
+    /// prompt (the parser strips the "Jev confidence:" line).
     /// </summary>
-    private static bool CliRequestApproval(string toolName, string arguments)
+    private static bool CliRequestApproval(string toolName, string arguments, double? jevConfidence = null)
     {
-        ChatOutput.WriteLine(ToolApproval.FormatApprovalMessage(toolName, arguments));
+        string confidenceText = jevConfidence.HasValue
+            ? jevConfidence.Value.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+            : null;
+        ChatOutput.WriteLine(ToolApproval.FormatApprovalMessage(toolName, arguments, confidenceText));
         Console.Out.Flush();
 
         while (true)

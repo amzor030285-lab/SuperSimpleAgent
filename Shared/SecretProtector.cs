@@ -49,6 +49,7 @@ public static class SecretProtector
     {
         return string.Equals(configKey, "apikey", StringComparison.OrdinalIgnoreCase)
             || string.Equals(configKey, "embeddingsapikey", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(configKey, "firecrawlapikey", StringComparison.OrdinalIgnoreCase);
+            || string.Equals(configKey, "firecrawlapikey", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(configKey, "jevapikey", StringComparison.OrdinalIgnoreCase);
     }
 }

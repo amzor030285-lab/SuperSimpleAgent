@@ -137,6 +137,16 @@ namespace SuperSimpleAgentGUI
                 "toolsrequiringapproval=" + AppConstants.DefaultToolsRequiringApproval,
                 "maxconsecutivefailedtoolcalls=10",
                 "autoguardenabled=1",
+                // Jev decision gate: off until a System One endpoint is configured.
+                // The screen switches default on: with a configured endpoint the
+                // gate answers in every approval mode it can reach.
+                "jevapikey=",
+                "jevbaseurl=",
+                "jevmodel=",
+                "showjevconfidence=1",
+                "jevscreenask=1",
+                "jevscreenconfig=1",
+                "jevscreenauto=1",
             };
         }
     }

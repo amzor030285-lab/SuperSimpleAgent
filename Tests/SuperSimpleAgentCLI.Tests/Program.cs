@@ -841,9 +841,10 @@ namespace SuperSimpleAgentCLI.Tests
                     File.WriteAllText(absent, "[System]\r\napikey=k\r\n", Encoding.UTF8);
                     List<string> defaults = new ConfigHandler(absent).GetConfigList(
                         "toolsrequiringapproval", AppConstants.DefaultToolsRequiringApproval);
-                    TestAssert.Equal(2, defaults.Count, "default count");
+                    TestAssert.Equal(3, defaults.Count, "default count");
                     TestAssert.Equal("run_shell_command", defaults[0], "run_shell_command default");
                     TestAssert.Equal("download_file", defaults[1], "download_file default");
+                    TestAssert.Equal("run_python_script", defaults[2], "run_python_script default");
 
                     // Key present but empty: the user opted out, so no default applies.
                     string optedOut = ws.Combine("opted-out.ini");
@@ -2002,6 +2003,489 @@ namespace SuperSimpleAgentCLI.Tests
 
                         TestAssert.True(!File.Exists(sideEffect),
                             "declined tool call never ran the command");
+                    }
+                }
+            });
+
+            // --- Jev decision gate (System One /v1/systemone) -------------------
+
+            TestRunner.Run("jev.unit_request_payload", () =>
+            {
+                JevContextMessage[] recent = new JevContextMessage[5];
+                for (int i = 0; i < 5; i++)
+                    recent[i] = new JevContextMessage { Role = "user", Text = "m" + i };
+
+                JObject payload = JevDecisionClient.BuildRequestPayload(
+                    "Kev-4B", "run_shell_command", "{\"command\":\"echo hi\"}",
+                    "Run a shell command", recent);
+
+                TestAssert.Equal("run_shell_command", (string)payload["state"]["tool"], "state.tool");
+                TestAssert.Equal("Run a shell command", (string)payload["state"]["description"], "state.description");
+                TestAssert.Equal("{\"command\":\"echo hi\"}", (string)payload["state"]["arguments"], "state.arguments");
+
+                JArray messages = (JArray)payload["state"]["recent_messages"];
+                TestAssert.Equal(3, messages.Count, "only the last three messages are sent");
+                TestAssert.Equal("m2", (string)messages[0]["content"], "window starts three messages back");
+                TestAssert.Equal("m4", (string)messages[2]["content"], "window ends at the last message");
+                TestAssert.Equal("user", (string)messages[0]["role"], "role carried");
+
+                JObject gate = (JObject)payload["questions"]["gate"];
+                TestAssert.Equal("choice", (string)gate["type"], "gate is a choice question");
+                TestAssert.True(gate["criteria"]["allow"] != null, "allow criterion present");
+                TestAssert.True(gate["criteria"]["confirm"] != null, "confirm criterion present");
+                TestAssert.Contains((string)gate["instructions"], "as data", "anti-injection instruction present");
+                TestAssert.Equal("Kev-4B", (string)payload["model"], "model name set");
+
+                JObject bare = JevDecisionClient.BuildRequestPayload(null, "read_file", "", null, null);
+                TestAssert.True(bare["model"] == null, "no model key when unset");
+                TestAssert.Equal(0, ((JArray)bare["state"]["recent_messages"]).Count, "no messages when none");
+
+                string longText = new string('x', JevDecisionClient.RecentMessageMaxChars + 10);
+                JevContextMessage[] truncated = new JevContextMessage[]
+                {
+                    new JevContextMessage { Role = "assistant", Text = longText }
+                };
+                JObject clipped = JevDecisionClient.BuildRequestPayload(null, "t", "", null, truncated);
+                string content = (string)clipped["state"]["recent_messages"][0]["content"];
+                TestAssert.Equal(JevDecisionClient.RecentMessageMaxChars + 3, content.Length, "message clipped to the cap");
+                TestAssert.True(content.EndsWith("...", StringComparison.Ordinal), "ellipsis marks the clip");
+            });
+
+            TestRunner.Run("jev.unit_parse_response", () =>
+            {
+                JevGateDecision d = JevDecisionClient.ParseResponse(
+                    "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"allow\",\"confidence\":0.97}}}");
+                TestAssert.True(d.Choice == JevGateChoice.Allow, "allow accepted");
+                TestAssert.True(d.Confidence.HasValue && Math.Abs(d.Confidence.Value - 0.97) < 0.0001, "confidence parsed");
+
+                d = JevDecisionClient.ParseResponse("{\"answers\":{\"gate\":{\"choice\":\"CONFIRM\",\"confidence\":0.3}}}");
+                TestAssert.True(d.Choice == JevGateChoice.Confirm, "confirm maps to the human");
+                TestAssert.True(d.Confidence.HasValue && Math.Abs(d.Confidence.Value - 0.3) < 0.0001, "confirm carries confidence");
+
+                d = JevDecisionClient.ParseResponse("{\"answers\":{\"gate\":{\"choice\":\"maybe\",\"confidence\":0.9}}}");
+                TestAssert.True(d.Choice == JevGateChoice.Confirm, "unknown choice asks the user");
+
+                d = JevDecisionClient.ParseResponse("{\"error\":\"model not found\"}");
+                TestAssert.True(d.Choice == JevGateChoice.Confirm && !d.Confidence.HasValue, "no answers asks the user");
+
+                d = JevDecisionClient.ParseResponse("cURL failed (exit 7): connection refused");
+                TestAssert.True(d.Choice == JevGateChoice.Confirm, "transport error text asks the user");
+
+                d = JevDecisionClient.ParseResponse("");
+                TestAssert.True(d.Choice == JevGateChoice.Confirm, "empty body asks the user");
+
+                d = JevDecisionClient.ParseResponse("{\"answers\":{\"gate\":{\"choice\":\"allow\",\"confidence\":null}}}");
+                TestAssert.True(d.Choice == JevGateChoice.Allow && !d.Confidence.HasValue, "null confidence tolerated");
+
+                d = JevDecisionClient.ParseResponse("{\"answers\":{\"gate\":{\"choice\":\"allow\",\"confidence\":\"0.85\"}}}");
+                TestAssert.True(d.Confidence.HasValue && Math.Abs(d.Confidence.Value - 0.85) < 0.0001, "string confidence parsed");
+            });
+
+            TestRunner.Run("jev.unit_endpoint_off", () =>
+            {
+                string url, key, model;
+                using (TempWorkspace ws = new TempWorkspace("jev-ini"))
+                {
+                    string path = Path.Combine(ws.Path, "LLMSettings.ini");
+
+                    File.WriteAllText(path, "[System]\r\njevbaseurl=\r\n", Encoding.UTF8);
+                    ConfigHandler cfg = new ConfigHandler(path);
+                    TestAssert.True(!JevDecisionClient.TryGetEndpoint(cfg, out url, out key, out model), "empty jevbaseurl disables the gate");
+
+                    File.WriteAllText(path, "[System]\r\njevbaseurl=   \r\njevmodel=Kev-4B\r\njevapikey=secret\r\n", Encoding.UTF8);
+                    cfg = new ConfigHandler(path);
+                    TestAssert.True(!JevDecisionClient.TryGetEndpoint(cfg, out url, out key, out model), "whitespace jevbaseurl disables the gate");
+
+                    File.WriteAllText(path, "[System]\r\njevbaseurl=http://127.0.0.1:8080/v1/systemone/\r\njevmodel=Kev-4B\r\njevapikey=secret\r\n", Encoding.UTF8);
+                    cfg = new ConfigHandler(path);
+                    TestAssert.True(JevDecisionClient.TryGetEndpoint(cfg, out url, out key, out model), "set jevbaseurl enables the gate");
+                    TestAssert.Equal("http://127.0.0.1:8080/v1/systemone", url, "trailing slash trimmed");
+                    TestAssert.Equal("secret", key, "key read back");
+                    TestAssert.Equal("Kev-4B", model, "model read back");
+                }
+            });
+
+            TestRunner.Run("jev.unit_approval_prompt_confidence", () =>
+            {
+                string msg = ToolApproval.FormatApprovalMessage("run_shell_command", "echo hi", "0.30")
+                    + "\r\n" + ToolApproval.ApprovalPrompt;
+
+                TestAssert.Contains(msg, "Jev confidence: 0.30", "confidence line present");
+
+                string name, args;
+                TestAssert.True(ToolApproval.TryParseApprovalPrompt(msg, out name, out args), "prompt still parses");
+                TestAssert.Equal("run_shell_command", name, "tool name");
+                TestAssert.Equal("echo hi", args, "confidence line is not part of the arguments");
+
+                string plain = ToolApproval.FormatApprovalMessage("read_file", "a.txt") + "\r\n" + ToolApproval.ApprovalPrompt;
+                TestAssert.True(ToolApproval.TryParseApprovalPrompt(plain, out name, out args), "plain prompt still parses");
+                TestAssert.Equal("read_file", name, "plain name");
+                TestAssert.Equal("a.txt", args, "plain arguments");
+            });
+
+            TestRunner.Run("cli.jev_allow_skips_prompt", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (FakeJevServer jev = new FakeJevServer())
+                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                {
+                    // ask mode would prompt for every tool call; the gate's
+                    // "allow" must replace the prompt and run the command.
+                    string sideEffect = Path.Combine(ws.Path, "jev-allow-must-exist.txt");
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    JObject args = new JObject();
+                    args["command"] = "echo hi > \"" + sideEffect + "\"";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+                    CopyCurlToWorkspace(ws);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
+                        "jevmodel=test-jev\r\n", Encoding.UTF8);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval ask"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, "run_shell_command auto allowed", 60000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+
+                        TestAssert.True(!cli.Stdout.Contains("Approve? (Y/N): "),
+                            "Jev allow must not prompt the human");
+                        TestAssert.True(File.Exists(sideEffect),
+                            "Jev-allowed call ran the command");
+                        TestAssert.True(jev.LastBody != null
+                            && jev.LastBody.IndexOf("run_shell_command", StringComparison.Ordinal) >= 0,
+                            "the gate received the tool name");
+                        TestAssert.True(jev.LastBody.IndexOf("recent_messages", StringComparison.Ordinal) >= 0,
+                            "the gate received the recent messages");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.jev_confirm_falls_back_to_prompt", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (FakeJevServer jev = new FakeJevServer())
+                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                {
+                    // Jev "confirm" keeps the human in the loop and shows the
+                    // gate's confidence in the prompt.
+                    jev.ResponseBody = "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"confirm\",\"confidence\":0.3}}}";
+                    string sideEffect = Path.Combine(ws.Path, "jev-confirm-must-exist.txt");
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    JObject args = new JObject();
+                    args["command"] = "echo hi > \"" + sideEffect + "\"";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+                    CopyCurlToWorkspace(ws);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
+                        "jevmodel=test-jev\r\n", Encoding.UTF8);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval ask"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, "Jev confidence: 0.30", 60000);
+                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 30000);
+                        cli.WriteLine("Y");
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+
+                        TestAssert.True(File.Exists(sideEffect),
+                            "human-approved call ran the command");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.jev_server_down_falls_back_to_prompt", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                {
+                    // Nothing listens on port 1: the POST fails and the gate must
+                    // fall back to the human, with no confidence shown.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    JObject args = new JObject();
+                    args["command"] = "echo jev-down";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+                    CopyCurlToWorkspace(ws);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "jevbaseurl=http://127.0.0.1:1/v1/systemone\r\n" +
+                        "jevmodel=test-jev\r\n", Encoding.UTF8);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval ask"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 60000);
+                        cli.WriteLine("N");
+                        CliRunner.WaitForText(cli, "cancelled by the user", 30000);
+
+                        TestAssert.True(cli.Stdout.IndexOf("Jev confidence", StringComparison.Ordinal) < 0,
+                            "no confidence when the gate never answered");
+                    }
+                }
+            });
+
+            TestRunner.Run("jev.unit_default_approval_python", () =>
+            {
+                string[] defaultApproval = AppConstants.DefaultToolsRequiringApproval.Split(',');
+                TestAssert.Contains(AppConstants.DefaultToolsRequiringApproval, "run_python_script",
+                    "run_python_script prompts by default like the shell does");
+                TestAssert.True(Array.IndexOf(defaultApproval, "run_shell_command") >= 0, "shell stays in the default list");
+                TestAssert.True(Array.IndexOf(defaultApproval, "download_file") >= 0, "download stays in the default list");
+            });
+
+            TestRunner.Run("cli.jev_auto_screen_allow_runs", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (FakeJevServer jev = new FakeJevServer())
+                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                {
+                    // With the screen switch defaulting on, auto mode now consults
+                    // the gate: an allow runs the call unattended, exactly like a
+                    // prompt-approved call used to.
+                    string sideEffect = Path.Combine(ws.Path, "jev-auto-allow-must-exist.txt");
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    JObject args = new JObject();
+                    args["command"] = "echo hi > \"" + sideEffect + "\"";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+                    CopyCurlToWorkspace(ws);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
+                        guardEnabled: false);
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
+                        "jevmodel=test-jev\r\n", Encoding.UTF8);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, "run_shell_command auto allowed", 60000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+
+                        TestAssert.True(!cli.Stdout.Contains("Approve? (Y/N): "),
+                            "the gate's allow must not surface the human prompt");
+                        TestAssert.True(File.Exists(sideEffect),
+                            "the allowed call ran without a prompt");
+                        TestAssert.True(jev.LastBody != null
+                            && jev.LastBody.IndexOf("run_shell_command", StringComparison.Ordinal) >= 0,
+                            "auto mode consulted the gate");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.jev_auto_screen_confirm_prompts", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (FakeJevServer jev = new FakeJevServer())
+                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                {
+                    // The reason the screen-in-auto feature exists: a confirm in
+                    // auto mode must reach the human instead of running.
+                    jev.ResponseBody = "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"confirm\",\"confidence\":0.3}}}";
+                    string sideEffect = Path.Combine(ws.Path, "jev-auto-confirm-must-exist.txt");
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    JObject args = new JObject();
+                    args["command"] = "echo hi > \"" + sideEffect + "\"";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+                    CopyCurlToWorkspace(ws);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
+                        guardEnabled: false);
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
+                        "jevmodel=test-jev\r\n", Encoding.UTF8);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, "Jev confidence: 0.30", 60000);
+                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 30000);
+                        cli.WriteLine("Y");
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+
+                        TestAssert.True(File.Exists(sideEffect),
+                            "the human-approved call ran");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.jev_auto_screen_off_no_gate", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (FakeJevServer jev = new FakeJevServer())
+                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                {
+                    // jevscreenauto=0 restores the pre-screening auto behaviour:
+                    // no gate post, no prompt, no auto-allowed marker.
+                    string sideEffect = Path.Combine(ws.Path, "jev-auto-off-must-exist.txt");
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    JObject args = new JObject();
+                    args["command"] = "echo hi > \"" + sideEffect + "\"";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+                    CopyCurlToWorkspace(ws);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
+                        guardEnabled: false);
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
+                        "jevmodel=test-jev\r\n" +
+                        "jevscreenauto=0\r\n", Encoding.UTF8);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, "tool output", 60000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+
+                        TestAssert.True(jev.LastBody == null,
+                            "the switch off must not post to the gate");
+                        TestAssert.True(File.Exists(sideEffect),
+                            "auto mode keeps running the call unattended");
+                        TestAssert.True(cli.Stdout.IndexOf("auto allowed", StringComparison.Ordinal) < 0,
+                            "no gate marker when the switch is off");
+                        TestAssert.True(!cli.Stdout.Contains("Approve? (Y/N): "),
+                            "no prompt when the switch is off");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.jev_auto_screen_down_prompts", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                {
+                    // A dead gate in a screened mode fails closed: auto prompts
+                    // the human instead of running the call unattended.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    JObject args = new JObject();
+                    args["command"] = "echo jev-auto-down";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+                    CopyCurlToWorkspace(ws);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
+                        guardEnabled: false);
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "jevbaseurl=http://127.0.0.1:1/v1/systemone\r\n" +
+                        "jevmodel=test-jev\r\n", Encoding.UTF8);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 60000);
+                        cli.WriteLine("N");
+                        CliRunner.WaitForText(cli, "cancelled by the user", 30000);
+
+                        TestAssert.True(cli.Stdout.IndexOf("Jev confidence", StringComparison.Ordinal) < 0,
+                            "no confidence when the gate never answered");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.jev_config_screen_unlisted_call", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (FakeJevServer jev = new FakeJevServer())
+                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                {
+                    // Config mode with an empty approval list used to run this
+                    // call silently; the default config screen switch now sends
+                    // it to the gate, and a confirm asks the human.
+                    jev.ResponseBody = "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"confirm\",\"confidence\":0.4}}}";
+                    string sideEffect = Path.Combine(ws.Path, "jev-config-confirm-must-exist.txt");
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    JObject args = new JObject();
+                    args["command"] = "echo hi > \"" + sideEffect + "\"";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+                    CopyCurlToWorkspace(ws);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
+                        guardEnabled: false);
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
+                        "jevmodel=test-jev\r\n", Encoding.UTF8);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, "Jev confidence: 0.40", 60000);
+                        CliRunner.WaitForText(cli, ToolApproval.ApprovalPrompt, 30000);
+                        cli.WriteLine("N");
+                        CliRunner.WaitForText(cli, "cancelled by the user", 30000);
+
+                        TestAssert.True(!File.Exists(sideEffect),
+                            "a declined screened call never ran");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.jev_disabled_tool_skips_gate", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (FakeJevServer jev = new FakeJevServer())
+                using (TempWorkspace ws = PackageGuardCliWorkspace())
+                {
+                    // A disabled tool call gets its error without a gate post
+                    // and without a prompt, in every mode.
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    JObject args = new JObject();
+                    args["command"] = "echo never-runs";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+                    CopyCurlToWorkspace(ws);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "");
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "jevbaseurl=" + jev.BaseUrl + "/v1/systemone\r\n" +
+                        "jevmodel=test-jev\r\n", Encoding.UTF8);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path, "--approval auto"))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("run it");
+                        CliRunner.WaitForText(cli, "disabled by configuration", 60000);
+                        CliRunner.WaitForText(cli, server.FixedReply, 30000);
+
+                        TestAssert.True(jev.LastBody == null,
+                            "a disabled tool never reaches the gate");
+                        TestAssert.True(!cli.Stdout.Contains("Approve? (Y/N): "),
+                            "no prompt for a call that cannot run");
                     }
                 }
             });
@@ -3727,6 +4211,79 @@ namespace SuperSimpleAgentCLI.Tests
         }
 
         /// <summary>
+        /// Loopback stand-in for a System One /v1/systemone endpoint: records
+        /// the request body and answers with a canned choice.
+        /// </summary>
+        sealed class FakeJevServer : IDisposable
+        {
+            private readonly System.Net.HttpListener _listener;
+            private readonly Thread _thread;
+            private volatile bool _running;
+
+            public string BaseUrl { get; private set; }
+
+            /// <summary>System One answer body sent back (default: allow @ 0.97).</summary>
+            public string ResponseBody { get; set; }
+
+            /// <summary>HTTP status sent back (default 200).</summary>
+            public int Status { get; set; }
+
+            public string LastPath { get; private set; }
+            public string LastBody { get; private set; }
+
+            public FakeJevServer()
+            {
+                Status = 200;
+                ResponseBody = "{\"answers\":{\"gate\":{\"type\":\"choice\",\"choice\":\"allow\",\"confidence\":0.97}}}";
+                string baseUrl;
+                _listener = TestHttpListener.StartLoopback(out baseUrl);
+                BaseUrl = baseUrl;
+                _running = true;
+                _thread = new Thread(ListenLoop) { IsBackground = true };
+                _thread.Start();
+            }
+
+            private void ListenLoop()
+            {
+                while (_running)
+                {
+                    System.Net.HttpListenerContext ctx = null;
+                    try
+                    {
+                        ctx = _listener.GetContext();
+                    }
+                    catch
+                    {
+                        if (!_running) break;
+                        continue;
+                    }
+
+                    try
+                    {
+                        LastPath = ctx.Request.Url.AbsolutePath ?? "";
+                        using (StreamReader reader = new StreamReader(ctx.Request.InputStream))
+                            LastBody = reader.ReadToEnd();
+                        byte[] bytes = Encoding.UTF8.GetBytes(ResponseBody ?? "");
+                        ctx.Response.StatusCode = Status;
+                        ctx.Response.ContentType = "application/json";
+                        ctx.Response.OutputStream.Write(bytes, 0, bytes.Length);
+                        ctx.Response.Close();
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            public void Dispose()
+            {
+                _running = false;
+                try { _listener.Stop(); } catch { }
+                try { _listener.Close(); } catch { }
+            }
+        }
+
+        /// <summary>
         /// Fake curl.exe for the curl-fallback tests. Behavior is selected by the
         /// FAKE_CURL_MODE env var:
         ///   "ok"           - read the request from the named pipe, emit a short SSE reply
@@ -4010,6 +4567,19 @@ namespace SuperSimpleAgentCLI.Tests
             File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
             File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
             return ws;
+        }
+
+        /// <summary>
+        /// The Jev gate POSTs through the bundled curl.exe, which the CLI looks
+        /// for beside itself. build-tests.bat stages it next to the test EXE;
+        /// a missing copy is a build bug, not a tolerated condition.
+        /// </summary>
+        static void CopyCurlToWorkspace(TempWorkspace ws)
+        {
+            string srcCurl = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "curl.exe");
+            if (!File.Exists(srcCurl))
+                throw new TestFailureException("curl.exe not staged beside the test EXE: " + srcCurl);
+            File.Copy(srcCurl, Path.Combine(ws.Path, "curl.exe"), true);
         }
 
         static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "",

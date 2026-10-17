@@ -114,6 +114,9 @@
     <Compile Include="..\..\SuperSimpleAgentCLI\ToolRegistry.cs">
       <Link>CLI\ToolRegistry.cs</Link>
     </Compile>
+    <Compile Include="..\..\SuperSimpleAgentCLI\JevDecisionClient.cs">
+      <Link>CLI\JevDecisionClient.cs</Link>
+    </Compile>
     <Compile Include="..\..\SuperSimpleAgentCLI\AbortSupport.cs">
       <Link>CLI\AbortSupport.cs</Link>
     </Compile>

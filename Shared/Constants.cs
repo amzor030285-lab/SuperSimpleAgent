@@ -6,8 +6,11 @@ public static class AppConstants
     public const int DefaultChatFontSize = 14;
     public const string DefaultAssistantName = "LLM";
 
-    /// <summary>Tools that ask for manual approval when toolsRequiringApproval is unset.</summary>
-    public const string DefaultToolsRequiringApproval = "run_shell_command,download_file";
+    /// <summary>Tools that ask for manual approval when toolsRequiringApproval is unset.
+    /// run_python_script executes arbitrary code the same way run_shell_command does,
+    /// so it prompts by default too; the Jev gate can auto-answer these prompts when
+    /// jevbaseurl is configured.</summary>
+    public const string DefaultToolsRequiringApproval = "run_shell_command,download_file,run_python_script";
 
     /// <summary>Tool approval mode used when approvalmode is unset: ask, auto or config.</summary>
     public const string DefaultApprovalMode = "config";

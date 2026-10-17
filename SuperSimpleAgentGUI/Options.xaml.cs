@@ -43,8 +43,16 @@ namespace SuperSimpleAgentGUI
         private string _embeddingsEndpoint;
         private string _embeddingsModel;
         private string _embeddingsApiKey;
-        private readonly ProcessHandler _processHandler;
 
+        // Jev decision gate (keys stay in the [Tools] INI section)
+        private string _jevBaseURL;
+        private string _jevModel;
+        private bool _jevConfidenceVisible;
+        private string _jevApiKey;
+        private bool _jevScreenAsk;
+        private bool _jevScreenConfig;
+        private bool _jevScreenAuto;
+        private readonly ProcessHandler _processHandler;
         /// <summary>Theme currently persisted in colors.ini; restored if the dialog is cancelled.</summary>
         private string _savedTheme;
 
@@ -260,6 +268,51 @@ namespace SuperSimpleAgentGUI
         {
             get { return _embeddingsApiKey; }
             set { _embeddingsApiKey = value; OnPropertyChanged(nameof(EmbeddingsApiKey)); }
+        }
+
+        public string JevBaseURL
+        {
+            get { return _jevBaseURL; }
+            set { _jevBaseURL = value; OnPropertyChanged(nameof(JevBaseURL)); }
+        }
+
+        public string JevModel
+        {
+            get { return _jevModel; }
+            set { _jevModel = value; OnPropertyChanged(nameof(JevModel)); }
+        }
+
+        public bool JevConfidenceVisible
+        {
+            get { return _jevConfidenceVisible; }
+            set { _jevConfidenceVisible = value; OnPropertyChanged(nameof(JevConfidenceVisible)); }
+        }
+
+        public string JevApiKey
+        {
+            get { return _jevApiKey; }
+            set { _jevApiKey = value; OnPropertyChanged(nameof(JevApiKey)); }
+        }
+
+        /// <summary>Consult the Jev gate in ask mode (default on).</summary>
+        public bool JevScreenAsk
+        {
+            get { return _jevScreenAsk; }
+            set { _jevScreenAsk = value; OnPropertyChanged(nameof(JevScreenAsk)); }
+        }
+
+        /// <summary>Consult the Jev gate in config mode (default on).</summary>
+        public bool JevScreenConfig
+        {
+            get { return _jevScreenConfig; }
+            set { _jevScreenConfig = value; OnPropertyChanged(nameof(JevScreenConfig)); }
+        }
+
+        /// <summary>Consult the Jev gate in auto mode (default on).</summary>
+        public bool JevScreenAuto
+        {
+            get { return _jevScreenAuto; }
+            set { _jevScreenAuto = value; OnPropertyChanged(nameof(JevScreenAuto)); }
         }
 
         public Options(ProcessHandler processHandler)
@@ -570,9 +623,17 @@ namespace SuperSimpleAgentGUI
             EmbeddingsEndpoint = config.GetConfigValue("embeddingsEndpoint");
             EmbeddingsModel = config.GetConfigValue("embeddingsModel");
             EmbeddingsApiKey = config.GetConfigValue("embeddingsApiKey");
+            JevBaseURL = config.GetConfigValue("jevbaseurl");
+            JevModel = config.GetConfigValue("jevmodel");
+            JevConfidenceVisible = config.GetConfigInt("showjevconfidence", 1) == 1;
+            JevApiKey = config.GetConfigValue("jevapikey");
+            JevScreenAsk = config.GetConfigBool("jevscreenask", true);
+            JevScreenConfig = config.GetConfigBool("jevscreenconfig", true);
+            JevScreenAuto = config.GetConfigBool("jevscreenauto", true);
 
             ApiKeyPasswordBox.Password = ApiKey;
             EmbeddingsApiKeyPasswordBox.Password = EmbeddingsApiKey;
+            JevApiKeyPasswordBox.Password = JevApiKey;
             RagRetrieveModeComboBox.SelectedIndex =
                 string.Equals(RagRetrieveMode, "everyturn", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         }
@@ -639,6 +700,7 @@ namespace SuperSimpleAgentGUI
         {
             ApiKey = ApiKeyPasswordBox.Password;
             EmbeddingsApiKey = EmbeddingsApiKeyPasswordBox.Password;
+            JevApiKey = JevApiKeyPasswordBox.Password;
             RagRetrieveMode = RagRetrieveModeComboBox.SelectedIndex == 1 ? "everyturn" : "newchat";
             SaveThemeSelection();
             SaveIni(App.ConfigFilePath);
@@ -730,6 +792,15 @@ namespace SuperSimpleAgentGUI
                 "toolsrequiringapproval=" + string.Join(",", GetSelectedToolsFromListBox(ToolsRequiringApprovalListBox)),
                 "maxconsecutivefailedtoolcalls=" + MaxConsecutiveFailedToolCalls,
                 "autoguardenabled=" + App.Config.GetConfigInt("autoguardenabled", 1),
+                // The Jev gate is edited on the System page, but its keys are
+                // read by the CLI from the [Tools] section.
+                "jevbaseurl=" + (JevBaseURL ?? string.Empty),
+                "jevmodel=" + (JevModel ?? string.Empty),
+                "jevapikey=" + SecretProtector.Protect(JevApiKey),
+                "showjevconfidence=" + (JevConfidenceVisible ? "1" : "0"),
+                "jevscreenask=" + (JevScreenAsk ? "1" : "0"),
+                "jevscreenconfig=" + (JevScreenConfig ? "1" : "0"),
+                "jevscreenauto=" + (JevScreenAuto ? "1" : "0"),
             };
 
             foreach (var kvp in _toolTimeoutControls)

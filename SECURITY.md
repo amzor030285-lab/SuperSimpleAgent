@@ -61,9 +61,13 @@ machine. The following are **not** vulnerabilities, they are the documented beha
   It is plaintext on disk.
 - The RAG knowledge folder is read and its contents are sent to whatever LLM endpoint is
   configured. Point it only at an endpoint you trust.
+- When `jevbaseurl` is set, the pending tool call (name, arguments, description) and the last
+  few conversation messages are sent to that decision endpoint. Point `jevbaseurl` only at a
+  server you trust, like any LLM endpoint. `jevapikey` is DPAPI-protected like `apikey`.
 - A prompt-injected web page or file can make the model attempt tool calls. That is why
-  `run_shell_command` and `download_file` require approval by default; keep them that way unless
-  you fully trust the content being processed.
+  `run_shell_command`, `download_file` and `run_python_script` require approval by default;
+  keep them that way unless you fully trust the content being processed. With the Jev gate
+  configured, the decision model answers these prompts and only a `confirm` reaches a human.
 
 ## Safety guard (`auto`/`config` modes)
 
@@ -113,6 +117,36 @@ What the guard does **not** do:
 `autoguardenabled` in `LLMSettings.ini` (default `1`) turns the guard off for a session.
 Disabling it does not change what the tools do - model commands run exactly as in plain
 `auto` mode.
+
+## Jev decision gate (where the human approves)
+
+When `jevbaseurl` is set, a small decision model answering the System One
+`/v1/systemone` protocol (Ollama decision models, llama.cpp decision models,
+TypeSafe, compatible bridges) answers the tool-approval question before the human
+does. With the default screen switches it is consulted for **every tool call**
+in `ask`, `config` and `auto` modes (per-mode switches `jevscreenask` /
+`jevscreenconfig` / `jevscreenauto`, default `1`; a switch off restores that
+mode's untouched behaviour). It is a convenience layer, not a security boundary:
+
+- It is **fail-closed**: only an explicit `allow` in the answer runs the call
+  without the human. Unknown choice values, malformed or missing answers, HTTP
+  errors and dead endpoints all fall back to the normal approval prompt. A
+  misconfigured or broken gate can never approve anything on its own - in
+  `auto` mode this turns the call into a human prompt rather than a silent run.
+- It does not answer everywhere: `plan` mode is untouched (calls are refused by
+  the registry allowlist before any process starts), and a tool that is
+  disabled by configuration skips the gate entirely.
+- It never bypasses the safety guard: the guard keeps screening the call
+  classes it always screened (all of `auto`, and the tools outside
+  `toolsrequiringapproval` in `config` mode) even when the gate said `allow`.
+- It is an LLM given the call and recent messages as data: the request instructs it to
+  treat embedded instructions as data, but a prompt-injected tool output could still lead
+  it to answer `allow`. The guard (where active) and the human remain the real gates.
+- The answer's `confidence` is displayed (`[tool auto allowed, confidence 0.97]`,
+  `Jev confidence: 0.30` in the prompt) and never gates the decision; `showjevconfidence`
+  (default `1`) hides it.
+
+## Rule pattern provenance
 
 Rule patterns were adapted from open-source projects: the command/subcommand/flag rule
 schema from [safe-chains](https://github.com/michaeldhopkins/safe-chains) (MIT OR

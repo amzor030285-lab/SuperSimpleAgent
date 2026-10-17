@@ -281,6 +281,18 @@ namespace SuperSimpleAgentCLI
         }
 
         /// <summary>
+        /// Manifest description of a tool, as the model sees it in the schema.
+        /// Fed to the Jev decision gate; empty for unknown tools.
+        /// </summary>
+        public string GetToolDescription(string toolName)
+        {
+            ToolDefinition def;
+            if (!Tools.TryGetValue(toolName, out def))
+                return string.Empty;
+            return def.Description ?? string.Empty;
+        }
+
+        /// <summary>
         /// Calls each package's context injector for packages that have at least
         /// one enabled tool, and returns all non-empty results for injection into the system prompt.
         /// </summary>
