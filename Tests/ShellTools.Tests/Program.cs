@@ -186,6 +186,7 @@ namespace ShellTools.Tests
             }
 
             RunDecoderUnitTests();
+            RunOffloadTests();
         }
 
         // The decoder decides what the agent reads, so it is checked directly on the
@@ -315,6 +316,43 @@ namespace ShellTools.Tests
                 string expected = Encoding.GetEncoding(866).GetString(oemTasklist);
                 TestAssert.Equal(expected, ToolHelper.DecodeProcessOutput(oemTasklist, "auto"),
                     "CP866 console output is not misdetected as CP1251");
+            });
+        }
+
+        // The offload folder gains one file per capped output; the sweep must
+        // delete only files older than the retention window so a file the model
+        // may still be reading survives.
+        static void RunOffloadTests()
+        {
+            TestRunner.Run("offload.purges_stale_files", () =>
+            {
+                string dir = Path.Combine(Path.GetTempPath(), "webtools-offload");
+                Directory.CreateDirectory(dir);
+                string stale = Path.Combine(dir, "purge-test-stale.txt");
+                string fresh = Path.Combine(dir, "purge-test-fresh.txt");
+                File.WriteAllText(stale, "stale", new UTF8Encoding(false));
+                File.WriteAllText(fresh, "fresh", new UTF8Encoding(false));
+                File.SetLastWriteTimeUtc(stale, DateTime.UtcNow.AddDays(-30));
+                File.SetLastWriteTimeUtc(fresh, DateTime.UtcNow);
+                try
+                {
+                    string created = ToolHelper.OffloadToTempFile("purge probe", "purge_test");
+                    TestAssert.True(created != null, "offload file written");
+                    try
+                    {
+                        TestAssert.True(!File.Exists(stale), "stale file deleted");
+                        TestAssert.True(File.Exists(fresh), "recent file kept");
+                    }
+                    finally
+                    {
+                        try { File.Delete(created); } catch { }
+                    }
+                }
+                finally
+                {
+                    try { File.Delete(stale); } catch { }
+                    try { File.Delete(fresh); } catch { }
+                }
             });
         }
 
@@ -464,10 +502,17 @@ namespace ShellTools.Tests
             });
         }
 
+        [System.Runtime.InteropServices.DllImport("kernel32.dll")]
+        static extern uint GetOEMCP();
+
         static void RunCyrillicTests(TempWorkspace ws)
         {
+            // The child cmd.exe has no console, so it encodes its stdout with
+            // the SYSTEM OEM code page, not the current user culture's one: a
+            // Russian user on an English system locale still gets "????" from
+            // echo and cannot be recovered by any decoder.
             Encoding oem;
-            try { oem = Encoding.GetEncoding(CultureInfo.CurrentCulture.TextInfo.OEMCodePage); }
+            try { oem = Encoding.GetEncoding((int)GetOEMCP()); }
             catch { oem = Encoding.UTF8; }
 
             const string probe = "привет";
@@ -477,7 +522,10 @@ namespace ShellTools.Tests
 
             if (!oemHasCyrillic)
             {
-                TestRunner.Skip("OEM code page " + oem.CodePage + " cannot represent Cyrillic");
+                string why = "OEM code page " + oem.CodePage + " cannot represent Cyrillic";
+                TestRunner.Run("cyrillic.echo", () => TestRunner.Skip(why));
+                TestRunner.Run("cyrillic.dir_name", () => TestRunner.Skip(why));
+                TestRunner.Run("cyrillic.stderr_clean", () => TestRunner.Skip(why));
                 return;
             }
 

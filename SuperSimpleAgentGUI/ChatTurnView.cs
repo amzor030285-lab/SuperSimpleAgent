@@ -68,6 +68,7 @@ namespace SuperSimpleAgentGUI
             parent = VisualTreeHelper.GetParent(this);
             while (parent != null && !(parent is ListBoxItem))
                 parent = VisualTreeHelper.GetParent(parent);
+            if (_listBoxItem != null) _listBoxItem.SizeChanged -= OnListItemSizeChanged;
             _listBoxItem = parent as ListBoxItem;
             if (_listBoxItem != null)
                 _listBoxItem.SizeChanged += OnListItemSizeChanged;

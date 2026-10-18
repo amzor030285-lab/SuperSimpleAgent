@@ -143,6 +143,8 @@ Tool-specific configuration options for the included tools are available in the 
 
 **CLI**: To run the CLI in interactive/REPL mode, open `SuperSimpleAgentCLI.exe` directly or from a terminal.
 
+The input line supports shell-style editing: arrow keys, `Home`/`End`, `Delete` and `Backspace`, `Tab` completing the leading `/command` word (repeat it to cycle through the matches), and `Up`/`Down` walking the input history. An unknown `/...` word prints a hint pointing at `/help` instead of being sent to the model.
+
 Interactive mode provides the following commands:
 
 -   `/approval [ask|auto|config|plan]`: Gets or sets the tool approval mode
@@ -153,6 +155,7 @@ Interactive mode provides the following commands:
 -   `/compactfull`: Full compaction (micro-compaction plus summarization of the old conversation)
 -   `/delete name`: Deletes a saved session
 -   `/exit`: Exits the application
+-   `/help`: Repeats the command list on screen
 -   `/image`: Sends an image to the model alongside the next message, used as `/image "path" prompt`
 -   `/load keyword`: Loads a saved session
 -   `/plan [on|off]`: Shortcut for read-only plan mode (`/plan` alone reports the current state)

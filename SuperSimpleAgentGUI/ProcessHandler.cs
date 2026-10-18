@@ -105,6 +105,10 @@ namespace SuperSimpleAgentGUI
             catch (Exception ex)
             {
                 ErrorOccurred?.Invoke("Failed to start process: " + ex.Message);
+                // Start() may have succeeded before a later step threw: release
+                // the child, writer and pipe instead of leaving them until the
+                // next restart.
+                Dispose();
                 return false;
             }
         }
@@ -522,14 +526,17 @@ namespace SuperSimpleAgentGUI
             StatusReceived = null;
             RunningToolReceived = null;
             ReadyReceived = null;
-            if (llmProcess != null && !llmProcess.HasExited)
-            {
-                try { llmProcess.Kill(); }
-                catch { }
-            }
             if (llmProcess != null)
             {
-                llmProcess.Dispose();
+                // HasExited on a Process whose Start() never ran raises instead
+                // of returning false, so the whole teardown stays guarded.
+                try
+                {
+                    if (!llmProcess.HasExited)
+                        llmProcess.Kill();
+                }
+                catch { }
+                try { llmProcess.Dispose(); } catch { }
                 llmProcess = null;
             }
         }

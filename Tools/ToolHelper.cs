@@ -319,6 +319,11 @@ public static class ToolHelper
                 }
                 outThread.Join(PipeCloseJoinTimeoutMs);
                 errThread.Join(PipeCloseJoinTimeoutMs);
+                // Process.Dispose does not close redirected streams on .NET
+                // Framework: without this every spawn leaks two pipe handles
+                // until finalization.
+                try { process.StandardOutput.Close(); } catch { }
+                try { process.StandardError.Close(); } catch { }
 
                 output.StandardTotal = outTotal;
                 output.ErrorTotal = errTotal;
@@ -434,30 +439,59 @@ public static class ToolHelper
     private const int ProcessOutputTailChars = 6000;
     private const int ProcessOutputReadCeilingChars = 2000000;
 
+    /// <summary>Age after which stale webtools-offload files are purged.</summary>
+    private const int OffloadRetentionDays = 7;
+
     /// <summary>
     /// Saves the full uncapped output to %TEMP%\webtools-offload so the model
     /// can read it in parts via read_file with offset. Returns the file path,
     /// or null when writing failed.
     /// </summary>
-    public static string OffloadToTempFile(string text, string toolName)
-    {
-        if (string.IsNullOrEmpty(text))
-            return null;
-        try
+        public static string OffloadToTempFile(string text, string toolName)
         {
-            string dir = Path.Combine(Path.GetTempPath(), "webtools-offload");
-            Directory.CreateDirectory(dir);
-            string name = SafeFileToken(toolName) + "-" + Process.GetCurrentProcess().Id + "-"
-                + DateTime.Now.ToString("HHmmssfff") + ".txt";
-            string file = Path.Combine(dir, name);
-            File.WriteAllText(file, text, Encoding.UTF8);
-            return file;
+            if (string.IsNullOrEmpty(text))
+                return null;
+            try
+            {
+                string dir = Path.Combine(Path.GetTempPath(), "webtools-offload");
+                Directory.CreateDirectory(dir);
+                PurgeStaleOffloadFiles(dir);
+                int pid;
+                using (Process self = Process.GetCurrentProcess())
+                    pid = self.Id;
+                string name = SafeFileToken(toolName) + "-" + pid + "-"
+                    + DateTime.Now.ToString("HHmmssfff") + ".txt";
+                string file = Path.Combine(dir, name);
+                File.WriteAllText(file, text, Encoding.UTF8);
+                return file;
+            }
+            catch
+            {
+                return null;
+            }
         }
-        catch
+
+        /// <summary>
+        /// Deletes offload files older than the retention window so the folder
+        /// cannot grow without bound. Recent files survive: the model may still
+        /// be reading them through read_file.
+        /// </summary>
+        private static void PurgeStaleOffloadFiles(string dir)
         {
-            return null;
+            DateTime cutoff = DateTime.UtcNow.AddDays(-OffloadRetentionDays);
+            string[] files;
+            try { files = Directory.GetFiles(dir); }
+            catch { return; }
+            foreach (string f in files)
+            {
+                try
+                {
+                    if (File.GetLastWriteTimeUtc(f) < cutoff)
+                        File.Delete(f);
+                }
+                catch { }
+            }
         }
-    }
 
     private static string SafeFileToken(string name)
     {

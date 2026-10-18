@@ -88,7 +88,11 @@ namespace SuperSimpleAgentCLI
                         Console.Out.Flush();
                         if (text.Length > 0
                             && (History.Count == 0 || History[History.Count - 1] != text))
+                        {
                             History.Add(text);
+                            if (History.Count > 500)
+                                History.RemoveAt(0);
+                        }
                         return text;
 
                     case ConsoleKey.Backspace:

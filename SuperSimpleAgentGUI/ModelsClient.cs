@@ -178,7 +178,8 @@ namespace SuperSimpleAgentGUI
 
             try
             {
-                using (Stream stream = webEx.Response.GetResponseStream())
+                using (WebResponse response = webEx.Response)
+                using (Stream stream = response.GetResponseStream())
                 {
                     if (stream == null)
                         return null;

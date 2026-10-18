@@ -260,11 +260,11 @@ namespace SearchTools
                 return NotRunningMessage(url, NativeError(ex));
             }
 
-            HttpWebResponse response = ex.Response as HttpWebResponse;
-            if (response != null)
+            using (HttpWebResponse response = ex.Response as HttpWebResponse)
             {
-                return "error: the Everything HTTP server at " + url + " answered with HTTP "
-                    + (int)response.StatusCode + " " + response.StatusDescription + ".";
+                if (response != null)
+                    return "error: the Everything HTTP server at " + url + " answered with HTTP "
+                        + (int)response.StatusCode + " " + response.StatusDescription + ".";
             }
 
             return "error: the request to the Everything HTTP server at " + url + " failed ("

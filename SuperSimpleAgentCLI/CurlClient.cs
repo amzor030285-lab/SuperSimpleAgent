@@ -259,6 +259,13 @@ namespace SuperSimpleAgentCLI
                     {
                         consume(process);
                     }
+                    catch
+                    {
+                        // A throwing read leaves the watchdog disarmed; kill the
+                        // child so a half-read stream cannot orphan curl.exe.
+                        try { if (!process.HasExited) process.Kill(); } catch { }
+                        throw;
+                    }
                     finally
                     {
                         Interlocked.Exchange(ref finished, 1);

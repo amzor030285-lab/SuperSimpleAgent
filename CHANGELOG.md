@@ -6,7 +6,7 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.1.0] - 2026-10-18
 
 ### Added
 
@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Consecutive failed tool call limit** - New `maxconsecutivefailedtoolcalls` setting (default `10`, `0` = off): a turn is halted with `[Stopped: N consecutive tool calls failed]` when N tool calls in a row return a non-zero exit code; any success resets the streak, and calls that did not run (disabled or cancelled) do not count. Editable in `Options` -> `Tools`.
 - **cURL POST body via named pipe** - `PostJson` (the Firecrawl search and scrape paths) now writes the JSON body to a named pipe and tells curl to read it with `--data-binary "@\.\pipe\..."` instead of quoting it inline on the command line, so bodies with quotes, backslashes, ampersands or unusual length can no longer be mangled by the shell.
 - **Jev tool-approval decision gate** - Ported from the upstream author's `Auto Tool Approval (Jev)`. When `jevbaseurl` points at a System One decision endpoint (`/v1/systemone` - e.g. Ollama ≥ 0.35.0 with `ollama pull nimble`, or a llama.cpp decision model such as Kev-4B), a small decision model answers the tool-approval question before the human does for **every tool call** in `ask`, `config` and `auto` modes: an explicit `allow` runs the call without prompting (`[tool auto allowed, confidence 0.97]`), anything else - a `confirm`, an unknown choice, a malformed answer, a dead endpoint - falls back to the normal approval prompt with the gate's confidence shown (`Jev confidence: 0.30`). Screening is per-mode switchable (new INI keys `jevscreenask` / `jevscreenconfig` / `jevscreenauto`, all default `1`, off doesn't consult the gate in that mode); in `config` mode with the switch on, calls outside `toolsrequiringapproval` are gated too instead of running untouched. The gate never answers in `plan` mode, never screens a disabled tool call, never bypasses the safety guard (the guard keeps screening the calls it always screened), and is completely off until `jevbaseurl` is set. Additional INI keys: `jevbaseurl`, `jevmodel`, `jevapikey` (DPAPI-protected), `showjevconfidence` (default `1`). Tool arguments and recent messages are sent to the endpoint as untrusted data; see `SECURITY.md`. All of it is edited on `Options` -> `System`, including the three mode switches.
+
+- **Interactive CLI input** - The CLI's interactive prompt now edits the input line in place instead of a plain `Console.ReadLine()`: arrow keys, `Home`/`End`, `Delete` and `Backspace` move and edit the cursor, `Tab` completes the leading `/command` word (repeating `Tab` cycles through the candidates), and `Up`/`Down` walk the input history (the last 500 entries). A new `/help` command repeats the grouped command list on demand, and an unknown `/...` word is answered with `Unknown command ... /help shows the command list` instead of being sent to the model as chat text.
 
 ### Changed
 
@@ -25,6 +27,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Temp offload files now age out** - outputs too large for a tool result are saved to `%TEMP%\webtools-offload` so the model can read them in parts; the folder now purges files older than 7 days on every write instead of growing without bound.
+- **Orphaned tool processes and leaked handles** - a tool process whose stdout reader fails mid-stream is now killed instead of left running, the per-tool kernel job handle is released even when writing tool stdin fails, redirected pipe handles from `Tools\ToolHelper` are closed on every path, a context provider hung while assembling the request can be interrupted with Stop, and the GUI releases a child CLI that failed during startup.
 - **False API errors in streamed replies** - A streamed response whose text merely contained the word "error" (e.g. `{"choices":[...,"content":"error",...]}`) was misreported as `[API Error]`, because the parser looked for the raw substring `"error"` in the JSON. The parser now parses the event first and only a real `error` member counts as an API error.
 - **write_file stripped surrounding whitespace** - `write_file` trimmed leading and trailing whitespace from `content`, corrupting files that rely on leading blank lines or trailing newlines; the content is now written exactly as given.
 

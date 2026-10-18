@@ -390,7 +390,24 @@ namespace SuperSimpleAgentCLI
                         // the read is not collected mid-flight, and its output is
                         // discarded.
                         var stderrDrain = Task.Factory.StartNew(() => process.StandardError.ReadToEnd());
-                        process.WaitForExit();
+
+                        // Poll so a STOP can kill a hung provider; there is no
+                        // deadline because a provider may legitimately outlive
+                        // the request being assembled.
+                        AbortSupport.RegisterToolProcess(process, job);
+                        while (!process.HasExited
+                            && !AbortSupport.ToolAbortRequested
+                            && !AbortSupport.AbortRequested)
+                        {
+                            process.WaitForExit(200);
+                        }
+
+                        if (!process.HasExited)
+                        {
+                            ProcessJob.KillJobTree(job);
+                            try { process.Kill(); } catch { }
+                            return null;
+                        }
 
                         string raw = stdoutTask.Result;
                         string text;
@@ -401,6 +418,7 @@ namespace SuperSimpleAgentCLI
                     }
                     finally
                     {
+                        AbortSupport.UnregisterToolProcess();
                         ProcessJob.CloseJob(job);
                     }
                 }
@@ -570,22 +588,23 @@ namespace SuperSimpleAgentCLI
                     // cancel/timeout kills the whole tree (cmd, curl, 7za,
                     // python), not just the tool process itself.
                     job = ProcessJob.CreateToolJob();
-                    ProcessJob.AssignToJob(job, process.Id);
-
-                    // Write arguments via stdin
-                    process.StandardInput.Write(stdinData);
-                    process.StandardInput.Close();
-
-                    // Read stdout/stderr asynchronously to avoid deadlock
-                    var stdoutTask = Task.Factory.StartNew(() => process.StandardOutput.ReadToEnd());
-                    var stderrTask = Task.Factory.StartNew(() => process.StandardError.ReadToEnd());
-
-                    // Poll instead of blocking so the GUI's STOPTOOL (control pipe)
-                    // can interrupt a hung tool; the deadline enforces the per-tool
-                    // timeout when one is configured.
-                    AbortSupport.RegisterToolProcess(process, job);
                     try
                     {
+                        ProcessJob.AssignToJob(job, process.Id);
+
+                        // Write arguments via stdin
+                        process.StandardInput.Write(stdinData);
+                        process.StandardInput.Close();
+
+                        // Read stdout/stderr asynchronously to avoid deadlock
+                        var stdoutTask = Task.Factory.StartNew(() => process.StandardOutput.ReadToEnd());
+                        var stderrTask = Task.Factory.StartNew(() => process.StandardError.ReadToEnd());
+
+                        // Poll instead of blocking so the GUI's STOPTOOL (control pipe)
+                        // can interrupt a hung tool; the deadline enforces the per-tool
+                        // timeout when one is configured.
+                        AbortSupport.RegisterToolProcess(process, job);
+
                         DateTime deadline = timeoutMs > 0
                             ? DateTime.UtcNow.AddMilliseconds(timeoutMs)
                             : DateTime.MaxValue;
