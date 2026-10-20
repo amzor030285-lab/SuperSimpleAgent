@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **False API errors in streamed replies** - A streamed response whose text merely contained the word "error" (e.g. `{"choices":[...,"content":"error",...]}`) was misreported as `[API Error]`, because the parser looked for the raw substring `"error"` in the JSON. The parser now parses the event first and only a real `error` member counts as an API error.
 - **write_file stripped surrounding whitespace** - `write_file` trimmed leading and trailing whitespace from `content`, corrupting files that rely on leading blank lines or trailing newlines; the content is now written exactly as given.
 
+- **Clock icon in the Scheduled button on Windows XP** - the button's content was the U+23F0 emoji clock, and XP ships no font containing that glyph, so the button came up empty unless an emoji font was installed; the clock is now drawn as vector geometry and renders on every Windows version without a font dependency.
+
 ## [2.0.0] - 2026-10-13
 
 ### Changed

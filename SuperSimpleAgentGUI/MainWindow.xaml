@@ -155,13 +155,32 @@
 
                 <Button Name="scheduledButton"
                         AutomationProperties.AutomationId="scheduledButton"
-                        Content="&#x23F0;"
+                        AutomationProperties.Name="Manage scheduled tasks"
                         MinWidth="40"
                         MinHeight="25"
                         Margin="0,0,5,0"
                         VerticalAlignment="Center"
                         ToolTip="Manage scheduled tasks"
-                        Click="scheduledButton_Click" />
+                        Click="scheduledButton_Click">
+                    <!-- Vector clock instead of the U+23F0 emoji clock: XP ships
+                         no font with that glyph, so the button was empty unless
+                         an emoji font was installed. -->
+                    <Button.Content>
+                        <Viewbox Width="15" Height="15" Stretch="Uniform">
+                            <Canvas Width="16" Height="16">
+                                <Ellipse Canvas.Left="1.5" Canvas.Top="1.5"
+                                         Width="13" Height="13"
+                                         Stroke="{DynamicResource ButtonTextColorBrush}"
+                                         StrokeThickness="1.5" />
+                                <Path Data="M 8,4.5 L 8,8 L 10.6,9.3"
+                                      Stroke="{DynamicResource ButtonTextColorBrush}"
+                                      StrokeThickness="1.5"
+                                      StrokeStartLineCap="Round"
+                                      StrokeEndLineCap="Round" />
+                            </Canvas>
+                        </Viewbox>
+                    </Button.Content>
+                </Button>
 
                 <Button Name="optionsButton"
                         AutomationProperties.AutomationId="optionsButton"

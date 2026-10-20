@@ -139,7 +139,7 @@ Tool-specific configuration options for the included tools are available in the 
 -   To clear the chat, press `Clear Chat`.
 -   To send a message, type it into the input box and press `Enter` or `Send`. To create multi-line messages, press `Shift+Enter`.
 -   The button in the bottom-left corner cycles the tool approval mode (`ask` -> `auto` -> `config` -> `plan`); the compaction button in the header runs a full compaction (equivalent to `/compactfull`).
--   To manage scheduled tasks, press the clock icon (`⏰`) in the header. Add a task by choosing a name, a schedule and a prompt. The schedule is picked with a small builder rather than typed in: one-shot (`at`, either "after N" or an exact local date/time), recurring (`every N`), or cron (daily / weekdays / weekly / monthly presets, or a custom 5-field expression). It validates as you type and shows the exact expression plus the next run time before you can add. Then enable/disable, remove, or inspect a task's next run, last status and recent runs.
+-   To manage scheduled tasks, press the clock icon in the header. Add a task by choosing a name, a schedule and a prompt. The schedule is picked with a small builder rather than typed in: one-shot (`at`, either "after N" or an exact local date/time), recurring (`every N`), or cron (daily / weekdays / weekly / monthly presets, or a custom 5-field expression). It validates as you type and shows the exact expression plus the next run time before you can add. Then enable/disable, remove, or inspect a task's next run, last status and recent runs.
 
 **CLI**: To run the CLI in interactive/REPL mode, open `SuperSimpleAgentCLI.exe` directly or from a terminal.
 
