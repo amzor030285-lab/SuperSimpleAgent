@@ -34,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Clock icon in the Scheduled button on Windows XP** - the button's content was the U+23F0 emoji clock, and XP ships no font containing that glyph, so the button came up empty unless an emoji font was installed; the clock is now drawn as vector geometry and renders on every Windows version without a font dependency.
 
+- **Attach-image button icon** - the image-attach button used a raster PNG icon that did not match the rest of the header and kept its colour in both themes; it is now drawn as vector geometry in the same style as the scheduled-tasks clock and takes the button's text colour, so it follows the light and dark theme.
+
 ## [2.0.0] - 2026-10-13
 
 ### Changed
