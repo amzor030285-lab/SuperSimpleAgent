@@ -27,18 +27,6 @@ namespace SuperSimpleAgentGUI
         public string EmbeddingsEndpoint { get; set; }
         public string EmbeddingsApiKey { get; set; }
         public string EmbeddingsModel { get; set; }
-
-        public LlmPreset()
-        {
-            Name = string.Empty;
-            ServerUrl = string.Empty;
-            ApiKey = string.Empty;
-            ChatPath = string.Empty;
-            Model = string.Empty;
-            EmbeddingsEndpoint = string.Empty;
-            EmbeddingsApiKey = string.Empty;
-            EmbeddingsModel = string.Empty;
-        }
     }
 
     /// <summary>

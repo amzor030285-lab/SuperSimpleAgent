@@ -17,7 +17,8 @@ namespace SuperSimpleAgentGUI
                 new RequestBringIntoViewEventHandler(SuppressBringIntoView));
         }
 
-        private void SuppressBringIntoView(object sender, RequestBringIntoViewEventArgs e)
+        /// <summary>Swallows the bring-into-view request both no-scroll hosts use.</summary>
+        internal static void SuppressBringIntoView(object sender, RequestBringIntoViewEventArgs e)
         {
             e.Handled = true;
         }

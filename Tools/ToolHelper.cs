@@ -101,7 +101,7 @@ public static class ToolHelper
     }
 
     /// <summary>Serialize a tool result as the JSON-first stdout protocol.</summary>
-    public static string FormatResultJson(ToolResult result)
+    private static string FormatResultJson(ToolResult result)
     {
         var obj = new JObject();
         obj["text"] = result.Output ?? "";
@@ -173,8 +173,9 @@ public static class ToolHelper
         }
         if (key.Equals("utf-8", StringComparison.OrdinalIgnoreCase) || key.Equals("utf8", StringComparison.OrdinalIgnoreCase))
             return Encoding.UTF8;
-        try { return Encoding.GetEncoding(key); }
-        catch { return Encoding.UTF8; }
+
+        Encoding named = EncodingByName(key);
+        return named ?? Encoding.UTF8;
     }
 
     public static string GetConfiguredOutputEncodingName()
@@ -434,7 +435,7 @@ public static class ToolHelper
     // the context window on its own. Head and tail are kept; the middle is
     // replaced by a marker, and the full output is offloaded to a temp file
     // the model can read in parts with read_file (offset).
-    public const int MaxProcessOutputChars = 20000;
+    private const int MaxProcessOutputChars = 20000;
     private const int ProcessOutputHeadChars = 12000;
     private const int ProcessOutputTailChars = 6000;
     private const int ProcessOutputReadCeilingChars = 2000000;
@@ -570,6 +571,25 @@ public static class ToolHelper
         return enc.GetString(bytes, start, bytes.Length - start);
     }
 
+    /// <summary>
+    /// Case-insensitive property lookup: the exact key first, then a
+    /// case-insensitive scan of the properties.
+    /// </summary>
+    private static JToken FindProperty(JObject obj, string key)
+    {
+        JToken token;
+        if (obj.TryGetValue(key, out token))
+            return token;
+
+        foreach (JProperty property in obj.Properties())
+        {
+            if (string.Equals(property.Name, key, StringComparison.OrdinalIgnoreCase))
+                return property.Value;
+        }
+
+        return null;
+    }
+
     public static string JsonExtractString(string json, string key)
     {
         if (string.IsNullOrEmpty(json) || string.IsNullOrEmpty(key))
@@ -588,20 +608,7 @@ public static class ToolHelper
             JToken root = JToken.Parse(trimmedJson);
             if (root.Type == JTokenType.Object)
             {
-                JObject obj = (JObject)root;
-                JToken token;
-                if (!obj.TryGetValue(key, out token))
-                {
-                    foreach (JProperty property in obj.Properties())
-                    {
-                        if (string.Equals(property.Name, key, StringComparison.OrdinalIgnoreCase))
-                        {
-                            token = property.Value;
-                            break;
-                        }
-                    }
-                }
-
+                JToken token = FindProperty((JObject)root, key);
                 if (token != null && token.Type != JTokenType.Null)
                 {
                     return token.Type == JTokenType.String ? token.Value<string>() ?? "" : token.ToString();
@@ -626,21 +633,7 @@ public static class ToolHelper
             if (root.Type != JTokenType.Object)
                 return null;
 
-            JObject obj = (JObject)root;
-            JToken token;
-            if (!obj.TryGetValue(key, out token))
-            {
-                foreach (JProperty property in obj.Properties())
-                {
-                    if (string.Equals(property.Name, key, StringComparison.OrdinalIgnoreCase))
-                    {
-                        token = property.Value;
-                        break;
-                    }
-                }
-            }
-
-            return token as JArray;
+            return FindProperty((JObject)root, key) as JArray;
         }
         catch
         {

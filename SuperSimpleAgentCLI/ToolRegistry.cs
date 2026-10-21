@@ -576,9 +576,7 @@ namespace SuperSimpleAgentCLI
                 ProcessStartInfo psi = BuildToolProcessInfo(def.ExecutablePath, toolName);
 
                 // Determine per-tool timeout from config (key: tooltimeout.<toolname>)
-                string timeoutVal = config.GetConfigValue("tooltimeout." + toolName.ToLowerInvariant());
-                int timeoutSecs = 0;
-                int.TryParse(timeoutVal, out timeoutSecs);
+                int timeoutSecs = config.GetConfigInt("tooltimeout." + toolName.ToLowerInvariant(), 0);
                 int timeoutMs = timeoutSecs > 0 ? timeoutSecs * 1000 : 0;
 
                 IntPtr job = IntPtr.Zero;

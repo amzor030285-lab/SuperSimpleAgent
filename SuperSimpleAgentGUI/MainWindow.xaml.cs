@@ -5,7 +5,6 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -21,7 +20,7 @@ namespace SuperSimpleAgentGUI
         private string _reasoningEffort = "";
 
         private string _approvalMode = AppConstants.DefaultApprovalMode;
-        private TokenTracker tokenTracker;
+        private int _tokenCount;
         private ContextMenu reasoningEffortMenu;
         private bool _isGenerating;
         private DateTime _generationStartTime = DateTime.MinValue;
@@ -131,7 +130,7 @@ namespace SuperSimpleAgentGUI
                 _approvalMode = normalizedApprovalMode;
             UpdateApprovalModeButton();
             BuildReasoningEffortMenu();
-            tokenTracker = new TokenTracker(tokenStatusText);
+            UpdateTokenStatus();
 
             // Gate send until the CLI is up; leave input/attach usable meanwhile.
             sendButton.IsEnabled = false;
@@ -243,7 +242,8 @@ namespace SuperSimpleAgentGUI
             processHandler.RunningToolReceived += OnRunningToolReceived;
             processHandler.ReadyReceived += OnReadyReceived;
 
-            tokenTracker.Reset();
+            _tokenCount = 0;
+            UpdateTokenStatus();
 
             // Start the process
             string cliPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "SuperSimpleAgentCLI.exe");
@@ -274,7 +274,21 @@ namespace SuperSimpleAgentGUI
 
         private void OnStatusReceived(int tokens)
         {
-            OnUiBackground(() => tokenTracker.SetTokens(tokens));
+            OnUiBackground(() =>
+            {
+                _tokenCount = tokens < 0 ? 0 : tokens;
+                UpdateTokenStatus();
+            });
+        }
+
+        private void UpdateTokenStatus()
+        {
+            int contextWindowSize = App.Config != null
+                ? App.Config.GetConfigInt("contextWindowSize", 0)
+                : 0;
+
+            int? max = contextWindowSize > 0 ? (int?)contextWindowSize : null;
+            tokenStatusText.Text = TokenEstimator.FormatStatus(_tokenCount, max);
         }
 
         private void OnRunningToolReceived(string toolName)
@@ -528,8 +542,8 @@ namespace SuperSimpleAgentGUI
             FontSize = fontSize;
             ChatTurnItemMargin = new Thickness(0, 0, 0,
                 Math.Max(ChatTurnGapMin, Math.Min(ChatTurnGapMax, fontSize + 2)));
-            FontHandler.ApplyFontSizeToControl(chatList, fontSize);
-            FontHandler.ApplyFontSizeToControl(chatInput, fontSize);
+            chatList.FontSize = fontSize;
+            chatInput.FontSize = fontSize;
             foreach (ChatTurn turn in _chatTurns)
                 turn.ApplyFontSize(fontSize);
             for (int i = 0; i < chatList.Items.Count; i++)
@@ -537,21 +551,21 @@ namespace SuperSimpleAgentGUI
                 DependencyObject container = chatList.ItemContainerGenerator.ContainerFromIndex(i);
                 if (container == null)
                     continue;
-                ChatTurnView view = FindVisualChild(container);
+                ChatTurnView view = FindVisualChild<ChatTurnView>(container);
                 if (view != null)
                     view.ApplyFontSize(fontSize);
             }
         }
 
-        private static ChatTurnView FindVisualChild(DependencyObject root)
+        private static T FindVisualChild<T>(DependencyObject root) where T : class
         {
-            ChatTurnView view = root as ChatTurnView;
-            if (view != null)
-                return view;
+            T match = root as T;
+            if (match != null)
+                return match;
 
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
             {
-                ChatTurnView found = FindVisualChild(VisualTreeHelper.GetChild(root, i));
+                T found = FindVisualChild<T>(VisualTreeHelper.GetChild(root, i));
                 if (found != null)
                     return found;
             }
@@ -598,7 +612,7 @@ namespace SuperSimpleAgentGUI
             if (_chatTurns.Count == 0)
                 return;
 
-            ScrollViewer scrollViewer = FindScrollViewer(chatList);
+            ScrollViewer scrollViewer = FindVisualChild<ScrollViewer>(chatList);
             if (scrollViewer == null)
                 return;
 
@@ -652,20 +666,6 @@ namespace SuperSimpleAgentGUI
 
             for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
                 ClearChatSelection(VisualTreeHelper.GetChild(root, i));
-        }
-
-        private static ScrollViewer FindScrollViewer(DependencyObject root)
-        {
-            if (root is ScrollViewer viewer)
-                return viewer;
-
-            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-            {
-                ScrollViewer child = FindScrollViewer(VisualTreeHelper.GetChild(root, i));
-                if (child != null)
-                    return child;
-            }
-            return null;
         }
 
         private void LoadAndApplyColors()
@@ -735,11 +735,14 @@ namespace SuperSimpleAgentGUI
         {
             // Only used when generation is not running (startup, restart, failure paths).
             if (enabled)
+            {
                 ExitGeneratingMode();
+                return;
+            }
 
-            attachButton.IsEnabled = enabled;
-            chatInput.IsEnabled = enabled;
-            sendButton.IsEnabled = enabled;
+            attachButton.IsEnabled = false;
+            chatInput.IsEnabled = false;
+            sendButton.IsEnabled = false;
         }
 
         /// <summary>
@@ -1194,7 +1197,7 @@ namespace SuperSimpleAgentGUI
                 LoadAndApplyColors();
                 if (processHandler != null)
                     processHandler.SetAssistantName(GetAssistantName());
-                tokenTracker.Refresh();
+                UpdateTokenStatus();
 
                 if (processHandler != null && processHandler.IsProcessRunning)
                     processHandler.SendReload();

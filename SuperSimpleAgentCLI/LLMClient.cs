@@ -689,6 +689,23 @@ public class LLMClient
     private const int MaxMessageChars = 20000;
 
     /// <summary>
+    /// Clips the middle of <paramref name="text"/> when it exceeds
+    /// <paramref name="maxChars"/>: head and tail kept, middle replaced by a
+    /// marker. <paramref name="note"/> is appended to the marker text.
+    /// </summary>
+    private static string ClipMiddle(string text, int maxChars, string note)
+    {
+        if (text.Length <= maxChars)
+            return text;
+
+        int head = maxChars * 2 / 3;
+        int tail = maxChars / 3;
+        return text.Substring(0, head)
+            + "\n[... " + (text.Length - head - tail) + " characters omitted" + note + "]\n"
+            + text.Substring(text.Length - tail);
+    }
+
+    /// <summary>
     /// Caps every message whose content exceeds the per-message budget (head and
     /// tail kept, middle replaced by a marker). The budget is ~60% of the context
     /// window when one is configured, otherwise the absolute MaxMessageChars.
@@ -702,8 +719,6 @@ public class LLMClient
         if (budget < 8000)
             budget = 8000;
 
-        int headChars = budget * 2 / 3;
-        int tailChars = budget / 3;
         int capped = 0;
 
         for (int i = 0; i < conversation.Count; i++)
@@ -712,12 +727,8 @@ public class LLMClient
             if (message.Content == null || message.Content.Length <= budget)
                 continue;
 
-            string head = message.Content.Substring(0, headChars);
-            string tail = message.Content.Substring(message.Content.Length - tailChars);
-            int omitted = message.Content.Length - headChars - tailChars;
-            message.Content = head
-                + "\n[... " + omitted + " characters omitted: message exceeded the " + budget + " character budget ...]\n"
-                + tail;
+            message.Content = ClipMiddle(message.Content, budget,
+                ": message exceeded the " + budget + " character budget ...");
             conversation[i] = message;
             capped++;
         }
@@ -1137,6 +1148,26 @@ public class LLMClient
     }
 
     /// <summary>
+    /// Characters a message occupies: its content plus the name and arguments of
+    /// its tool calls (excludes base overhead and echoed reasoning).
+    /// </summary>
+    private static int CountMessageChars(ChatMessage message)
+    {
+        int count = message.Content != null ? message.Content.Length : 0;
+
+        if (message.ToolCalls != null)
+        {
+            for (int i = 0; i < message.ToolCalls.Count; i++)
+            {
+                count += (message.ToolCalls[i].Name != null ? message.ToolCalls[i].Name.Length : 0)
+                     + (message.ToolCalls[i].Arguments != null ? message.ToolCalls[i].Arguments.Length : 0);
+            }
+        }
+
+        return count;
+    }
+
+    /// <summary>
     /// Sum of message content and tool-call name/arguments (excludes base overhead).
     /// </summary>
     public static int GetConversationCharacterCount(List<ChatMessage> conversation)
@@ -1147,25 +1178,13 @@ public class LLMClient
 
         foreach (var msg in conversation)
         {
-            if (!string.IsNullOrEmpty(msg.Content))
-                count += msg.Content.Length;
+            count += CountMessageChars(msg);
 
             // Echoed reasoning is sent to the model, so it occupies context just like
             // the answer does. Leaving it out would under-report usage and let the
             // compaction ladder run past the real window.
             if (!string.IsNullOrEmpty(msg.ReasoningContent))
                 count += msg.ReasoningContent.Length;
-
-            if (msg.ToolCalls != null)
-            {
-                foreach (var toolCall in msg.ToolCalls)
-                {
-                    if (!string.IsNullOrEmpty(toolCall.Name))
-                        count += toolCall.Name.Length;
-                    if (!string.IsNullOrEmpty(toolCall.Arguments))
-                        count += toolCall.Arguments.Length;
-                }
-            }
         }
 
         return count;
@@ -1238,21 +1257,16 @@ public class LLMClient
             ["content"] = systemPrompt
         });
 
-        foreach (var msg in conversation)
-            messages.Add(BuildMessageObject(msg));
-
         // Some servers (LM Studio's Jinja templates) reject a payload with no
         // "user" role at all; guarantee one so restored or pathological
         // histories still send.
         bool hasUserMessage = false;
-        foreach (JToken token in messages)
+        foreach (var msg in conversation)
         {
-            JObject msg = token as JObject;
-            if (msg != null && (string)msg["role"] == "user")
-            {
+            JObject built = BuildMessageObject(msg);
+            if ((string)built["role"] == "user")
                 hasUserMessage = true;
-                break;
-            }
+            messages.Add(built);
         }
         if (!hasUserMessage)
         {
@@ -1359,15 +1373,7 @@ public class LLMClient
             if (m.Content != null
                 && m.Content.StartsWith(SessionStore.SummaryMarker, StringComparison.Ordinal))
                 continue;
-            count += (m.Content != null ? m.Content.Length : 0);
-            if (m.ToolCalls != null)
-            {
-                for (int j = 0; j < m.ToolCalls.Count; j++)
-                {
-                    count += (m.ToolCalls[j].Name != null ? m.ToolCalls[j].Name.Length : 0)
-                         + (m.ToolCalls[j].Arguments != null ? m.ToolCalls[j].Arguments.Length : 0);
-                }
-            }
+            count += CountMessageChars(m);
         }
         return count;
     }
@@ -1390,15 +1396,7 @@ public class LLMClient
         for (int i = conversation.Count - 1; i >= 0; i--)
         {
             ChatMessage m = conversation[i];
-            chars += (m.Content != null ? m.Content.Length : 0);
-            if (m.ToolCalls != null)
-            {
-                for (int j = 0; j < m.ToolCalls.Count; j++)
-                {
-                    chars += (m.ToolCalls[j].Name != null ? m.ToolCalls[j].Name.Length : 0)
-                         + (m.ToolCalls[j].Arguments != null ? m.ToolCalls[j].Arguments.Length : 0);
-                }
-            }
+            chars += CountMessageChars(m);
             split = i;
             if (chars >= keepChars)
                 break;
@@ -1457,18 +1455,7 @@ public class LLMClient
     /// </summary>
     private static void AppendClipped(StringBuilder sb, string text, int maxChars)
     {
-        if (text.Length <= maxChars)
-        {
-            sb.Append(text);
-            return;
-        }
-        int head = maxChars * 2 / 3;
-        int tail = maxChars / 3;
-        sb.Append(text.Substring(0, head))
-          .Append("\n[... ")
-          .Append(text.Length - head - tail)
-          .Append(" characters omitted ...]\n")
-          .Append(text.Substring(text.Length - tail));
+        sb.Append(ClipMiddle(text, maxChars, " ..."));
     }
 
     /// <summary>

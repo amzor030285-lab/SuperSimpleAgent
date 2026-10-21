@@ -34,10 +34,6 @@ namespace SuperSimpleAgentGUI
             get { return llmProcess != null && !llmProcess.HasExited; }
         }
 
-        public ProcessHandler()
-        {
-        }
-
         /// <summary>
         /// Sets the assistant name whose "<name>:" output line is filtered from
         /// the streamed text (the GUI shows a role header instead).

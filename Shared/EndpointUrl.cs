@@ -90,9 +90,6 @@ public static class EndpointUrl
     /// <summary>Trims whitespace and every trailing slash; null becomes empty.</summary>
     private static string TrimTrailingSlash(string url)
     {
-        string trimmed = (url ?? string.Empty).Trim();
-        while (trimmed.Length > 0 && trimmed[trimmed.Length - 1] == '/')
-            trimmed = trimmed.Substring(0, trimmed.Length - 1);
-        return trimmed;
+        return (url ?? string.Empty).Trim().TrimEnd('/');
     }
 }

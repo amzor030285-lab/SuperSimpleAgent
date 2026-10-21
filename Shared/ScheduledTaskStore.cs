@@ -86,7 +86,7 @@ public static class ScheduledTaskStore
         }
         catch
         {
-            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            DeleteTmp(tmp);
             return false;
         }
 
@@ -100,9 +100,14 @@ public static class ScheduledTaskStore
         }
         catch
         {
-            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            DeleteTmp(tmp);
             return false;
         }
+    }
+
+    private static void DeleteTmp(string tmp)
+    {
+        try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
     }
 
     // Repairs values that hand-edited (or older) files may leave unset.

@@ -70,14 +70,19 @@ public static class SessionStore
         public List<T> Messages;
     }
 
+    /// <summary>Directory, sanitized name and the full file path for a session file.</summary>
+    private static string SessionPath(string dir, string name)
+    {
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, SanitizeName(name) + ".json");
+    }
+
     public static bool Save<T>(string dir, string name, List<T> messages, out string fullPath)
     {
         fullPath = null;
         try
         {
-            Directory.CreateDirectory(dir);
-            string safe = SanitizeName(name);
-            fullPath = Path.Combine(dir, safe + ".json");
+            fullPath = SessionPath(dir, name);
 
             Envelope<T> envelope = new Envelope<T>
             {
@@ -106,9 +111,7 @@ public static class SessionStore
         fullPath = null;
         try
         {
-            Directory.CreateDirectory(dir);
-            string safe = SanitizeName(name);
-            fullPath = Path.Combine(dir, safe + ".json");
+            fullPath = SessionPath(dir, name);
 
             DateTime savedAtUtc = StableSavedAtUtc<T>(fullPath);
 

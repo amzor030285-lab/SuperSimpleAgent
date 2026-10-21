@@ -15,7 +15,6 @@ namespace SuperSimpleAgentCLI
     internal sealed class ControlPipeServer : IDisposable
     {
         private readonly string _pipeName;
-        private readonly ManualResetEvent _stop = new ManualResetEvent(false);
         private Thread _thread;
         private volatile bool _running;
 
@@ -77,7 +76,6 @@ namespace SuperSimpleAgentCLI
         public void Dispose()
         {
             _running = false;
-            _stop.Set();
 
             try
             {
@@ -93,8 +91,6 @@ namespace SuperSimpleAgentCLI
                 try { _thread.Join(100); } catch { }
             }
             _thread = null;
-
-            try { _stop.Close(); } catch { }
         }
     }
 }

@@ -14,12 +14,7 @@ namespace SuperSimpleAgentGUI
         public NoScrollRichTextBox()
         {
             this.AddHandler(FrameworkElement.RequestBringIntoViewEvent,
-                new RequestBringIntoViewEventHandler(SuppressBringIntoView));
-        }
-
-        private void SuppressBringIntoView(object sender, RequestBringIntoViewEventArgs e)
-        {
-            e.Handled = true;
+                new RequestBringIntoViewEventHandler(NoScrollTextBox.SuppressBringIntoView));
         }
     }
 }

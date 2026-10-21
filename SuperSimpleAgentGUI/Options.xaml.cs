@@ -439,22 +439,31 @@ namespace SuperSimpleAgentGUI
             LoadToolSelections(config);
             BuildToolOptionsUI(config);
             BuildToolTimeoutsUI(config);
-            MaxConsecutiveFailedToolCallsTextBox.PreviewTextInput += (s, ev) => { ev.Handled = !ev.Text.All(char.IsDigit); };
-            DataObject.AddPastingHandler(MaxConsecutiveFailedToolCallsTextBox, (s, ev) =>
-            {
-                if (ev.DataObject.GetDataPresent(DataFormats.Text))
-                {
-                    string text = (string)ev.DataObject.GetData(DataFormats.Text);
-                    if (!text.All(char.IsDigit)) ev.CancelCommand();
-                }
-                else ev.CancelCommand();
-            });
+            MakeDigitsOnly(MaxConsecutiveFailedToolCallsTextBox);
             RefreshPresetCombo(null);
 
             IndexingStatusHub.Updated += RefreshIndexingStatusUi;
             RefreshIndexingStatusUi();
                 Closed += Options_Closed;
             }
+
+        /// <summary>
+        /// Allows digits only: typed characters are filtered and a paste with
+        /// anything else in it is cancelled.
+        /// </summary>
+        private static void MakeDigitsOnly(TextBox box)
+        {
+            box.PreviewTextInput += (s, e) => { e.Handled = !e.Text.All(char.IsDigit); };
+            DataObject.AddPastingHandler(box, (s, e) =>
+            {
+                if (e.DataObject.GetDataPresent(DataFormats.Text))
+                {
+                    string text = (string)e.DataObject.GetData(DataFormats.Text);
+                    if (!text.All(char.IsDigit)) e.CancelCommand();
+                }
+                else e.CancelCommand();
+            });
+        }
 
         /// <summary>
         /// Repopulates the preset list from disk. Pass a name to select it afterwards.
@@ -966,16 +975,7 @@ namespace SuperSimpleAgentGUI
                     Margin = new Thickness(0, 2, 0, 2),
                     VerticalAlignment = VerticalAlignment.Center
                 };
-                textBox.PreviewTextInput += (s, e) => { e.Handled = !e.Text.All(char.IsDigit); };
-                DataObject.AddPastingHandler(textBox, (s, e) =>
-                {
-                    if (e.DataObject.GetDataPresent(DataFormats.Text))
-                    {
-                        string text = (string)e.DataObject.GetData(DataFormats.Text);
-                        if (!text.All(char.IsDigit)) e.CancelCommand();
-                    }
-                    else e.CancelCommand();
-                });
+                MakeDigitsOnly(textBox);
                 Grid.SetRow(textBox, rowIdx);
                 Grid.SetColumn(textBox, 1);
 

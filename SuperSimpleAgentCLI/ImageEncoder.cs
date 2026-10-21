@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace SuperSimpleAgentCLI
@@ -6,6 +7,19 @@ namespace SuperSimpleAgentCLI
     internal static class ImageEncoder
     {
         public const string DefaultMime = "image/png";
+
+        private static readonly Dictionary<string, string> MimeByExtension =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { ".jpg", "image/jpeg" },
+                { ".jpeg", "image/jpeg" },
+                { ".gif", "image/gif" },
+                { ".webp", "image/webp" },
+                { ".bmp", "image/bmp" },
+                { ".tif", "image/tiff" },
+                { ".tiff", "image/tiff" },
+                { ".png", "image/png" },
+            };
 
         public static string ImageFileToBase64(string path, out string mime)
         {
@@ -18,25 +32,10 @@ namespace SuperSimpleAgentCLI
             if (string.IsNullOrEmpty(path))
                 return DefaultMime;
 
-            switch (Path.GetExtension(path).ToLowerInvariant())
-            {
-                case ".jpg":
-                case ".jpeg":
-                    return "image/jpeg";
-                case ".gif":
-                    return "image/gif";
-                case ".webp":
-                    return "image/webp";
-                case ".bmp":
-                    return "image/bmp";
-                case ".tif":
-                case ".tiff":
-                    return "image/tiff";
-                case ".png":
-                    return "image/png";
-                default:
-                    return DefaultMime;
-            }
+            string mime;
+            return MimeByExtension.TryGetValue(Path.GetExtension(path), out mime)
+                ? mime
+                : DefaultMime;
         }
     }
 }

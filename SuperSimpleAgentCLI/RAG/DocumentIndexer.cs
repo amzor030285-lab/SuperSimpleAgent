@@ -152,14 +152,11 @@ namespace SuperSimpleAgentCLI.RAG
             }
 
             // Prune removed files
-            List<string> toRemove = new List<string>();
-            foreach (string key in index.Manifest.Files.Keys)
+            foreach (string key in new List<string>(index.Manifest.Files.Keys))
             {
                 if (!seen.Contains(key))
-                    toRemove.Add(key);
+                    index.RemoveFileData(key);
             }
-            foreach (string key in toRemove)
-                index.RemoveFileData(key);
 
             if (pendingTexts.Count > 0)
             {

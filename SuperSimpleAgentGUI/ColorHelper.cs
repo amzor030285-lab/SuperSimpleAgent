@@ -12,13 +12,12 @@ namespace SuperSimpleAgentGUI
     public class ColorConfig
     {
         public ColorConfig(string key, string resourceKey, string displayName,
-            Color defaultSystemColor, Brush defaultSystemBrush)
+            Color defaultSystemColor)
         {
             Key = key;
             ResourceKey = resourceKey;
             DisplayName = displayName;
             DefaultSystemColor = defaultSystemColor;
-            DefaultSystemBrush = defaultSystemBrush;
         }
 
         public string Key { get; private set; }
@@ -28,7 +27,6 @@ namespace SuperSimpleAgentGUI
         public string DisplayName { get; private set; }
 
         public Color DefaultSystemColor { get; private set; }
-        public Brush DefaultSystemBrush { get; private set; }
     }
 
     /// <summary>
@@ -45,72 +43,72 @@ namespace SuperSimpleAgentGUI
             {
                 "buttontextcolor",
                 new ColorConfig("buttontextcolor", "ButtonTextColorBrush", "Button Text",
-                    SystemColors.ControlTextColor, SystemColors.ControlTextBrush)
+                    SystemColors.ControlTextColor)
             },
             {
                 "buttonbackgroundcolor",
                 new ColorConfig("buttonbackgroundcolor", "ButtonBackgroundBrush", "Button BG",
-                    SystemColors.ControlColor, SystemColors.ControlBrush)
+                    SystemColors.ControlColor)
             },
             {
                 "buttonbordercolor",
                 new ColorConfig("buttonbordercolor", "ButtonBorderBrush", "Button Border",
-                    SystemColors.ControlDarkColor, SystemColors.ControlDarkBrush)
+                    SystemColors.ControlDarkColor)
             },
             {
                 "chatbackgroundcolor",
                 new ColorConfig("chatbackgroundcolor", "ChatBackgroundColorBrush", "Chat BG",
-                    SystemColors.WindowColor, SystemColors.WindowBrush)
+                    SystemColors.WindowColor)
             },
             {
                 "chattextcolor",
                 new ColorConfig("chattextcolor", "ChatTextColorBrush", "Chat Text",
-                    SystemColors.WindowTextColor, SystemColors.WindowTextBrush)
+                    SystemColors.WindowTextColor)
             },
             {
                 "codeblockbackgroundcolor",
                 new ColorConfig("codeblockbackgroundcolor", "CodeBlockBackgroundColorBrush", "Code Block BG",
-                    SystemColors.ControlColor, SystemColors.ControlBrush)
+                    SystemColors.ControlColor)
             },
             {
                 "codeblockheadercolor",
                 new ColorConfig("codeblockheadercolor", "CodeBlockHeaderBrush", "Code Block Header",
-                    SystemColors.ControlColor, SystemColors.ControlBrush)
+                    SystemColors.ControlColor)
             },
             {
                 "labeltextcolor",
                 new ColorConfig("labeltextcolor", "LabelTextColorBrush", "Label Text",
-                    SystemColors.ControlTextColor, SystemColors.ControlTextBrush)
+                    SystemColors.ControlTextColor)
             },
             {
                 "linkcolor",
                 new ColorConfig("linkcolor", "LinkBrush", "Link",
-                    SystemColors.HotTrackColor, SystemColors.HotTrackBrush)
+                    SystemColors.HotTrackColor)
             },
             {
                 "rolelabelcolor",
                 new ColorConfig("rolelabelcolor", "RoleLabelBrush", "Role Label",
-                    SystemColors.ControlTextColor, SystemColors.ControlTextBrush)
+                    SystemColors.ControlTextColor)
             },
             {
                 "tablebordercolor",
                 new ColorConfig("tablebordercolor", "TableBorderBrush", "Table Border",
-                    SystemColors.ControlDarkColor, SystemColors.ControlDarkBrush)
+                    SystemColors.ControlDarkColor)
             },
             {
                 "tableheaderbackgroundcolor",
                 new ColorConfig("tableheaderbackgroundcolor", "TableHeaderBackgroundBrush", "Table Header BG",
-                    SystemColors.ControlColor, SystemColors.ControlBrush)
+                    SystemColors.ControlColor)
             },
             {
                 "userbubblebackgroundcolor",
                 new ColorConfig("userbubblebackgroundcolor", "UserBubbleBackgroundBrush", "User Bubble BG",
-                    SystemColors.ControlColor, SystemColors.ControlBrush)
+                    SystemColors.ControlColor)
             },
             {
                 "windowbackgroundcolor",
                 new ColorConfig("windowbackgroundcolor", "WindowBackgroundColorBrush", "Window BG",
-                    SystemColors.ControlColor, SystemColors.ControlBrush)
+                    SystemColors.ControlColor)
             }
         };
 

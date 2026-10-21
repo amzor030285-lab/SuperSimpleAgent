@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Documents;

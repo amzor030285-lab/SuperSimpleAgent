@@ -143,7 +143,6 @@
     <Compile Include="ControlPipeClient.cs" />
     <Compile Include="IndexingStatusHub.cs" />
     <Compile Include="ToolOptionsRegistry.cs" />
-    <Compile Include="TokenTracker.cs" />
     <Compile Include="MainWindow.xaml.cs">
       <DependentUpon>MainWindow.xaml</DependentUpon>
       <SubType>Code</SubType>

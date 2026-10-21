@@ -1,6 +1,5 @@
 using System;
 using System.Windows;
-using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
@@ -59,21 +58,23 @@ namespace SuperSimpleAgentGUI
         private void OnLoaded(object sender, RoutedEventArgs args)
         {
             if (_scrollViewer != null) _scrollViewer.ScrollChanged -= OnScrollChanged;
-            DependencyObject parent = VisualTreeHelper.GetParent(this);
-            while (parent != null && !(parent is ScrollViewer))
-                parent = VisualTreeHelper.GetParent(parent);
-            _scrollViewer = parent as ScrollViewer;
+            _scrollViewer = FindAncestor<ScrollViewer>(this);
             if (_scrollViewer != null) _scrollViewer.ScrollChanged += OnScrollChanged;
 
-            parent = VisualTreeHelper.GetParent(this);
-            while (parent != null && !(parent is ListBoxItem))
-                parent = VisualTreeHelper.GetParent(parent);
+            ListBoxItem listBoxItem = FindAncestor<ListBoxItem>(this);
             if (_listBoxItem != null) _listBoxItem.SizeChanged -= OnListItemSizeChanged;
-            _listBoxItem = parent as ListBoxItem;
-            if (_listBoxItem != null)
-                _listBoxItem.SizeChanged += OnListItemSizeChanged;
+            _listBoxItem = listBoxItem;
+            if (_listBoxItem != null) _listBoxItem.SizeChanged += OnListItemSizeChanged;
 
             ShowDocument();
+        }
+
+        private static T FindAncestor<T>(DependencyObject start) where T : class
+        {
+            DependencyObject parent = VisualTreeHelper.GetParent(start);
+            while (parent != null && !(parent is T))
+                parent = VisualTreeHelper.GetParent(parent);
+            return parent as T;
         }
 
         private void OnUnloaded(object sender, RoutedEventArgs args)

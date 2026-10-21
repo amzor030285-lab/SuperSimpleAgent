@@ -61,16 +61,24 @@ namespace SuperSimpleAgentCLI
             return false;
         }
 
-        /// <summary>True for the arguments that turn plan mode on.</summary>
-        static bool IsPlanToggleOn(string value)
+        /// <summary>
+        /// Reads an image file into base64. On failure prints the error and
+        /// returns false.
+        /// </summary>
+        static bool TryEncodeImage(string path, out string base64, out string mime)
         {
-            return string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>True for the arguments that turn plan mode off.</summary>
-        static bool IsPlanToggleOff(string value)
-        {
-            return string.Equals(value, "off", StringComparison.OrdinalIgnoreCase);
+            try
+            {
+                base64 = ImageEncoder.ImageFileToBase64(path, out mime);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Console.Error.WriteLine("Error processing image: " + e.Message);
+                base64 = null;
+                mime = null;
+                return false;
+            }
         }
 
         /// <summary>
@@ -441,15 +449,8 @@ namespace SuperSimpleAgentCLI
 
                         string imagePath = args[++i];
 
-                        try
-                        {
-                            base64Image = ImageEncoder.ImageFileToBase64(imagePath, out base64ImageMime);
-                        }
-                        catch (Exception e)
-                        {
-                            Console.Error.WriteLine("Error processing image: " + e.Message);
+                        if (!TryEncodeImage(imagePath, out base64Image, out base64ImageMime))
                             return;
-                        }
                         continue;
                     }
 
@@ -629,11 +630,11 @@ namespace SuperSimpleAgentCLI
                             ? "Plan mode: on (read-only, plan goes to " + PlanMode.PlanFileName + ")"
                             : "Plan mode: off (approval mode is " + client.ApprovalMode + ")");
                     }
-                    else if (IsPlanToggleOn(requested))
+                    else if (string.Equals(requested, "on", StringComparison.OrdinalIgnoreCase))
                     {
                         ApplyApprovalMode(client, PlanMode.ModePlan, enabledTools, conversation);
                     }
-                    else if (IsPlanToggleOff(requested))
+                    else if (string.Equals(requested, "off", StringComparison.OrdinalIgnoreCase))
                     {
                         // Same landing state as the GUI button cycle, which goes
                         // plan -> ask. ask is the most conservative approval mode,
@@ -775,15 +776,8 @@ namespace SuperSimpleAgentCLI
                 string imagePath;
                 if (TryParseImageCommand(userInput, out imagePath, out textPrompt))
                 {
-                    try
-                    {
-                        imageBase64 = ImageEncoder.ImageFileToBase64(imagePath, out imageBase64Mime);
-                    }
-                    catch (Exception e)
-                    {
-                        Console.Error.WriteLine("Error processing image: " + e.Message);
+                    if (!TryEncodeImage(imagePath, out imageBase64, out imageBase64Mime))
                         continue;
-                    }
                 }
                 else if (userInput.StartsWith("/"))
                 {

@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Media;
 
 namespace SuperSimpleAgentGUI
@@ -51,14 +50,6 @@ namespace SuperSimpleAgentGUI
             catch { }
 
             return null;
-        }
-
-        public static void ApplyFontSizeToControl(Control control, int fontSize)
-        {
-            if (control != null)
-            {
-                control.FontSize = fontSize;
-            }
         }
     }
 }

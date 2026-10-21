@@ -45,12 +45,7 @@ namespace SuperSimpleAgentCLI.RAG
         public static bool LooksBinary(byte[] sample, int sampleLength)
         {
             int limit = Math.Min(sampleLength, sample.Length);
-            for (int i = 0; i < limit; i++)
-            {
-                if (sample[i] == 0)
-                    return true;
-            }
-            return false;
+            return Array.IndexOf(sample, (byte)0, 0, limit) >= 0;
         }
 
         public static string NormalizePath(string path)

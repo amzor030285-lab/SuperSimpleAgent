@@ -94,17 +94,23 @@ namespace MemoryTools
             return "Memory deleted: " + name;
         }
 
-        public static string ListMemories()
+        /// <summary>Memory files, sorted by name; empty when there are none.</summary>
+        private static string[] GetMemoryFiles()
         {
             string memoryFolder = GetMemoriesDirectory();
             if (!Directory.Exists(memoryFolder))
-                return "(no memories saved)";
+                return new string[0];
 
             string[] files = Directory.GetFiles(memoryFolder, "*.md");
+            Array.Sort(files);
+            return files;
+        }
+
+        public static string ListMemories()
+        {
+            string[] files = GetMemoryFiles();
             if (files.Length == 0)
                 return "(no memories saved)";
-
-            Array.Sort(files);
 
             StringBuilder sb = new StringBuilder();
             foreach (string file in files)
@@ -115,15 +121,9 @@ namespace MemoryTools
 
         public static string GetContext()
         {
-            string memoryFolder = GetMemoriesDirectory();
-            if (!Directory.Exists(memoryFolder))
-                return null;
-
-            string[] files = Directory.GetFiles(memoryFolder, "*.md");
+            string[] files = GetMemoryFiles();
             if (files.Length == 0)
                 return null;
-
-            Array.Sort(files);
 
             StringBuilder sb = new StringBuilder();
             sb.AppendLine("Current Memories:");
@@ -143,15 +143,9 @@ namespace MemoryTools
 
         public static string SearchMemories(string keyword)
         {
-            string memoryFolder = GetMemoriesDirectory();
-            if (!Directory.Exists(memoryFolder))
-                return "(no memories saved)";
-
-            string[] files = Directory.GetFiles(memoryFolder, "*.md");
+            string[] files = GetMemoryFiles();
             if (files.Length == 0)
                 return "(no memories saved)";
-
-            Array.Sort(files);
 
             StringBuilder sb = new StringBuilder();
             foreach (string file in files)
