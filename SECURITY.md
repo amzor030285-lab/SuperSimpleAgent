@@ -58,7 +58,8 @@ machine. The following are **not** vulnerabilities, they are the documented beha
   account. Anyone running the application as that account can read the key - DPAPI is not a
   defense against other processes of the same user. Do not share the file.
 - A saved session (`sessions/`) contains your conversation text verbatim, including tool output.
-  It is plaintext on disk.
+  It is plaintext on disk. Credentials found in tool output are masked before they are stored
+  (see below), but ordinary conversation text is not.
 - The RAG knowledge folder is read and its contents are sent to whatever LLM endpoint is
   configured. Point it only at an endpoint you trust.
 - When `jevbaseurl` is set, the pending tool call (name, arguments, description) and the last
@@ -118,6 +119,44 @@ What the guard does **not** do:
 Disabling it does not change what the tools do - model commands run exactly as in plain
 `auto` mode.
 
+## Credential masking in tool output
+
+Tool output is the one place where a credential the user never typed can enter the
+conversation: `read_file` on a `.env`, `run_shell_command` with `cat`, a web page that
+happens to contain a token. Before the result is parsed into the conversation,
+`Shared\SecretRedactor.cs` masks what it recognises:
+
+- **Provider keys** - OpenAI/Anthropic (`sk-...`, `sk-proj-...`, `sk-ant-...`), AWS access
+  key ids, GitHub (`ghp_`, `gho_`, `github_pat_`), GitLab, Slack, Google, Stripe,
+  Hugging Face, npm.
+- **Tokens** - JSON web tokens, `Bearer <token>` headers.
+- **Key material** - PEM private key blocks (header plus body).
+- **Assignments** - `api_key = ...`, `password: ...`, `client_secret = ...` and similar
+  credential-shaped names. Only the value is masked, the name stays, so the model still
+  knows a credential was there.
+- **URLs** - the password in `scheme://user:password@host`.
+- **Your own keys** - the values of `apikey`, `embeddingsapikey`, `firecrawlapikey` and
+  `jevapikey` are masked by value, because no pattern can recognise them.
+
+The masked text is what the model sees, what the session file stores and what the API
+request carries, so a secret read from a file does not leave the machine. The marker is
+`[REDACTED:<kind>]` (`[REDACTED:llm_key]`, `[REDACTED:secret_value]`, ...).
+
+What it does **not** do:
+
+- It is a pattern matcher, not a parser: a credential in an unusual format (a bare
+  password with no recognizable name, a key split over two lines, an encrypted blob) is
+  not detected.
+- It masks what the tool *returned*. A file that holds a secret is still on disk, and
+  the file the model writes may still contain it - the mask does not rewrite the world,
+  only the transcript.
+- It does not mask the tool call *arguments* the model produced, and it does not mask
+  the text the user typed.
+- A secret shorter than 12 characters is not masked by value: it is more likely to be
+  ordinary text than a credential.
+
+`redactsecrets` in `LLMSettings.ini` (default `1`) turns the masking off for a session.
+
 ## Jev decision gate (where the human approves)
 
 When `jevbaseurl` is set, a small decision model answering the System One
@@ -156,3 +195,7 @@ Apache-2.0), the banned-subcommand triples and pipe-pattern denylist from
 [OpenHands](https://github.com/All-Hands-AI/OpenHands) (MIT). None of their code or data
 is vendored; the tier/taint escalation design is original to this project, informed by
 sh-guard and the LOLBAS/GTFOBins command lists (GPL - referenced only, not copied).
+
+The credential-masking patterns in `Shared\SecretRedactor.cs` are adapted from
+[gitleaks](https://github.com/gitleaks/gitleaks) (MIT) - a subset of its default rule
+config, widened for masking. None of its code is vendored.

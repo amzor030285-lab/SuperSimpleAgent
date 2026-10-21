@@ -56,6 +56,12 @@ namespace SuperSimpleAgentCLI
         // Config values to pass to tool executables
         private readonly ConfigHandler config;
 
+        // Credential masking of tool output (INI key "redactsecrets", default on).
+        // The literals are the configured API keys: no pattern can recognise them,
+        // but they are exactly the values that must not reach a third-party API.
+        private readonly bool redactSecrets;
+        private readonly string[] literalSecrets;
+
         /// <summary>
         /// True while the read-only plan mode is selected. Toggled by /plan and by
         /// the GUI mode button, checked on every tool call.
@@ -65,6 +71,37 @@ namespace SuperSimpleAgentCLI
         public ToolRegistry(ConfigHandler config)
         {
             this.config = config;
+            redactSecrets = config.GetConfigInt("redactsecrets", 1) != 0;
+            literalSecrets = CollectConfiguredSecrets(config);
+        }
+
+        /// <summary>
+        /// The configured API keys, in plaintext, so tool output that echoes one of
+        /// them can be masked. Short values are skipped: they are more likely to be
+        /// ordinary text than a credential.
+        /// </summary>
+        private static string[] CollectConfiguredSecrets(ConfigHandler config)
+        {
+            List<string> values = new List<string>();
+            for (int i = 0; i < SecretProtector.SecretConfigKeys.Length; i++)
+            {
+                string value = config.GetConfigValue(SecretProtector.SecretConfigKeys[i]);
+                if (!string.IsNullOrEmpty(value) && value.Trim().Length >= 12)
+                    values.Add(value);
+            }
+            return values.ToArray();
+        }
+
+        /// <summary>
+        /// Masks credentials in tool output before it enters the conversation, and
+        /// therefore before it reaches the API request, the session file and the
+        /// transcript shown in the GUI.
+        /// </summary>
+        private string RedactSecrets(string text)
+        {
+            if (!redactSecrets || string.IsNullOrEmpty(text))
+                return text;
+            return SecretRedactor.Redact(text, literalSecrets);
         }
 
         /// <summary>
@@ -414,7 +451,7 @@ namespace SuperSimpleAgentCLI
                         string imageBase64;
                         string imageMime;
                         ToolResultParser.Parse(raw, out text, out imageBase64, out imageMime);
-                        return text;
+                        return RedactSecrets(text);
                     }
                     finally
                     {
@@ -642,7 +679,7 @@ namespace SuperSimpleAgentCLI
 
                         string text;
                         ToolResultParser.Parse(output, out text, out imageBase64, out imageMime);
-                        toolContent = FormatCommandResult(toolName, text, exitCode);
+                        toolContent = FormatCommandResult(toolName, RedactSecrets(text), exitCode);
                     }
                     finally
                     {

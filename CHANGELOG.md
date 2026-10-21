@@ -6,6 +6,12 @@ everything listed below was added on top of that upstream baseline.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Added
+
+- **Credential masking in tool output** - Tool output is scanned for credentials before it enters the conversation, so a secret read from a file no longer travels to the model, the session file or the API. `Shared\SecretRedactor.cs` replaces provider keys (OpenAI/Anthropic, AWS access key ids, GitHub, GitLab, Slack, Google, Stripe, Hugging Face, npm), JSON web tokens, `Bearer` tokens, PEM private key blocks, `api_key = value` style assignments and the password part of a URL with a `[REDACTED:<kind>]` marker, keeping the name of the credential so the model still knows what was there. The API keys configured in `LLMSettings.ini` are masked by value as well, because no pattern can recognise them. The masking happens where the tool result is parsed (`SuperSimpleAgentCLI\ToolRegistry.cs`), so the transcript, the session file and the API request all see the same masked text. New INI key `redactsecrets` (default `1`) turns it off for a session. Pattern set adapted from gitleaks (MIT), documented in `SECURITY.md`.
+
 ## [2.1.0] - 2026-10-18
 
 ### Added

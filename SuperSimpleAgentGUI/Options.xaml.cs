@@ -801,6 +801,9 @@ namespace SuperSimpleAgentGUI
                 "toolsrequiringapproval=" + string.Join(",", GetSelectedToolsFromListBox(ToolsRequiringApprovalListBox)),
                 "maxconsecutivefailedtoolcalls=" + MaxConsecutiveFailedToolCalls,
                 "autoguardenabled=" + App.Config.GetConfigInt("autoguardenabled", 1),
+                // redactsecrets has no UI control yet; carry the current INI
+                // value through so saving Options does not silently reset it.
+                "redactsecrets=" + App.Config.GetConfigInt("redactsecrets", 1),
                 // The Jev gate is edited on the System page, but its keys are
                 // read by the CLI from the [Tools] section.
                 "jevbaseurl=" + (JevBaseURL ?? string.Empty),

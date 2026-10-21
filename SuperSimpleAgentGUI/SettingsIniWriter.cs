@@ -137,6 +137,9 @@ namespace SuperSimpleAgentGUI
                 "toolsrequiringapproval=" + AppConstants.DefaultToolsRequiringApproval,
                 "maxconsecutivefailedtoolcalls=10",
                 "autoguardenabled=1",
+                // Credential masking of tool output. No UI control yet; the value is
+                // carried through by the Options window so saving does not reset it.
+                "redactsecrets=1",
                 // Jev decision gate: off until a System One endpoint is configured.
                 // The screen switches default on: with a configured endpoint the
                 // gate answers in every approval mode it can reach.

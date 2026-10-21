@@ -45,11 +45,28 @@ public static class SecretProtector
         }
     }
 
+    /// <summary>
+    /// INI keys whose values are credentials. The list is the single source of
+    /// truth for what gets DPAPI-protected on disk and what gets masked when it
+    /// shows up in tool output.
+    /// </summary>
+    public static readonly string[] SecretConfigKeys = new string[]
+    {
+        "apikey",
+        "embeddingsapikey",
+        "firecrawlapikey",
+        "jevapikey",
+    };
+
     public static bool IsSecretKey(string configKey)
     {
-        return string.Equals(configKey, "apikey", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(configKey, "embeddingsapikey", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(configKey, "firecrawlapikey", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(configKey, "jevapikey", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(configKey))
+            return false;
+        for (int i = 0; i < SecretConfigKeys.Length; i++)
+        {
+            if (string.Equals(configKey, SecretConfigKeys[i], StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
     }
 }

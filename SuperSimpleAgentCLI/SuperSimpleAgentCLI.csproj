@@ -89,6 +89,9 @@
     <Compile Include="..\Shared\SecretProtector.cs">
       <Link>Shared\SecretProtector.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\SecretRedactor.cs">
+      <Link>Shared\SecretRedactor.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\ChatBlockDisplayMode.cs">
       <Link>Shared\ChatBlockDisplayMode.cs</Link>
     </Compile>

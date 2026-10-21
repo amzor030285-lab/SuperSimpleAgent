@@ -773,6 +773,54 @@ namespace SuperSimpleAgentCLI.Tests
                 TestAssert.Equal("image/png", mime, "mime");
             });
 
+            TestRunner.Run("secret_redactor.masks_known_patterns", () =>
+            {
+                // Fake values, but shaped like the real ones.
+                string llmKey = "sk-abcdefghijklmnopqrstuvwxyz0123456789";
+                string awsKey = "AKIAIOSFODNN7EXAMPLE";
+                string githubToken = "ghp_abcdefghijklmnopqrstuvwxyz0123456789";
+                // The fake token is assembled from two parts on purpose: written as one
+// literal it trips the repository's own secret scanner on push.
+                string slackToken = "xox" + "b-1234567890-abcdefghijklmnop";
+                string googleKey = "AIzaSyA1234567890abcdefghijklmnopqrstuv";
+                string jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N";
+                string genericValue = "9f8b7a6c5d4e3f2a1b";
+                string urlPassword = "s3cr3tp4ss";
+                string pemBody = "MIIEowIBAAKCAQEAy8Dbv8prpJ0kKhlGeJYozo2t60EG8L0561g13R29LvMR5hy";
+
+                string text =
+                    "llm=" + llmKey + "\n" +
+                    "aws=" + awsKey + "\n" +
+                    "gh=" + githubToken + "\n" +
+                    "slack=" + slackToken + "\n" +
+                    "google=" + googleKey + "\n" +
+                    "jwt=" + jwt + "\n" +
+                    "api_key = " + genericValue + "\n" +
+                    "postgres://admin:" + urlPassword + "@db.internal/app\n" +
+                    "-----BEGIN RSA PRIVATE KEY-----\n" + pemBody + "\n-----END RSA PRIVATE KEY-----";
+
+                string redacted = SecretRedactor.Redact(text);
+
+                string[] secrets = { llmKey, awsKey, githubToken, slackToken, googleKey, jwt, genericValue, urlPassword, pemBody };
+                for (int i = 0; i < secrets.Length; i++)
+                    TestAssert.True(!redacted.Contains(secrets[i]), "secret " + i + " must be masked");
+
+                TestAssert.True(redacted.Contains("[REDACTED:"), "placeholder present");
+
+                // The name of the credential survives, so the model still knows what was there.
+                TestAssert.True(redacted.Contains("api_key ="), "key name kept");
+                TestAssert.True(redacted.Contains("postgres://admin:"), "url user kept");
+
+                // A configured key is masked although no pattern knows it.
+                string ours = "our-own-key-abcdef";
+                string withLiteral = SecretRedactor.Redact("the key is " + ours + " ok", new string[] { ours });
+                TestAssert.True(!withLiteral.Contains(ours), "configured key masked");
+
+                // Ordinary text is left alone.
+                string plain = "The build failed in 3 files; see the log for details.";
+                TestAssert.Equal(plain, SecretRedactor.Redact(plain), "plain text unchanged");
+            });
+
             TestRunner.Run("ImageEncoder.mime", () =>
             {
                 TestAssert.Equal("image/jpeg", ImageEncoder.GuessMime("photo.JPG"), "jpeg");
@@ -1903,6 +1951,115 @@ namespace SuperSimpleAgentCLI.Tests
                         CliRunner.WaitForText(cli, "Full output saved to", 60000);
                         CliRunner.WaitForText(cli, server.FixedReply, 30000);
                         CliRunner.WaitForText(cli, "You:", 15000);
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.tool_output_secrets_are_masked", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // The tool reads a file that holds a credential. The credential must
+                    // never reach the API: the request bodies the server received are
+                    // the proof, not the console output.
+                    string secret = "sk-AAAABBBBCCCCDDDDEEEEFFFFGGGGHHHHIIIIJJJJKKKK";
+                    string secretPath = Path.Combine(ws.Path, "creds.txt");
+                    File.WriteAllText(secretPath, "line one\napi_key = " + secret + "\nline three\n");
+
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var args = new JObject();
+                    args["command"] = "type " + secretPath;
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command");
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("print the file");
+                        CliRunner.WaitForText(cli, server.FixedReply, 60000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        TestAssert.True(!cli.Stdout.Contains(secret), "transcript must not contain the secret");
+                        TestAssert.True(cli.Stdout.Contains("[REDACTED:"), "transcript shows the mask");
+                    }
+
+                    for (int i = 0; i < server.ReceivedBodies.Count; i++)
+                    {
+                        TestAssert.True(!server.ReceivedBodies[i].Contains(secret),
+                            "request body " + i + " must not contain the secret");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.tool_output_secrets_can_be_unmasked", () =>
+            {
+                string shellToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "ShellTools", "bin", "Release"));
+                string shellToolsExe = Path.Combine(shellToolsDir, "ShellTools.exe");
+                if (!File.Exists(shellToolsExe))
+                {
+                    TestRunner.Skip("ShellTools.exe not built: " + shellToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // redactsecrets=0 turns the masking off, so the raw value is sent.
+                    // Without this the switch itself would be untested.
+                    string secret = "sk-ZZZZYYYYXXXXWWWWVVVVUUUUTTTTSSSSRRRRQQQQ";
+                    string secretPath = Path.Combine(ws.Path, "creds.txt");
+                    File.WriteAllText(secretPath, "api_key = " + secret + "\n");
+
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "run_shell_command";
+                    var args = new JObject();
+                    args["command"] = "type " + secretPath;
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+                    server.StreamDelayMs = 5;
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(shellToolsExe, Path.Combine(toolsDir, "ShellTools.exe"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "ShellTools.json"), Path.Combine(toolsDir, "ShellTools.json"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Newtonsoft.Json.dll"), Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+                    File.Copy(Path.Combine(shellToolsDir, "Ude.dll"), Path.Combine(toolsDir, "Ude.dll"), true);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, contextWindowSize: 0, tools: "run_shell_command",
+                        redactSecrets: 0);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+
+                        cli.WriteLine("print the file");
+                        CliRunner.WaitForText(cli, server.FixedReply, 60000);
+                        CliRunner.WaitForText(cli, "You:", 15000);
+
+                        TestAssert.True(cli.Stdout.Contains(secret), "masking off: raw value in transcript");
                     }
                 }
             });
@@ -4405,7 +4562,8 @@ namespace SuperSimpleAgentCLI.Tests
 
         static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "",
             int streamStallTimeout = 120, int requestTimeout = 300, string toolTimeout = "",
-            int repetitionGuard = -1, string chatPath = "", bool? guardEnabled = null)
+            int repetitionGuard = -1, string chatPath = "", bool? guardEnabled = null,
+            int? redactSecrets = null)
         {
             string path = Path.Combine(dir, "LLMSettings.ini");
             File.WriteAllText(path,
@@ -4423,6 +4581,7 @@ namespace SuperSimpleAgentCLI.Tests
                 "tools=" + (tools ?? "") + "\r\n" +
                 "toolsrequiringapproval=\r\n" +
                 (guardEnabled.HasValue ? "autoguardenabled=" + (guardEnabled.Value ? "1" : "0") + "\r\n" : "") +
+                (redactSecrets.HasValue ? "redactsecrets=" + (redactSecrets.Value != 0 ? "1" : "0") + "\r\n" : "") +
                 (string.IsNullOrEmpty(toolTimeout) ? "" : "tooltimeout." + toolTimeout + "\r\n") +
                 "[Appearance]\r\n" +
                 "assistantname=LLM\r\n" +
