@@ -166,18 +166,12 @@
                          no font with that glyph, so the button was empty unless
                          an emoji font was installed. -->
                     <Button.Content>
-                        <Viewbox Width="15" Height="15" Stretch="Uniform">
-                            <Canvas Width="16" Height="16">
-                                <Ellipse Canvas.Left="1.5" Canvas.Top="1.5"
-                                         Width="13" Height="13"
-                                         Stroke="{DynamicResource ButtonTextColorBrush}"
-                                         StrokeThickness="1.5" />
-                                <Path Data="M 8,4.5 L 8,8 L 10.6,9.3"
-                                      Stroke="{DynamicResource ButtonTextColorBrush}"
-                                      StrokeThickness="1.5"
-                                      StrokeStartLineCap="Round"
-                                      StrokeEndLineCap="Round" />
-                            </Canvas>
+                        <Viewbox Width="14" Height="14" Stretch="Uniform">
+                            <Path Data="M 8,1.5 A 6.5,6.5 0 1 0 8,14.5 A 6.5,6.5 0 1 0 8,1.5 Z M 8,4.5 L 8,8 L 10.6,9.3"
+                                  Stroke="{DynamicResource ButtonTextColorBrush}"
+                                  StrokeThickness="1.5"
+                                  StrokeStartLineCap="Round"
+                                  StrokeEndLineCap="Round" />
                         </Viewbox>
                     </Button.Content>
                 </Button>
@@ -267,23 +261,12 @@
                 <!-- Vector camera, same style as the scheduled-tasks clock and
                      drawn in the button's text colour so it follows the theme;
                      the old raster icon ignored both. -->
-                <Viewbox Width="20" Height="20" Stretch="Uniform">
-                    <Canvas Width="20" Height="20">
-                        <Rectangle Canvas.Left="2" Canvas.Top="6"
-                                   Width="16" Height="11"
-                                   RadiusX="2" RadiusY="2"
-                                   Stroke="{DynamicResource ButtonTextColorBrush}"
-                                   StrokeThickness="1.4" />
-                        <Path Data="M 7,6 L 8.2,3.6 L 11.8,3.6 L 13,6"
-                              Stroke="{DynamicResource ButtonTextColorBrush}"
-                              StrokeThickness="1.4"
-                              StrokeStartLineCap="Round"
-                              StrokeEndLineCap="Round" />
-                        <Ellipse Canvas.Left="7" Canvas.Top="8"
-                                 Width="6" Height="6"
-                                 Stroke="{DynamicResource ButtonTextColorBrush}"
-                                 StrokeThickness="1.4" />
-                    </Canvas>
+                <Viewbox Width="17" Height="14" Stretch="Uniform">
+                    <Path Data="M 4,6 L 16,6 A 2,2 0 0 1 18,8 L 18,15 A 2,2 0 0 1 16,17 L 4,17 A 2,2 0 0 1 2,15 L 2,8 A 2,2 0 0 1 4,6 Z M 7,6 L 8.2,3.6 L 11.8,3.6 L 13,6 M 7,11 A 3,3 0 1 0 13,11 A 3,3 0 1 0 7,11"
+                          Stroke="{DynamicResource ButtonTextColorBrush}"
+                          StrokeThickness="1.4"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round" />
                 </Viewbox>
             </ToggleButton>
 
