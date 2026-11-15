@@ -32,6 +32,10 @@ namespace SuperSimpleAgentGUI
         {
             NeedsOnboarding = !File.Exists(ConfigFilePath);
             Config = new ConfigHandler(ConfigFilePath);
+            Workspace.Bind(Config);
+            // Create <workspace>\.ssa\{sessions,...} when a workspace is configured.
+            // No-op without one, and failures are shown on Options -> Workspace.
+            Workspace.EnsureStateFoldersBestEffort();
         }
     }
 }

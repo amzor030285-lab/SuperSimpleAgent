@@ -508,6 +508,15 @@ namespace SuperSimpleAgentCLI
                 foreach (var kvp in declared)
                 {
                     string value = config.GetConfigValue(kvp.Key);
+                    // Workspace redirect: when an explicit workspace owns the
+                    // mutable state, its .ssa folders replace the tool-folder
+                    // defaults. A value the user configured in the INI wins.
+                    if (string.IsNullOrEmpty(value))
+                    {
+                        string workspaceOverride = Workspace.GetToolDirectoryOverride(kvp.Key);
+                        if (!string.IsNullOrEmpty(workspaceOverride))
+                            value = workspaceOverride;
+                    }
                     configObj[kvp.Key] = string.IsNullOrEmpty(value) ? kvp.Value : value;
                 }
             }

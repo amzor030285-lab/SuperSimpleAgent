@@ -106,7 +106,14 @@ namespace SuperSimpleAgentCLI.RAG
         {
             string path = config.GetConfigValue("ragKnowledgePath");
             if (string.IsNullOrEmpty(path))
+            {
+                // An explicit workspace owns the mutable state, so knowledge
+                // lives under its .ssa root (ragknowledgepath still wins).
+                string workspaceKnowledge = Workspace.GetStateDirectory("knowledge");
+                if (!string.IsNullOrEmpty(workspaceKnowledge))
+                    return workspaceKnowledge;
                 return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "knowledge");
+            }
             try
             {
                 return Path.GetFullPath(Environment.ExpandEnvironmentVariables(path.Trim()));
@@ -121,7 +128,10 @@ namespace SuperSimpleAgentCLI.RAG
         {
             DocumentIndex index = new DocumentIndex();
             index.KnowledgePath = knowledgePath;
-            string indexRootDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rag-index");
+            // The index root is per-process mutable state: redirected into the
+            // workspace together with the knowledge folder.
+            string indexRootDir = Workspace.GetStateDirectory("rag-index")
+                ?? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rag-index");
             index.IndexDir = Path.Combine(indexRootDir, HashMd5Hex(knowledgePath, true));
             index.Manifest = LoadManifest(index.ManifestPath) ?? new IndexManifest();
             index.Vectors = VectorStore.Load(index.VectorsPath);

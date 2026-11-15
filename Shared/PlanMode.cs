@@ -66,9 +66,19 @@ public static class PlanMode
     /// <summary>Absolute path of the plan file, next to the executable.</summary>
     public static string GetPlanFilePath()
     {
-        return Path.Combine(
-            Path.Combine(AppDomain.CurrentDomain.BaseDirectory, PlansDirectoryName),
-            PlanFileName);
+        return Path.Combine(PlansDirectory(), PlanFileName);
+    }
+
+    /// <summary>
+    /// The plans folder: workspace\.ssa\plans when an explicit workspace owns
+    /// the mutable state, otherwise plans next to the executable.
+    /// </summary>
+    public static string PlansDirectory()
+    {
+        string workspacePlans = Workspace.GetStateDirectory(PlansDirectoryName);
+        if (!string.IsNullOrEmpty(workspacePlans))
+            return workspacePlans;
+        return Path.Combine(AppDomain.CurrentDomain.BaseDirectory, PlansDirectoryName);
     }
 
     /// <summary>True when the tool only reads and is safe in plan mode.</summary>

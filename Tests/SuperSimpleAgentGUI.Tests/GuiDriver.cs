@@ -751,6 +751,44 @@ namespace SuperSimpleAgentGUI.Tests
         }
 
         /// <summary>
+        /// Names of the items of a list box inside a titled window.
+        /// </summary>
+        public List<string> ListItemNamesInWindow(string windowTitle, string automationId, int timeoutMs)
+        {
+            AutomationElement el = FindByIdInWindow(windowTitle, automationId, timeoutMs);
+            if (el == null)
+                throw new TestFailureException("List not found: " + automationId + " in " + windowTitle);
+
+            var names = new List<string>();
+            AutomationElementCollection items = el.FindAll(TreeScope.Descendants,
+                new PropertyCondition(AutomationElement.IsSelectionItemPatternAvailableProperty, true));
+            foreach (AutomationElement item in items)
+            {
+                try { names.Add(item.Current.Name ?? ""); } catch { }
+            }
+            return names;
+        }
+
+        /// <summary>
+        /// Every automation element name inside a titled window (labels, text
+        /// boxes, list items). Used to assert what a page does and does not show.
+        /// </summary>
+        public List<string> ElementNamesInWindow(string windowTitle, int timeoutMs)
+        {
+            AutomationElement window = FindWindowByTitle(windowTitle, timeoutMs);
+            if (window == null)
+                throw new TestFailureException("Dialog window not found: " + windowTitle);
+
+            var names = new List<string>();
+            AutomationElementCollection all = window.FindAll(TreeScope.Descendants, Condition.TrueCondition);
+            foreach (AutomationElement el in all)
+            {
+                try { names.Add(el.Current.Name ?? ""); } catch { }
+            }
+            return names;
+        }
+
+        /// <summary>
         /// Opens a combo box in a titled window and picks an item by text.
         /// Fails if the dropdown does not expand or the item is not exposed:
         /// both are what a broken combo template looks like from outside.

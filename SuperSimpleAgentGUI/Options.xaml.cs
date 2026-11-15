@@ -18,6 +18,11 @@ namespace SuperSimpleAgentGUI
         private string _model;
         private string _sysPrompt;
         private int _contextWindowSize;
+        private bool _workspaceEnabled;
+        private string _workspacePath;
+        private int _workspaceMaxKb;
+        private string _memoriesDirectoryOverride;
+        private string _skillsDirectoryOverride;
         private bool _repetitionGuardEnabled;
         private int _streamStallTimeout;
         private int _responseTimeout;
@@ -121,6 +126,45 @@ namespace SuperSimpleAgentGUI
         {
             get { return _contextWindowSize; }
             set { _contextWindowSize = value; OnPropertyChanged(nameof(ContextWindowSize)); }
+        }
+
+        public bool WorkspaceEnabled
+        {
+            get { return _workspaceEnabled; }
+            set { _workspaceEnabled = value; OnPropertyChanged(nameof(WorkspaceEnabled)); }
+        }
+
+        public string WorkspacePath
+        {
+            get { return _workspacePath; }
+            set { _workspacePath = value; OnPropertyChanged(nameof(WorkspacePath)); }
+        }
+
+        public int WorkspaceMaxKb
+        {
+            get { return _workspaceMaxKb; }
+            set
+            {
+                _workspaceMaxKb = value < 1 ? Workspace.DefaultMaxKb : value;
+                OnPropertyChanged(nameof(WorkspaceMaxKb));
+            }
+        }
+
+        /// <summary>
+        /// Optional memories folder. Empty means "automatic": workspace\.ssa\memories
+        /// when a workspace owns state, otherwise the tool's own memories folder.
+        /// </summary>
+        public string MemoriesDirectoryOverride
+        {
+            get { return _memoriesDirectoryOverride ?? string.Empty; }
+            set { _memoriesDirectoryOverride = value; OnPropertyChanged(nameof(MemoriesDirectoryOverride)); }
+        }
+
+        /// <summary>Optional skills folder, same precedence as memories.</summary>
+        public string SkillsDirectoryOverride
+        {
+            get { return _skillsDirectoryOverride ?? string.Empty; }
+            set { _skillsDirectoryOverride = value; OnPropertyChanged(nameof(SkillsDirectoryOverride)); }
         }
 
         public bool RepetitionGuardEnabled
@@ -407,6 +451,8 @@ namespace SuperSimpleAgentGUI
             ToolsPage.Visibility = Visibility.Collapsed;
             if (RagPage != null)
                 RagPage.Visibility = Visibility.Collapsed;
+            if (WorkspacePage != null)
+                WorkspacePage.Visibility = Visibility.Collapsed;
             foreach (var page in _toolGroupPages)
                 page.Visibility = Visibility.Collapsed;
 
@@ -418,12 +464,209 @@ namespace SuperSimpleAgentGUI
                         RagPage.Visibility = Visibility.Visible;
                     break;
                 case 2: SystemPage.Visibility = Visibility.Visible; break;
-                case 3: ToolsPage.Visibility = Visibility.Visible; break;
+                case 3:
+                    if (WorkspacePage != null)
+                    {
+                        WorkspacePage.Visibility = Visibility.Visible;
+                        RefreshWorkspaceStatus();
+                    }
+                    break;
+                case 4: ToolsPage.Visibility = Visibility.Visible; break;
                 default:
-                    int toolIdx = CategoryListBox.SelectedIndex - 4;
+                    int toolIdx = CategoryListBox.SelectedIndex - 5;
                     if (toolIdx >= 0 && toolIdx < _toolGroupPages.Count)
                         _toolGroupPages[toolIdx].Visibility = Visibility.Visible;
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Renders the effective workspace (root, loaded instruction files and
+        /// their sizes, state folder) exactly as the CLI resolves it, using the
+        /// same Shared/Workspace code.
+        /// </summary>
+        private void RefreshWorkspaceStatus()
+        {
+            if (WorkspaceStatusText == null)
+                return;
+
+            string ensureError;
+            bool ensured = Workspace.EnsureStateFolders(out ensureError);
+            string status = Workspace.Describe();
+            if (!ensured && !string.IsNullOrEmpty(ensureError))
+                status += Environment.NewLine + "Could not create state folders: " + ensureError;
+            WorkspaceStatusText.Text = status;
+
+            bool redirected = !string.IsNullOrEmpty(Workspace.StateRoot());
+            string rootLabel = redirected ? "workspace .ssa" : "beside the EXE";
+
+            if (StateFoldersText != null)
+            {
+                StateFoldersText.Text =
+                    "sessions: " + ResolvedStateFolder("sessions", "") + Environment.NewLine +
+                    "memories: " + ResolvedStateFolder("memories", MemoriesDirectoryOverride) + Environment.NewLine +
+                    "skills: " + ResolvedStateFolder("skills", SkillsDirectoryOverride) + Environment.NewLine +
+                    "plans: " + ResolvedStateFolder("plans", "") + Environment.NewLine +
+                    "knowledge: " + ResolvedStateFolder("knowledge", RagKnowledgePath) + Environment.NewLine +
+                    "rag-index: " + ResolvedStateFolder("rag-index", "") + Environment.NewLine +
+                    "(" + rootLabel + ")";
+            }
+
+            if (MemoriesEffectiveText != null)
+            {
+                string kind = redirected ? "workspace .ssa" : "tool folder beside the EXE";
+                MemoriesEffectiveText.Text = EffectiveLine(
+                    MemoriesDirectoryOverride, DefaultStateFolder("memories"), kind);
+            }
+            if (SkillsEffectiveText != null)
+            {
+                string kind = redirected ? "workspace .ssa" : "tool folder beside the EXE";
+                SkillsEffectiveText.Text = EffectiveLine(
+                    SkillsDirectoryOverride, DefaultStateFolder("skills"), kind);
+            }
+        }
+
+        /// <summary>
+        /// The folder a state store actually uses: an explicit override wins over the
+        /// workspace default, which in turn wins over the beside-the-EXE location.
+        /// </summary>
+        private static string ResolvedStateFolder(string name, string overrideValue)
+        {
+            string trimmed = NormalizeOptionalPath(overrideValue);
+            return trimmed.Length > 0 ? trimmed : DefaultStateFolder(name);
+        }
+
+        private static string DefaultStateFolder(string name)
+        {
+            string stateRoot = Workspace.StateRoot();
+            if (!string.IsNullOrEmpty(stateRoot))
+                return Path.Combine(stateRoot, name);
+
+            string installDir = AppDomain.CurrentDomain.BaseDirectory;
+            if (string.Equals(name, "memories", StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(installDir, "tools", "MemoryTools", "memories");
+            if (string.Equals(name, "skills", StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(installDir, "tools", "SkillTools", "skills");
+            if (string.Equals(name, "rag-index", StringComparison.OrdinalIgnoreCase))
+                return Path.Combine(installDir, "rag-index");
+            return Path.Combine(installDir, name);
+        }
+
+        private static string EffectiveLine(string overrideValue, string fallback, string kind)
+        {
+            string trimmed = NormalizeOptionalPath(overrideValue);
+            if (trimmed.Length > 0)
+                return "Effective: " + trimmed + " (override; default " + fallback + ")";
+            return "Effective: " + fallback + " (" + kind + ")";
+        }
+
+        private static string NormalizeOptionalPath(string value)
+        {
+            if (value == null)
+                return string.Empty;
+            return value.Trim().Trim('"');
+        }
+
+        private static bool IsWorkspaceOverrideOption(string name)
+        {
+            return string.Equals(name, "memoriesdirectory", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(name, "skillsdirectory", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void BrowseWorkspaceButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
+                {
+                    dialog.Description = "Select the workspace folder";
+                    dialog.ShowNewFolderButton = true;
+                    string current = (WorkspacePathTextBox.Text ?? string.Empty).Trim();
+                    if (current.Length > 0 && System.IO.Directory.Exists(current))
+                        dialog.SelectedPath = current;
+                    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                        WorkspacePathTextBox.Text = dialog.SelectedPath;
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Could not open the folder picker: " + ex.Message,
+                    "Workspace", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void MemoriesDirectoryOverrideTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            RefreshWorkspaceStatus();
+        }
+
+        private void SkillsDirectoryOverrideTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            RefreshWorkspaceStatus();
+        }
+
+        private void BrowseMemoriesOverrideButton_Click(object sender, RoutedEventArgs e)
+        {
+            BrowseOverrideFolder(MemoriesDirectoryOverrideTextBox, value => MemoriesDirectoryOverride = value);
+        }
+
+        private void ClearMemoriesOverrideButton_Click(object sender, RoutedEventArgs e)
+        {
+            MemoriesDirectoryOverride = string.Empty;
+            RefreshWorkspaceStatus();
+        }
+
+        private void BrowseSkillsOverrideButton_Click(object sender, RoutedEventArgs e)
+        {
+            BrowseOverrideFolder(SkillsDirectoryOverrideTextBox, value => SkillsDirectoryOverride = value);
+        }
+
+        private void ClearSkillsOverrideButton_Click(object sender, RoutedEventArgs e)
+        {
+            SkillsDirectoryOverride = string.Empty;
+            RefreshWorkspaceStatus();
+        }
+
+        private void OpenStateFolderButton_Click(object sender, RoutedEventArgs e)
+        {
+            string root = Workspace.StateRoot();
+            if (string.IsNullOrEmpty(root))
+            {
+                MessageBox.Show(this, "No workspace is configured.", "Workspace",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            try
+            {
+                Workspace.EnsureStateFoldersBestEffort();
+                System.Diagnostics.Process.Start("explorer.exe", "\"" + root + "\"");
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Could not open the state folder: " + ex.Message,
+                    "Workspace", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        private void BrowseOverrideFolder(TextBox target, Action<string> assign)
+        {
+            try
+            {
+                using (var dialog = new System.Windows.Forms.FolderBrowserDialog())
+                {
+                    dialog.Description = "Select a folder";
+                    dialog.ShowNewFolderButton = true;
+                    string current = NormalizeOptionalPath(target.Text);
+                    if (current.Length > 0 && Directory.Exists(current))
+                        dialog.SelectedPath = current;
+                    if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                        assign(dialog.SelectedPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(this, "Could not open the folder picker: " + ex.Message,
+                    "Workspace", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 
@@ -441,6 +684,7 @@ namespace SuperSimpleAgentGUI
             BuildToolTimeoutsUI(config);
             MakeDigitsOnly(MaxConsecutiveFailedToolCallsTextBox);
             RefreshPresetCombo(null);
+            RefreshWorkspaceStatus();
 
             IndexingStatusHub.Updated += RefreshIndexingStatusUi;
             RefreshIndexingStatusUi();
@@ -598,6 +842,17 @@ namespace SuperSimpleAgentGUI
             Model = config.GetConfigValue("model");
             SysPrompt = ConfigHandler.DecodeStoredPrompt(config.GetConfigValue("sysprompt"));
             ContextWindowSize = config.GetConfigInt("contextWindowSize", 0);
+            // Same keys and same defaults as the CLI reads in Shared/Workspace.cs,
+            // so the page cannot show one state while the CLI runs with another.
+            WorkspaceEnabled = config.GetConfigInt(Workspace.EnabledKey, 1) != 0;
+            WorkspacePath = config.GetConfigValue(Workspace.PathKey);
+            WorkspaceMaxKb = config.GetConfigInt(Workspace.MaxKbKey, Workspace.DefaultMaxKb);
+            if (WorkspaceMaxKb < 1)
+                WorkspaceMaxKb = Workspace.DefaultMaxKb;
+            // Overrides keep their old INI keys so existing configs still work; the
+            // fields just moved from the per-tool pages to Workspace.
+            MemoriesDirectoryOverride = NormalizeOptionalPath(config.GetConfigValue("memoriesdirectory"));
+            SkillsDirectoryOverride = NormalizeOptionalPath(config.GetConfigValue("skillsdirectory"));
             // Same key and same default as the CLI reads in LLMClient, so the box
             // cannot show one state while the tool runs with another.
             RepetitionGuardEnabled = config.GetConfigInt("repetitionguard", 0) != 0;
@@ -711,6 +966,9 @@ namespace SuperSimpleAgentGUI
             EmbeddingsApiKey = EmbeddingsApiKeyPasswordBox.Password;
             JevApiKey = JevApiKeyPasswordBox.Password;
             RagRetrieveMode = RagRetrieveModeComboBox.SelectedIndex == 1 ? "everyturn" : "newchat";
+            // Bound fields may still hold a trailing quote or spaces typed by hand.
+            MemoriesDirectoryOverride = NormalizeOptionalPath(MemoriesDirectoryOverride);
+            SkillsDirectoryOverride = NormalizeOptionalPath(SkillsDirectoryOverride);
             SaveThemeSelection();
             SaveIni(App.ConfigFilePath);
         }
@@ -785,6 +1043,7 @@ namespace SuperSimpleAgentGUI
                     "ragretrievemode=" + (RagRetrieveMode ?? "newchat"),
                 }),
                 new KeyValuePair<string, List<string>>("System", SettingsIniWriter.GetSystemSettings(ApiKey, ServerURL, ChatPath, Model, SysPrompt, ContextWindowSize, RepetitionGuardEnabled, ResponseTimeout, StreamStallTimeout)),
+                new KeyValuePair<string, List<string>>("Workspace", SettingsIniWriter.GetWorkspaceSettings(WorkspaceEnabled, WorkspacePath, WorkspaceMaxKb)),
                 new KeyValuePair<string, List<string>>("Tools", GetToolSettings()),
             };
             AddDynamicToolSettings(sections);
@@ -799,6 +1058,11 @@ namespace SuperSimpleAgentGUI
             {
                 "tools=" + string.Join(",", GetSelectedToolsFromListBox(ToolsListBox)),
                 "toolsrequiringapproval=" + string.Join(",", GetSelectedToolsFromListBox(ToolsRequiringApprovalListBox)),
+                // Workspace directory overrides are written here as well: the tools
+                // manifests no longer render them, and IniFileHandler ignores sections,
+                // so a tool's own option writer does not need to carry them.
+                "memoriesdirectory=" + (MemoriesDirectoryOverride ?? string.Empty),
+                "skillsdirectory=" + (SkillsDirectoryOverride ?? string.Empty),
                 "maxconsecutivefailedtoolcalls=" + MaxConsecutiveFailedToolCalls,
                 "autoguardenabled=" + App.Config.GetConfigInt("autoguardenabled", 1),
                 // redactsecrets has no UI control yet; carry the current INI
@@ -832,7 +1096,20 @@ namespace SuperSimpleAgentGUI
                 var groupLines = new List<string>();
                 foreach (var opt in group)
                 {
+                    // These moved to Options -> Workspace and are written directly in
+                    // SaveIni; emitting them again here would duplicate the key.
+                    if (IsWorkspaceOverrideOption(opt.Name))
+                        continue;
+
                     string value = opt.Default;
+                    if (opt.Hidden)
+                    {
+                        // A hidden option has no control; carry the stored value so
+                        // saving cannot silently reset it.
+                        string current = App.Config.GetConfigValue(opt.Name);
+                        if (!string.IsNullOrEmpty(current))
+                            value = current;
+                    }
                     FrameworkElement control;
                     if (_toolOptionControls.TryGetValue(opt.Name, out control))
                     {
@@ -861,6 +1138,10 @@ namespace SuperSimpleAgentGUI
 
             foreach (var group in GetToolOptionGroups())
             {
+                var visible = group.Where(o => !o.Hidden).ToList();
+                if (visible.Count == 0)
+                    continue;
+
                 // Add category item to ListBox
                 var listBoxItem = new ListBoxItem
                 {
@@ -879,8 +1160,8 @@ namespace SuperSimpleAgentGUI
                 };
                 stackPanel.Children.Add(heading);
 
-                var textOpts = group.Where(o => o.Type != "bool").OrderBy(o => o.Label, StringComparer.OrdinalIgnoreCase).ToList();
-                var boolOpts = group.Where(o => o.Type == "bool").OrderBy(o => o.Label, StringComparer.OrdinalIgnoreCase).ToList();
+                var textOpts = visible.Where(o => o.Type != "bool").OrderBy(o => o.Label, StringComparer.OrdinalIgnoreCase).ToList();
+                var boolOpts = visible.Where(o => o.Type == "bool").OrderBy(o => o.Label, StringComparer.OrdinalIgnoreCase).ToList();
 
                 foreach (var opt in textOpts)
                 {

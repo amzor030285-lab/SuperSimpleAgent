@@ -118,6 +118,9 @@
     <Compile Include="..\Shared\SessionStore.cs">
       <Link>Shared\SessionStore.cs</Link>
     </Compile>
+    <Compile Include="..\Shared\Workspace.cs">
+      <Link>Shared\Workspace.cs</Link>
+    </Compile>
     <Compile Include="..\Shared\Schedule.cs">
       <Link>Shared\Schedule.cs</Link>
     </Compile>

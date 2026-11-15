@@ -1597,8 +1597,11 @@ namespace SuperSimpleAgentCLI.Tests
                         CliRunner.WaitForTextAfter(cli, "Hello there.", "You: ", 15000);
 
                         // The conversation is no longer poisoned: a plain text turn works.
+                        // A distinct reply keeps the check independent of a prompt that may
+                        // arrive in the same 50 ms poll window as the streamed text.
+                        server.FixedReply = "Second answer.";
                         cli.WriteLine("next question");
-                        CliRunner.WaitForTextAfter(cli, "You: ", "Hello there.", 30000);
+                        CliRunner.WaitForText(cli, "Second answer.", 30000);
                     }
                 }
             });
@@ -2061,6 +2064,437 @@ namespace SuperSimpleAgentCLI.Tests
 
                         TestAssert.True(cli.Stdout.Contains(secret), "masking off: raw value in transcript");
                     }
+                }
+            });
+
+            TestRunner.Run("cli.workspace_instructions_are_injected", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // Explicit workspace: the user picked the folder, so the
+                    // instructions are trusted and the mutable state (sessions)
+                    // moves under <root>\.ssa.
+                    string proj = Path.Combine(ws.Path, "proj");
+                    Directory.CreateDirectory(proj);
+                    File.WriteAllText(Path.Combine(proj, "AGENTS.md"), "AGENTS_MARK: follow the project rules.");
+                    File.WriteAllText(Path.Combine(proj, "CLAUDE.md"), "CLAUDE_MARK: extra notes.");
+
+                    WriteCliIni(ws.Path, server.BaseUrl, workspacePath: proj);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("hello");
+                        // Wait for the prompt that follows the reply: only then has
+                        // the turn finished and the session mirror been written.
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                    }
+
+                    TestAssert.True(server.ReceivedBodies.Count > 0, "at least one request");
+                    string body = server.ReceivedBodies[0];
+                    TestAssert.True(body.Contains("AGENTS_MARK"), "AGENTS.md content injected");
+                    TestAssert.True(body.Contains("CLAUDE_MARK"), "CLAUDE.md content injected");
+                    TestAssert.True(body.Contains("trusted=\\\"yes\\\""), "explicit root is trusted");
+                    // The body is JSON, so a Windows path arrives with doubled
+                    // backslashes; compare against the same encoding.
+                    TestAssert.True(body.Contains("Workspace root: " + proj.Replace("\\", "\\\\")),
+                        "root line names the workspace");
+
+                    // Session persistence followed the workspace, not the INI folder.
+                    WaitForFile(Path.Combine(proj, ".ssa", "sessions", "lastsession.json"), 15000);
+                }
+            });
+
+            TestRunner.Run("cli.workspace_instructions_from_launch_folder", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // No workspace keys: the launch folder is the source and the
+                    // file is marked untrusted. No .ssa folder may appear.
+                    File.WriteAllText(Path.Combine(ws.Path, "AGENTS.md"), "LAUNCH_MARK: launch folder rules.");
+                    WriteCliIni(ws.Path, server.BaseUrl);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                    }
+
+                    string body = server.ReceivedBodies[0];
+                    TestAssert.True(body.Contains("LAUNCH_MARK"), "launch-folder instructions injected");
+                    TestAssert.True(body.Contains("trusted=\\\"no\\\""), "auto-discovered file is untrusted");
+                    TestAssert.True(!Directory.Exists(Path.Combine(ws.Path, ".ssa")),
+                        "launch-folder mode must not create .ssa");
+                }
+            });
+
+            TestRunner.Run("cli.workspace_instructions_come_last", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    string proj = Path.Combine(ws.Path, "proj");
+                    Directory.CreateDirectory(proj);
+                    File.WriteAllText(Path.Combine(proj, "AGENTS.md"), "ORDER_MARK: project rules.");
+                    WriteCliIni(ws.Path, server.BaseUrl, workspacePath: proj);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                    }
+
+                    string body = server.ReceivedBodies[0];
+                    int sysIndex = body.IndexOf("You are a test assistant.", StringComparison.Ordinal);
+                    int wsIndex = body.IndexOf("<workspace-instructions", StringComparison.Ordinal);
+                    TestAssert.True(sysIndex >= 0, "sysprompt present");
+                    TestAssert.True(wsIndex > sysIndex, "workspace block comes after the user sysprompt");
+                }
+            });
+
+            TestRunner.Run("cli.workspace_size_limit_truncates", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    string proj = Path.Combine(ws.Path, "proj");
+                    Directory.CreateDirectory(proj);
+                    string agents = "HEAD_MARK\n" + new string('x', 3000) + "\nTAIL_MARK_END";
+                    string claude = "CLAUDE_CUT\n" + new string('y', 2000);
+                    File.WriteAllText(Path.Combine(proj, "AGENTS.md"), agents);
+                    File.WriteAllText(Path.Combine(proj, "CLAUDE.md"), claude);
+                    WriteCliIni(ws.Path, server.BaseUrl, workspacePath: proj, workspaceMaxKb: 1);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                    }
+
+                    string body = server.ReceivedBodies[0];
+                    TestAssert.True(body.Contains("HEAD_MARK"), "head of the file is kept");
+                    TestAssert.True(!body.Contains("TAIL_MARK_END"), "tail beyond the budget is cut");
+                    TestAssert.True(!body.Contains("CLAUDE_CUT"), "a file that does not fit is not half-injected");
+                    TestAssert.True(body.Contains("[... truncated"), "truncation is reported, not silent");
+                    // Both files are accounted for: a file cut entirely must not
+                    // vanish from the reported total.
+                    int totalBytes = Encoding.UTF8.GetByteCount(agents) + Encoding.UTF8.GetByteCount(claude);
+                    TestAssert.True(body.Contains(" of " + totalBytes + " total"),
+                        "the marker counts every file, including the one cut entirely");
+                }
+            });
+
+            TestRunner.Run("cli.workspace_can_be_disabled", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    string proj = Path.Combine(ws.Path, "proj");
+                    Directory.CreateDirectory(proj);
+                    File.WriteAllText(Path.Combine(proj, "AGENTS.md"), "DISABLED_MARK: must not appear.");
+                    WriteCliIni(ws.Path, server.BaseUrl, workspacePath: proj, workspaceEnabled: 0);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                    }
+
+                    string body = server.ReceivedBodies[0];
+                    TestAssert.True(!body.Contains("DISABLED_MARK"), "switch off: nothing injected");
+                    TestAssert.True(!body.Contains("<workspace-instructions"), "switch off: no block");
+                    TestAssert.True(!Directory.Exists(Path.Combine(proj, ".ssa")),
+                        "switch off: no state redirect");
+
+                    WaitForFile(Path.Combine(ws.Path, "sessions", "lastsession.json"), 15000);
+                }
+            });
+
+            TestRunner.Run("cli.workspace_missing_folder_is_harmless", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // A stale path must not break the session: the turn still
+                    // completes and nothing is injected. The install folder's
+                    // own AGENTS.md is not a substitute for the missing root.
+                    File.WriteAllText(Path.Combine(ws.Path, "AGENTS.md"), "FALLBACK_MARK: must not appear.");
+                    WriteCliIni(ws.Path, server.BaseUrl, workspacePath: Path.Combine(ws.Path, "missing-proj"));
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                    }
+
+                    string body = server.ReceivedBodies[0];
+                    TestAssert.True(!body.Contains("<workspace-instructions"), "no block for a missing root");
+                    TestAssert.True(!body.Contains("FALLBACK_MARK"),
+                        "a stale root must not fall back to the launch folder");
+                }
+            });
+
+            TestRunner.Run("cli.workspace_memory_redirected", () =>
+            {
+                string memoryToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "MemoryTools", "bin", "Release"));
+                string memoryToolsExe = Path.Combine(memoryToolsDir, "MemoryTools.exe");
+                if (!File.Exists(memoryToolsExe))
+                {
+                    TestRunner.Skip("MemoryTools.exe not built: " + memoryToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    string proj = Path.Combine(ws.Path, "proj");
+                    Directory.CreateDirectory(proj);
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(memoryToolsExe, Path.Combine(toolsDir, "MemoryTools.exe"), true);
+                    File.Copy(Path.Combine(memoryToolsDir, "MemoryTools.json"),
+                        Path.Combine(toolsDir, "MemoryTools.json"), true);
+                    File.Copy(Path.Combine(memoryToolsDir, "Newtonsoft.Json.dll"),
+                        Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "save_memory";
+                    var args = new JObject();
+                    args["name"] = "workspace_probe";
+                    args["content"] = "remembered from the workspace test";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, tools: "save_memory", workspacePath: proj);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("remember this");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                    }
+
+                    string memoryFile = Path.Combine(proj, ".ssa", "memories", "workspace_probe.md");
+                    WaitForFile(memoryFile, 15000);
+                    TestAssert.True(File.ReadAllText(memoryFile).Contains("remembered from the workspace test"),
+                        "memory file carries the content");
+                }
+            });
+
+            TestRunner.Run("cli.workspace_state_folders_are_created", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // An explicit workspace gets the whole empty state structure up
+                    // front, so the folders can be filled without waiting for a turn.
+                    string proj = Path.Combine(ws.Path, "proj");
+                    Directory.CreateDirectory(proj);
+                    WriteCliIni(ws.Path, server.BaseUrl, workspacePath: proj);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                    }
+
+                    string[] folders = { "sessions", "memories", "skills", "plans", "knowledge", "rag-index" };
+                    foreach (string folder in folders)
+                    {
+                        TestAssert.True(Directory.Exists(Path.Combine(proj, ".ssa", folder)),
+                            folder + " folder created");
+                    }
+                }
+            });
+
+            TestRunner.Run("cli.workspace_explicit_memories_override_wins", () =>
+            {
+                string memoryToolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools", "MemoryTools", "bin", "Release"));
+                string memoryToolsExe = Path.Combine(memoryToolsDir, "MemoryTools.exe");
+                if (!File.Exists(memoryToolsExe))
+                {
+                    TestRunner.Skip("MemoryTools.exe not built: " + memoryToolsExe);
+                    return;
+                }
+
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    string proj = Path.Combine(ws.Path, "proj");
+                    Directory.CreateDirectory(proj);
+                    string shared = Path.Combine(ws.Path, "shared-memories");
+                    Directory.CreateDirectory(shared);
+
+                    string toolsDir = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(toolsDir);
+                    File.Copy(memoryToolsExe, Path.Combine(toolsDir, "MemoryTools.exe"), true);
+                    File.Copy(Path.Combine(memoryToolsDir, "MemoryTools.json"),
+                        Path.Combine(toolsDir, "MemoryTools.json"), true);
+                    File.Copy(Path.Combine(memoryToolsDir, "Newtonsoft.Json.dll"),
+                        Path.Combine(toolsDir, "Newtonsoft.Json.dll"), true);
+
+                    server.ToolCallRoundsRemaining = 1;
+                    server.ToolCallName = "save_memory";
+                    var args = new JObject();
+                    args["name"] = "override_probe";
+                    args["content"] = "stored outside the workspace";
+                    server.ToolCallArguments = args.ToString(Newtonsoft.Json.Formatting.None);
+
+                    WriteCliIni(ws.Path, server.BaseUrl, tools: "save_memory", workspacePath: proj);
+                    // An explicit directory wins over the workspace folder: the GUI
+                    // edits it on Options -> Workspace, the CLI still reads the key.
+                    File.AppendAllText(Path.Combine(ws.Path, "LLMSettings.ini"),
+                        "memoriesdirectory=" + shared + "\r\n");
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("remember this");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                    }
+
+                    string memoryFile = Path.Combine(shared, "override_probe.md");
+                    WaitForFile(memoryFile, 15000);
+                    TestAssert.True(!File.Exists(Path.Combine(proj, ".ssa", "memories", "override_probe.md")),
+                        "the workspace folder is bypassed when an override is set");
+                }
+            });
+
+            TestRunner.Run("cli.workspace_reload_moves_sessions", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    string first = Path.Combine(ws.Path, "proj-a");
+                    string second = Path.Combine(ws.Path, "proj-b");
+                    Directory.CreateDirectory(first);
+                    Directory.CreateDirectory(second);
+                    WriteCliIni(ws.Path, server.BaseUrl, workspacePath: first);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("first turn");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                        WaitForFile(Path.Combine(first, ".ssa", "sessions", "lastsession.json"), 15000);
+
+                        // Point the workspace somewhere else and reload: the session
+                        // mirror must follow without waiting for a restart. /reload is
+                        // silent in this mode, so the next turn is what proves it.
+                        WriteCliIni(ws.Path, server.BaseUrl, workspacePath: second);
+                        cli.WriteLine("/reload");
+                        cli.WriteLine("second turn");
+                        WaitForFile(Path.Combine(second, ".ssa", "sessions", "lastsession.json"), 30000);
+                    }
+                }
+            });
+
+            TestRunner.Run("workspace.unit_slice_by_bytes_never_loops", () =>
+            {
+                // Multibyte characters are built from code points, so the test file
+                // itself stays pure ASCII and cannot depend on the source encoding.
+                string yo = ((char)0x0451).ToString();                       // 2 UTF-8 bytes
+                string euro = ((char)0x20AC).ToString();                     // 3 UTF-8 bytes
+                string emoji = ((char)0xD83D).ToString() + ((char)0xDE00).ToString(); // 4 UTF-8 bytes
+
+                // A budget smaller than the first character used to spin forever:
+                // the shrink loop clamped back to one character and never ended.
+                TestAssert.Equal("", Workspace.SliceByBytes(yo, 1), "a 2-byte character in a 1-byte budget");
+                TestAssert.Equal("", Workspace.SliceByBytes(euro, 2), "a 3-byte character in a 2-byte budget");
+                TestAssert.Equal("", Workspace.SliceByBytes(emoji, 3), "a 4-byte character in a 3-byte budget");
+
+                // Everything that does fit is still sliced as before. The slice is
+                // deliberately approximate (it shrinks by a safety factor), and the
+                // leftover is reported by the truncation marker.
+                TestAssert.Equal("a", Workspace.SliceByBytes("abc", 1), "ascii in a 1-byte budget");
+                TestAssert.Equal("a", Workspace.SliceByBytes("abc", 2), "ascii in a 2-byte budget");
+                TestAssert.Equal("abc", Workspace.SliceByBytes("abc", 3), "ascii in a 3-byte budget");
+                TestAssert.Equal(yo, Workspace.SliceByBytes(yo, 2), "the character fits exactly");
+                TestAssert.Equal(yo + "a", Workspace.SliceByBytes(yo + "ab", 3), "the next character does not fit");
+                TestAssert.Equal("", Workspace.SliceByBytes("abc", 0), "no budget, no content");
+
+                // A surrogate pair is one character of four bytes and is never cut
+                // in half.
+                TestAssert.Equal(emoji, Workspace.SliceByBytes(emoji, 4), "the pair fits exactly");
+                TestAssert.Equal("ab", Workspace.SliceByBytes("ab" + emoji, 5), "the pair does not fit");
+            });
+
+            TestRunner.Run("workspace.unit_escape_tag_breakout_is_case_insensitive", () =>
+            {
+                string mixed = Workspace.EscapeTagBreakout("before </WORKSPACE-INSTRUCTIONS> after");
+                TestAssert.True(mixed.IndexOf("</workspace-instructions>", StringComparison.Ordinal) < 0,
+                    "the closing tag cannot survive in any casing");
+                TestAssert.Contains(mixed, "</workspace-instructions >", "the tag stays readable");
+
+                string exact = Workspace.EscapeTagBreakout("</workspace-instructions>");
+                TestAssert.True(exact.IndexOf("</workspace-instructions>", StringComparison.Ordinal) < 0,
+                    "the exact tag is broken too");
+                TestAssert.Equal("plain text", Workspace.EscapeTagBreakout("plain text"), "other text is untouched");
+            });
+
+            TestRunner.Run("workspace.unit_decode_text_handles_bom_and_ansi", () =>
+            {
+                byte[] utf8Bom = new byte[] { 0xEF, 0xBB, 0xBF, 0x41, 0x42 };
+                TestAssert.Equal("AB", Workspace.DecodeText(utf8Bom), "the utf-8 bom is skipped");
+
+                byte[] plain = new byte[] { 0x41, 0x42 };
+                TestAssert.Equal("AB", Workspace.DecodeText(plain), "plain utf-8");
+
+                byte[] utf16Bom = new byte[] { 0xFF, 0xFE, 0x41, 0x00 };
+                TestAssert.Equal("A", Workspace.DecodeText(utf16Bom), "the utf-16 bom is honored");
+
+                // 0xE9 is not valid utf-8, so the system code page takes over.
+                byte[] ansi = new byte[] { 0xE9, 0x41 };
+                string decoded = Workspace.DecodeText(ansi);
+                TestAssert.Equal(2, decoded.Length, "the ansi fallback decodes one byte per character");
+                TestAssert.True(decoded.EndsWith("A", StringComparison.Ordinal), "the ascii byte survives");
+            });
+
+            TestRunner.Run("cli.workspace_budget_edge_does_not_hang", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageCliWorkspace())
+                {
+                    // One byte of budget left after AGENTS.md, and a second file whose
+                    // first character needs two bytes: slicing that file used to spin
+                    // forever and hang the CLI mid-turn.
+                    string proj = Path.Combine(ws.Path, "proj");
+                    Directory.CreateDirectory(proj);
+                    File.WriteAllText(Path.Combine(proj, "AGENTS.md"), new string('x', 1023));
+                    File.WriteAllText(Path.Combine(proj, "CLAUDE.md"),
+                        ((char)0x0451).ToString() + "tail");
+
+                    WriteCliIni(ws.Path, server.BaseUrl, workspacePath: proj, workspaceMaxKb: 1);
+
+                    string exe = Path.Combine(ws.Path, "SuperSimpleAgentCLI.exe");
+                    using (CliRunner cli = new CliRunner(exe, ws.Path))
+                    {
+                        CliRunner.WaitForText(cli, "You:", 20000);
+                        cli.WriteLine("hello");
+                        CliRunner.WaitForTextAfter(cli, server.FixedReply, "You: ", 30000);
+                    }
+
+                    string body = server.ReceivedBodies[0];
+                    TestAssert.True(body.Contains("[... truncated"), "the cut is reported");
+                    TestAssert.True(body.Contains(" of 1029 total"), "both files count in the total");
                 }
             });
 
@@ -4560,10 +4994,28 @@ namespace SuperSimpleAgentCLI.Tests
             File.Copy(srcCurl, Path.Combine(ws.Path, "curl.exe"), true);
         }
 
+        /// <summary>
+        /// Polls for a file the CLI writes on its own schedule (session save,
+        /// tool side effect) and fails the test with a clear message when it
+        /// never appears.
+        /// </summary>
+        static void WaitForFile(string path, int timeoutMs)
+        {
+            DateTime deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (File.Exists(path))
+                    return;
+                System.Threading.Thread.Sleep(100);
+            }
+            TestAssert.True(false, "file was not created within " + timeoutMs + " ms: " + path);
+        }
+
         static void WriteCliIni(string dir, string llmServer, int contextWindowSize = 0, string tools = "",
             int streamStallTimeout = 120, int requestTimeout = 300, string toolTimeout = "",
             int repetitionGuard = -1, string chatPath = "", bool? guardEnabled = null,
-            int? redactSecrets = null)
+            int? redactSecrets = null, string workspacePath = null, int? workspaceMaxKb = null,
+            int? workspaceEnabled = null)
         {
             string path = Path.Combine(dir, "LLMSettings.ini");
             File.WriteAllText(path,
@@ -4574,6 +5026,9 @@ namespace SuperSimpleAgentCLI.Tests
                 "model=test-model\r\n" +
                 "sysprompt=\"You are a test assistant.\"\r\n" +
                 "contextWindowSize=" + contextWindowSize + "\r\n" +
+                (workspaceEnabled.HasValue ? "workspaceenabled=" + workspaceEnabled.Value + "\r\n" : "") +
+                (workspacePath != null ? "workspacepath=" + workspacePath + "\r\n" : "") +
+                (workspaceMaxKb.HasValue ? "workspacemaxkb=" + workspaceMaxKb.Value + "\r\n" : "") +
                 "streamstalltimeout=" + streamStallTimeout + "\r\n" +
                 "requesttimeout=" + requestTimeout + "\r\n" +
                 (repetitionGuard < 0 ? "" : "repetitionguard=" + repetitionGuard + "\r\n") +

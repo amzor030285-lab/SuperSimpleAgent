@@ -157,6 +157,50 @@ What it does **not** do:
 
 `redactsecrets` in `LLMSettings.ini` (default `1`) turns the masking off for a session.
 
+## Workspace instructions (`AGENTS.md` / `CLAUDE.md`)
+
+The workspace feature injects a text file from disk into the **system prompt**, which
+makes the file a trust boundary: whatever it says is read by the model as instructions.
+The design treats that explicitly:
+
+- **Explicit folder = trusted.** When `workspacepath` is set in `LLMSettings.ini`, the
+  user picked the folder themselves; the block is marked `trusted="yes"`. The GUI page
+  `Options` -> `Workspace` shows the root, the files and their sizes, so the choice is
+  visible, not implicit.
+- **Auto-discovered file = untrusted.** With `workspacepath` empty, `AGENTS.md` /
+  `CLAUDE.md` are read from the launch folder only (no ancestor walk, no drive-root
+  scan), the block is marked `trusted="no"` and says it was auto-discovered. The file is
+  data; it cannot change approval mode, the tool list or the guard rules.
+- **Guard rules and configuration never come from the workspace.** `guardrules.json` and
+  `LLMSettings.ini` are always read beside the executable. A file in a project folder
+  therefore cannot weaken or replace the guard that screens its own tool calls.
+- **The hard safety boundary is unchanged.** Tool approval, plan mode and the command
+  guard gate every action whatever the instructions file says. The instructions block
+  is placed at the **end** of the system prompt so it cannot claim the authoritative
+  first position.
+- **Persistence of the injection is the actual risk.** Unlike a web page read once, a
+  hostile `AGENTS.md` in a checked-out repository affects every session started in that
+  folder (the GitInject class of attacks: a pull request adds the file, the agent treats
+  it as operator instructions). Mitigations here are the trust marker, the visible
+  path + size line in the CLI banner and in `Options` -> `Workspace`, and the unchanged
+  guard/approval gates. `workspaceenabled=0` disables the feature entirely. Treat
+  repositories you do not trust the same way you treat untrusted shell scripts.
+- **Size budget.** The injected text is capped by `workspacemaxkb` (default `32` KB) and
+  cut with an explicit `[... truncated N bytes of M total ...]` marker, so a rule cannot
+  vanish silently; content is decoded with BOM detection, strict UTF-8, then the system
+  ANSI code page as a fallback, so a Windows-1251 file is not turned into mojibake.
+- **State redirection changes where sessions live.** With `workspacepath` set, session
+  files (including `lastsession.json`), memories, skills, plans, knowledge and the RAG
+  index are written under `<workspace>\.ssa\...`. That folder is ordinary application
+  data: treat it like any other session file when copying or sharing a project. The
+  application creates the empty subfolders (`sessions`, `memories`, `skills`, `plans`,
+  `knowledge`, `rag-index`) and never fills, moves or deletes them by itself.
+- **Directory overrides escape `.ssa`.** `memoriesdirectory` and `skillsdirectory`
+  (edited on `Options` -> `Workspace`) are honoured before the workspace: when they
+  point somewhere else, that store lives outside `<workspace>\.ssa` and is left
+  entirely to the user. A path that is not set follows the workspace, and the
+  instruction files and the guard rules are never read from such an override.
+
 ## Jev decision gate (where the human approves)
 
 When `jevbaseurl` is set, a small decision model answering the System One

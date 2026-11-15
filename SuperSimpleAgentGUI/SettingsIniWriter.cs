@@ -65,6 +65,7 @@ namespace SuperSimpleAgentGUI
                 // llmserver, which is right for every provider that keeps the version in
                 // the base URL.
                 new KeyValuePair<string, List<string>>("System", GetSystemSettings(apiKey, llmServer, string.Empty, model, sysPrompt, contextWindowSize)),
+                new KeyValuePair<string, List<string>>("Workspace", GetDefaultWorkspaceSettings()),
                 new KeyValuePair<string, List<string>>("Tools", GetDefaultToolSettings()),
             };
             WriteSections(path, sections);
@@ -93,6 +94,26 @@ namespace SuperSimpleAgentGUI
                 "streamstalltimeout=" + streamStallTimeout,
                 "sysprompt=\"" + EscapePromptForStorage(sysPrompt) + "\"",
             };
+        }
+
+        public static List<string> GetWorkspaceSettings(
+            bool enabled,
+            string path,
+            int maxKb)
+        {
+            if (maxKb < 1)
+                maxKb = Workspace.DefaultMaxKb;
+            return new List<string>
+            {
+                "workspaceenabled=" + (enabled ? "1" : "0"),
+                "workspacepath=" + (path ?? string.Empty).Trim(),
+                "workspacemaxkb=" + maxKb,
+            };
+        }
+
+        private static List<string> GetDefaultWorkspaceSettings()
+        {
+            return GetWorkspaceSettings(true, string.Empty, Workspace.DefaultMaxKb);
         }
 
         private static List<string> GetDefaultAppearanceSettings()

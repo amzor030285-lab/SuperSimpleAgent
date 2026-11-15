@@ -251,6 +251,10 @@ namespace SuperSimpleAgentCLI
             // Load configuration
             Config = new ConfigHandler(Path.Combine(
                 AppDomain.CurrentDomain.BaseDirectory, "LLMSettings.ini"));
+            Workspace.Bind(Config);
+            // Best effort only: an unwritable workspace is reported on Options ->
+            // Workspace rather than turned into a CLI error turn by the GUI.
+            Workspace.EnsureStateFoldersBestEffort();
 
             // Always-on status pipe for GUI (and optional external monitors)
             StatusPipe = new StatusPipeServer();
@@ -308,7 +312,9 @@ namespace SuperSimpleAgentCLI
             // Token status starts at 0; base overhead is measured on the first real request.
             client.PublishStatusTokens(0);
 
-            string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
+            // Sessions live beside the EXE, unless an explicit workspace owns
+            // the mutable state (workspace\.ssa\sessions).
+            string sessionsDir = Workspace.SessionDirectory(AppDomain.CurrentDomain.BaseDirectory);
 
             // An explicit "--session <name>" (used by the in-app scheduler) targets a
             // dedicated session file instead of the reserved "lastsession" mirror. It
@@ -485,7 +491,20 @@ namespace SuperSimpleAgentCLI
             }
 
             if (showBanners)
+            {
                 PrintCliInstructions();
+
+                // Workspace notice: what got loaded (files + sizes) and which
+                // folder holds the mutable state. Printed only when the feature
+                // has something to say, so a stock installation stays quiet.
+                // Suppressed by --no-banners, so the GUI pipe stays clean; the
+                // GUI shows the same information on Options -> Workspace.
+                if (Workspace.IsActive())
+                {
+                    foreach (string wsLine in Workspace.Describe().Replace("\r\n", "\n").Split('\n'))
+                        ChatOutput.WriteLine("[Workspace] " + wsLine);
+                }
+            }
 
             // The restore notice is printed only when we actually enter interactive
             // mode: a headless one-shot (the in-app scheduler) returns before this
@@ -548,6 +567,11 @@ namespace SuperSimpleAgentCLI
                 {
                     Config.LoadConfig(Path.Combine(
                         AppDomain.CurrentDomain.BaseDirectory, "LLMSettings.ini"));
+                    // The session folder is resolved once per process, so a workspace
+                    // change made through Options only reaches the auto-saved mirror on
+                    // a reload when it is recomputed here too.
+                    sessionsDir = Workspace.SessionDirectory(AppDomain.CurrentDomain.BaseDirectory);
+                    Workspace.EnsureStateFoldersBestEffort();
                     registry.Clear();
                     registry.LoadToolsFromDirectory(toolsDir);
                     enabledTools = Config.GetConfigList("tools");

@@ -1238,6 +1238,16 @@ public class LLMClient
             sysprompt += PlanMode.BuildPromptBlock();
         }
 
+        // Workspace instructions go last: untrusted file content must not
+        // claim the authoritative first position in the system prompt.
+        string workspaceBlock = Workspace.GetInstructionsBlock();
+        if (!string.IsNullOrEmpty(workspaceBlock))
+        {
+            if (sysprompt.Length > 0)
+                sysprompt += "\n\n";
+            sysprompt += workspaceBlock;
+        }
+
         return sysprompt;
     }
 

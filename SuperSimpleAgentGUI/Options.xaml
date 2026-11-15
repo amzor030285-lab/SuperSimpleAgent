@@ -28,6 +28,7 @@
             <ListBoxItem Content="Appearance"/>
             <ListBoxItem Content="RAG"/>
             <ListBoxItem Content="System"/>
+            <ListBoxItem Content="Workspace"/>
             <ListBoxItem Content="Tools"/>
         </ListBox>
 
@@ -280,6 +281,157 @@
                               Content="Auto"
                               IsChecked="{Binding JevScreenAuto, UpdateSourceTrigger=PropertyChanged}"
                               ToolTip="When on, every auto-mode call goes through the gate; a confirm asks the human. When off, auto keeps running everything unattended."/>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Workspace page -->
+            <ScrollViewer x:Name="WorkspacePage" Margin="0,0,0,10" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <StackPanel Margin="8,0,8,0">
+
+                    <Label Content="Workspace" FontWeight="Bold" FontSize="14" Margin="0,0,0,0"/>
+
+                    <CheckBox x:Name="WorkspaceEnabledCheckBox"
+                              AutomationProperties.AutomationId="WorkspaceEnabledCheckBox"
+                              Content="Read project instructions (AGENTS.md / CLAUDE.md)"
+                              IsChecked="{Binding WorkspaceEnabled, UpdateSourceTrigger=PropertyChanged}"
+                              Margin="0,4,0,4"/>
+
+                    <!-- Workspace folder -->
+                    <Label Content="Workspace folder (empty = launch folder):"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="WorkspacePathTextBox"
+                                 Grid.Column="0"
+                                 AutomationProperties.AutomationId="WorkspacePathTextBox"
+                                 Text="{Binding WorkspacePath, UpdateSourceTrigger=PropertyChanged}"
+                                 Height="23"
+                                 Margin="0,0,0,4"/>
+                        <Button x:Name="BrowseWorkspaceButton"
+                                Grid.Column="1"
+                                AutomationProperties.AutomationId="browseWorkspaceButton"
+                                Content="..."
+                                Width="30"
+                                Height="23"
+                                Margin="4,0,0,4"
+                                ToolTip="Pick the workspace folder"
+                                Click="BrowseWorkspaceButton_Click"/>
+                    </Grid>
+
+                    <!-- Size budget -->
+                    <Label Content="Max instructions size (KB):"/>
+                    <TextBox x:Name="WorkspaceMaxKbTextBox"
+                             AutomationProperties.AutomationId="WorkspaceMaxKbTextBox"
+                             Text="{Binding WorkspaceMaxKb, UpdateSourceTrigger=PropertyChanged}"
+                             Height="23"
+                             Margin="0,0,0,8"
+                             ToolTip="Total byte budget for the injected instruction files. 32 matches the Codex default."/>
+
+                    <Label Content="Effective workspace:"/>
+                    <TextBlock x:Name="WorkspaceStatusText"
+                               AutomationProperties.AutomationId="WorkspaceStatusText"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"/>
+
+                    <!-- State folders -->
+                    <Label Content="State folders (created empty when the workspace is set):"
+                           FontWeight="Bold" Margin="0,4,0,2"/>
+                    <TextBlock x:Name="StateFoldersText"
+                               AutomationProperties.AutomationId="StateFoldersText"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"/>
+
+                    <!-- Memories directory override -->
+                    <Label Content="Memories directory override (empty = automatic):"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="MemoriesDirectoryOverrideTextBox"
+                                 Grid.Column="0"
+                                 AutomationProperties.AutomationId="MemoriesDirectoryOverrideTextBox"
+                                 Text="{Binding MemoriesDirectoryOverride, UpdateSourceTrigger=PropertyChanged}"
+                                 Height="23"
+                                 Margin="0,0,0,4"
+                                 ToolTip="Leave empty to use the workspace .ssa folder, or point at a shared folder outside it."
+                                 TextChanged="MemoriesDirectoryOverrideTextBox_TextChanged"/>
+                        <Button x:Name="BrowseMemoriesOverrideButton"
+                                Grid.Column="1"
+                                AutomationProperties.AutomationId="browseMemoriesOverrideButton"
+                                Content="..."
+                                Width="30"
+                                Height="23"
+                                Margin="4,0,0,4"
+                                ToolTip="Pick the memories folder"
+                                Click="BrowseMemoriesOverrideButton_Click"/>
+                        <Button x:Name="ClearMemoriesOverrideButton"
+                                Grid.Column="2"
+                                AutomationProperties.AutomationId="clearMemoriesOverrideButton"
+                                Content="Clear"
+                                Width="50"
+                                Height="23"
+                                Margin="4,0,0,4"
+                                ToolTip="Use the automatic workspace folder"
+                                Click="ClearMemoriesOverrideButton_Click"/>
+                    </Grid>
+                    <TextBlock x:Name="MemoriesEffectiveText"
+                               AutomationProperties.AutomationId="MemoriesEffectiveText"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"/>
+
+                    <!-- Skills directory override -->
+                    <Label Content="Skills directory override (empty = automatic):"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="SkillsDirectoryOverrideTextBox"
+                                 Grid.Column="0"
+                                 AutomationProperties.AutomationId="SkillsDirectoryOverrideTextBox"
+                                 Text="{Binding SkillsDirectoryOverride, UpdateSourceTrigger=PropertyChanged}"
+                                 Height="23"
+                                 Margin="0,0,0,4"
+                                 ToolTip="Leave empty to use the workspace .ssa folder, or point at a shared folder outside it."
+                                 TextChanged="SkillsDirectoryOverrideTextBox_TextChanged"/>
+                        <Button x:Name="BrowseSkillsOverrideButton"
+                                Grid.Column="1"
+                                AutomationProperties.AutomationId="browseSkillsOverrideButton"
+                                Content="..."
+                                Width="30"
+                                Height="23"
+                                Margin="4,0,0,4"
+                                ToolTip="Pick the skills folder"
+                                Click="BrowseSkillsOverrideButton_Click"/>
+                        <Button x:Name="ClearSkillsOverrideButton"
+                                Grid.Column="2"
+                                AutomationProperties.AutomationId="clearSkillsOverrideButton"
+                                Content="Clear"
+                                Width="50"
+                                Height="23"
+                                Margin="4,0,0,4"
+                                ToolTip="Use the automatic workspace folder"
+                                Click="ClearSkillsOverrideButton_Click"/>
+                    </Grid>
+                    <TextBlock x:Name="SkillsEffectiveText"
+                               AutomationProperties.AutomationId="SkillsEffectiveText"
+                               TextWrapping="Wrap"
+                               Margin="0,0,0,8"/>
+
+                    <Button x:Name="OpenStateFolderButton"
+                            AutomationProperties.AutomationId="openStateFolderButton"
+                            Content="Open state folder"
+                            HorizontalAlignment="Left"
+                            Height="23"
+                            Margin="0,4,0,0"
+                            ToolTip="Open the workspace .ssa folder in Explorer"
+                            Click="OpenStateFolderButton_Click"/>
 
                 </StackPanel>
             </ScrollViewer>

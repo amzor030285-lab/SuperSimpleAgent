@@ -113,6 +113,12 @@ On first use, if `LLMSettings.ini` does not exist, the GUI setup wizard creates 
 -   `requesttimeout`: Seconds before the whole request is abandoned (default `300`)
 -   `repetitionguard`: Stop a generation that has degenerated into repeating the same block of text (default `0`, off). How prone a model is to loop is a property of the model, so this is off by default and enabled per model in `Options` -> `System`, next to `Context Window Size`
 
+**Workspace**
+
+-   `workspaceenabled`: Read project instructions (`AGENTS.md`, `CLAUDE.md`) and keep project state inside the workspace (`1` or `0`, default on). `0` restores the pre-workspace behavior exactly: no instructions are injected and every state folder stays beside the EXE. Editable in `Options` -> `Workspace`
+-   `workspacepath`: Workspace folder. When set, the instruction files are read from it (marked trusted, because the user picked the folder) and the mutable state - sessions, memories, skills, plans, knowledge and the RAG index - moves into `<workspace>\.ssa\...`. The whole structure (`sessions`, `memories`, `skills`, `plans`, `knowledge`, `rag-index`) is created empty as soon as the folder is configured, so it can be filled right away; files that already sit beside the EXE are never moved automatically. Empty means the launch folder is used for instructions only: `AGENTS.md` / `CLAUDE.md` are read from the folder the CLI was started in (the GUI starts the CLI in its install folder), the content is marked untrusted, and no `.ssa` folder is created. `LLMSettings.ini` and the guard rules always stay beside the EXE, never in the workspace, so a workspace file cannot weaken its own guard. An explicit `ragknowledgepath`, `memoriesdirectory` or `skillsdirectory` still wins over the workspace folder; the last two are edited under `Options` -> `Workspace` and are empty by default. A configured folder that no longer exists injects nothing and leaves the state beside the EXE; it does not silently fall back to the launch folder
+-   `workspacemaxkb`: Total size budget in kilobytes for the injected instruction files (default `32`, the same budget Codex applies to `project_doc_max_bytes`). Content beyond the budget is cut and an explicit `[... truncated N bytes of M total ...]` marker is injected, so a rule never disappears silently; the truncation is also shown in the CLI banner and in `Options` -> `Workspace`
+
 **Tools**
 
 -   `tools`: Comma-separated list of tools the AI is allowed to use
@@ -208,7 +214,7 @@ SuperSimpleAgent includes the following 7 tool packages:
         -   `save_memory`: Saves or updates a memory entry
         -   `search_memories`: Searches all memory entries by keyword
     -   Configuration Options
-        -   `memoriesDirectory`: Directory for memory `.md` files (default: `memories` folder next to `MemoryTools.exe`)
+        -   `memoriesDirectory`: Directory for memory `.md` files. Empty (the default) means `<workspace>\.ssa\memories` when a workspace owns the state, otherwise the `memories` folder next to `MemoryTools.exe`. It is not shown on this page any more: edit it under `Options` -> `Workspace`, where the effective folder is displayed
         -   `maxContentLength`: Maximum length of a memory entry (in characters) (default: `2000`)
         -   `maxMemories`: Maximum number of memories to store (default: `50`)
     -   Context Injector
@@ -242,7 +248,7 @@ SuperSimpleAgent includes the following 7 tool packages:
         -   `remove_skill`: Deletes an agent skill
         -   `view_skill`: Loads a skill's full `SKILL.md`, absolute path to the skill folder, and relative paths for linked files (optional `relative_path` loads one relative file)
     -   Configuration Options
-        -   `skillsDirectory`: Directory to scan recursively for skill folders (folders containing 'SKILL.md') (default: `skills` folder next to `SkillTools.exe`)
+        -   `skillsDirectory`: Directory to scan recursively for skill folders (folders containing 'SKILL.md'). Empty (the default) means `<workspace>\.ssa\skills` when a workspace owns the state, otherwise the `skills` folder next to `SkillTools.exe`. It is not shown on this page any more: edit it under `Options` -> `Workspace`, where the effective folder is displayed
     -   Context Injector
         -   `get_skills_context`: Injects the skills directory path, skill names and descriptions, and instructions to load matching skills via `view_skill`, run scripts as shell commands under the skill root, and author skills with `create_skill` / `edit_skill` / `edit_skill_file` / `remove_skill`.
 -   Web Tools

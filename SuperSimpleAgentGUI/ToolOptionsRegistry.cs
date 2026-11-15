@@ -17,6 +17,12 @@ namespace SuperSimpleAgentGUI
         public string Type;         // "string", "int", or "bool"
         public string Default;      // Default value as a string
         public string Source;       // Manifest package name (e.g., "FileTools")
+
+        /// <summary>
+        /// True when the option is still declared for the CLI tool payload but must
+        /// not be rendered on a per-tool Options page (it moved to Workspace).
+        /// </summary>
+        public bool Hidden;
     }
 
     public static class ToolOptionsRegistry
@@ -62,13 +68,19 @@ namespace SuperSimpleAgentGUI
                 if (string.IsNullOrEmpty(name))
                     continue;
 
+                bool hidden = false;
+                JToken hiddenToken = optObj["hidden"];
+                if (hiddenToken != null)
+                    bool.TryParse(hiddenToken.ToString(), out hidden);
+
                 options.Add(new ToolOptionDefinition
                 {
                     Name = name,
                     Label = (string)optObj["label"] ?? name,
                     Type = ((string)optObj["type"] ?? "string").ToLowerInvariant(),
                     Default = (string)optObj["default"] ?? "",
-                    Source = source
+                    Source = source,
+                    Hidden = hidden
                 });
             }
         }

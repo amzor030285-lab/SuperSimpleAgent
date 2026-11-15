@@ -914,7 +914,7 @@ namespace SuperSimpleAgentGUI
                 try
                 {
                     SessionStore.Delete(
-                        SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory),
+                        Workspace.SessionDirectory(AppDomain.CurrentDomain.BaseDirectory),
                         "lastsession");
                 }
                 catch { }
@@ -927,7 +927,7 @@ namespace SuperSimpleAgentGUI
             if (!CliRunning("Save Session"))
                 return;
 
-            string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
+            string sessionsDir = Workspace.SessionDirectory(AppDomain.CurrentDomain.BaseDirectory);
             List<SessionStore.SessionInfo> sessions = SessionStore.List(sessionsDir);
             var dialog = new SessionSaveDialog(sessions);
             dialog.Owner = this;
@@ -943,7 +943,7 @@ namespace SuperSimpleAgentGUI
             if (!CliRunning("Load Session"))
                 return;
 
-            string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
+            string sessionsDir = Workspace.SessionDirectory(AppDomain.CurrentDomain.BaseDirectory);
             List<SessionStore.SessionInfo> sessions = SessionStore.List(sessionsDir);
             if (sessions.Count == 0)
             {
@@ -1137,7 +1137,7 @@ namespace SuperSimpleAgentGUI
         {
             try
             {
-                string sessionsDir = SessionStore.DefaultDirectory(AppDomain.CurrentDomain.BaseDirectory);
+                string sessionsDir = Workspace.SessionDirectory(AppDomain.CurrentDomain.BaseDirectory);
                 string sessionFile = Path.Combine(sessionsDir, "lastsession.json");
                 if (File.Exists(sessionFile))
                 {

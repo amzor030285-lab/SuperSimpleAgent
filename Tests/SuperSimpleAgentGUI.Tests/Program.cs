@@ -1148,6 +1148,223 @@ namespace SuperSimpleAgentGUI.Tests
                 }
             });
 
+            TestRunner.Run("gui.workspace_page_survives_a_restart", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+                    string iniPath = Path.Combine(ws.Path, "LLMSettings.ini");
+                    string proj = Path.Combine(ws.Path, "proj");
+                    Directory.CreateDirectory(proj);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "Workspace", 10000);
+
+                        // Fresh config: the page shows the defaults and the
+                        // effective launch folder without any keys in the INI.
+                        TestAssert.True(
+                            gui.GetCheckBoxStateInWindow("Options", "WorkspaceEnabledCheckBox", 10000),
+                            "instructions reading is on by default");
+                        TestAssert.Equal("32", gui.GetTextBoxTextInWindow("Options", "WorkspaceMaxKbTextBox", 10000),
+                            "32 KB default");
+
+                        gui.SetTextBoxInWindow("Options", "WorkspacePathTextBox", proj, 10000);
+                        gui.SetTextBoxInWindow("Options", "WorkspaceMaxKbTextBox", "8", 10000);
+                        gui.ClickButtonInWindow("Options", "optionsOkButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+
+                    // The keys must land in the INI the CLI reads.
+                    ConfigHandler saved = new ConfigHandler(iniPath);
+                    TestAssert.Equal(proj, saved.GetConfigValue("workspacepath"), "workspace path saved");
+                    TestAssert.Equal("8", saved.GetConfigValue("workspacemaxkb"), "size budget saved");
+                    TestAssert.Equal("1", saved.GetConfigValue("workspaceenabled"), "enabled saved");
+
+                    // And the page shows the same values after a restart.
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "Workspace", 10000);
+                        TestAssert.Equal(proj, gui.GetTextBoxTextInWindow("Options", "WorkspacePathTextBox", 10000),
+                            "path survives a restart");
+                        TestAssert.Equal("8", gui.GetTextBoxTextInWindow("Options", "WorkspaceMaxKbTextBox", 10000),
+                            "budget survives a restart");
+                        var status = gui.FindByIdInWindow("Options", "WorkspaceStatusText", 10000);
+                        TestAssert.True(status != null, "workspace status is visible");
+                        TestAssert.True((status.Current.Name ?? string.Empty).Contains(proj),
+                            "status names the configured workspace root");
+                        gui.ClickButtonInWindow("Options", "optionsCancelButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+
+                    // Turning the feature off must reach the INI too.
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "Workspace", 10000);
+                        gui.SetCheckBoxInWindow("Options", "WorkspaceEnabledCheckBox", false, 10000);
+                        gui.ClickButtonInWindow("Options", "optionsOkButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+
+                    TestAssert.Equal("0", new ConfigHandler(iniPath).GetConfigValue("workspaceenabled"),
+                        "switch off saved");
+                }
+            });
+
+            TestRunner.Run("gui.workspace_directory_options_are_hidden_on_tool_pages", () =>
+            {
+                // The tool manifests still declare the two directory options (the CLI
+                // passes them to the tool processes), but the GUI must not render
+                // them on the per-tool pages any more.
+                string toolsDir = Path.GetFullPath(Path.Combine(
+                    AppDomain.CurrentDomain.BaseDirectory, "..", "..", "Tools"));
+                if (!Directory.Exists(toolsDir))
+                {
+                    TestRunner.Skip("tool manifests not found: " + toolsDir);
+                    return;
+                }
+
+                List<ToolOptionDefinition> options = ToolOptionsRegistry.LoadOptionsFromDirectory(toolsDir);
+                ToolOptionDefinition memories = null;
+                ToolOptionDefinition skills = null;
+                foreach (ToolOptionDefinition option in options)
+                {
+                    if (string.Equals(option.Name, "memoriesDirectory", StringComparison.OrdinalIgnoreCase))
+                        memories = option;
+                    if (string.Equals(option.Name, "skillsDirectory", StringComparison.OrdinalIgnoreCase))
+                        skills = option;
+                }
+
+                TestAssert.True(memories != null, "memoriesDirectory option declared");
+                TestAssert.True(memories != null && memories.Hidden,
+                    "memoriesDirectory is hidden from the tool pages");
+                TestAssert.True(skills != null, "skillsDirectory option declared");
+                TestAssert.True(skills != null && skills.Hidden,
+                    "skillsDirectory is hidden from the tool pages");
+
+                // And the running window agrees: the tool page shows the other
+                // memory options but not the directory, and a package whose only
+                // option is hidden no longer gets a category at all.
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+                    string packageTools = Path.Combine(ws.Path, "tools");
+                    Directory.CreateDirectory(packageTools);
+                    File.Copy(Path.Combine(toolsDir, "MemoryTools", "MemoryTools.json"),
+                        Path.Combine(packageTools, "MemoryTools.json"), true);
+                    File.Copy(Path.Combine(toolsDir, "SkillTools", "SkillTools.json"),
+                        Path.Combine(packageTools, "SkillTools.json"), true);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "Workspace", 10000);
+
+                        List<string> categories = gui.ListItemNamesInWindow("Options", "CategoryListBox", 10000);
+                        TestAssert.True(CategoryExists(categories, "Memory Tools"),
+                            "the memory tool still has its own page");
+                        TestAssert.True(!CategoryExists(categories, "Skill Tools"),
+                            "the skill tool has no page left: its only option is hidden");
+
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "Memory Tools", 10000);
+                        List<string> names = gui.ElementNamesInWindow("Options", 10000);
+                        // The manifest label is the giveaway: it only appears when
+                        // the option is rendered on the tool page.
+                        TestAssert.True(!NameExists(names, "Memories Directory override (blank"),
+                            "the memories directory field is not on the tool page");
+                        TestAssert.True(NameExists(names, "Max Memory Content Length"),
+                            "the other memory options are still on the tool page");
+
+                        gui.ClickButtonInWindow("Options", "optionsCancelButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+                }
+            });
+
+            TestRunner.Run("gui.workspace_state_folders_and_overrides", () =>
+            {
+                using (FakeOpenAiServer server = new FakeOpenAiServer())
+                using (TempWorkspace ws = PackageGuiWorkspace())
+                {
+                    WriteGuiIni(ws.Path, server.BaseUrl);
+                    string iniPath = Path.Combine(ws.Path, "LLMSettings.ini");
+                    string proj = Path.Combine(ws.Path, "proj");
+                    string sharedMemories = Path.Combine(ws.Path, "shared-memories");
+                    string sharedSkills = Path.Combine(ws.Path, "shared-skills");
+                    Directory.CreateDirectory(proj);
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "Workspace", 10000);
+
+                        // The directory overrides live on this page now.
+                        TestAssert.Equal("",
+                            gui.GetTextBoxTextInWindow("Options", "MemoriesDirectoryOverrideTextBox", 10000),
+                            "no memories override by default");
+                        TestAssert.Equal("",
+                            gui.GetTextBoxTextInWindow("Options", "SkillsDirectoryOverrideTextBox", 10000),
+                            "no skills override by default");
+
+                        gui.SetTextBoxInWindow("Options", "WorkspacePathTextBox", proj, 10000);
+                        gui.SetTextBoxInWindow("Options", "MemoriesDirectoryOverrideTextBox", sharedMemories, 10000);
+                        gui.SetTextBoxInWindow("Options", "SkillsDirectoryOverrideTextBox", sharedSkills, 10000);
+                        gui.ClickButtonInWindow("Options", "optionsOkButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+
+                    ConfigHandler saved = new ConfigHandler(iniPath);
+                    TestAssert.Equal(sharedMemories, saved.GetConfigValue("memoriesdirectory"),
+                        "memories override saved");
+                    TestAssert.Equal(sharedSkills, saved.GetConfigValue("skillsdirectory"),
+                        "skills override saved");
+
+                    // The whole state structure exists, empty, right after the save.
+                    string[] folders = { "sessions", "memories", "skills", "plans", "knowledge", "rag-index" };
+                    foreach (string folder in folders)
+                    {
+                        TestAssert.True(Directory.Exists(Path.Combine(proj, ".ssa", folder)),
+                            folder + " folder created");
+                    }
+
+                    using (GuiDriver gui = new GuiDriver(ws.Path))
+                    {
+                        gui.WaitUntilReady(30000);
+                        gui.ClickMainButton("optionsButton");
+                        gui.SelectListItemInWindow("Options", "CategoryListBox", "Workspace", 10000);
+                        TestAssert.Equal(sharedMemories,
+                            gui.GetTextBoxTextInWindow("Options", "MemoriesDirectoryOverrideTextBox", 10000),
+                            "memories override survives a restart");
+                        TestAssert.Equal(sharedSkills,
+                            gui.GetTextBoxTextInWindow("Options", "SkillsDirectoryOverrideTextBox", 10000),
+                            "skills override survives a restart");
+
+                        var effective = gui.FindByIdInWindow("Options", "MemoriesEffectiveText", 10000);
+                        TestAssert.True(effective != null
+                            && (effective.Current.Name ?? string.Empty).Contains(sharedMemories),
+                            "the effective memories path shows the override");
+
+                        var foldersText = gui.FindByIdInWindow("Options", "StateFoldersText", 10000);
+                        TestAssert.True(foldersText != null
+                            && (foldersText.Current.Name ?? string.Empty).Contains("rag-index"),
+                            "the state folder list names every store");
+
+                        gui.ClickButtonInWindow("Options", "optionsCancelButton", 10000);
+                        gui.WaitForDialogClosed("Options", 10000);
+                    }
+                }
+            });
+
             TestRunner.Run("gui.response_timeout_boxes_survive_a_restart", () =>
             {
                 using (FakeOpenAiServer server = new FakeOpenAiServer())
@@ -1383,6 +1600,28 @@ namespace SuperSimpleAgentGUI.Tests
             sb.Append('}');
             sb.Append("]}");
             return sb.ToString();
+        }
+
+        // True when a list box entry contains the given text.
+        static bool CategoryExists(List<string> categories, string needle)
+        {
+            foreach (string category in categories)
+            {
+                if ((category ?? "").IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
+        }
+
+        // True when any automation element name contains the given text.
+        static bool NameExists(List<string> names, string needle)
+        {
+            foreach (string name in names)
+            {
+                if ((name ?? "").IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+            return false;
         }
 
         // The suite runs from Tests-Build\<Suite>\, so the README is a couple of

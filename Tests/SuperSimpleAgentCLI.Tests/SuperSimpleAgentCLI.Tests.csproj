@@ -87,6 +87,9 @@
     <Compile Include="..\..\Shared\IniFileHandler.cs">
       <Link>Shared\IniFileHandler.cs</Link>
     </Compile>
+    <Compile Include="..\..\Shared\Workspace.cs">
+      <Link>Shared\Workspace.cs</Link>
+    </Compile>
     <Compile Include="..\..\Shared\ChatBlockDisplayMode.cs">
       <Link>Shared\ChatBlockDisplayMode.cs</Link>
     </Compile>
